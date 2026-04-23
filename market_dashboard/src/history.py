@@ -6,6 +6,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 DATA_DIR = Path("data")
@@ -103,6 +104,56 @@ def compute_composite_momentum(history: pd.DataFrame) -> dict:
 
     return {"velocity_7d": v7, "velocity_30d": v30,
             "acceleration_7d": a7, "regime": regime}
+
+
+def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> float | None:
+    """
+    Mean absolute pairwise Spearman correlation across all bucket_* score columns
+    over the last window_days rows.  Returns None if insufficient data.
+    """
+    from scipy.stats import spearmanr
+
+    if history.empty:
+        return None
+
+    bucket_cols = [c for c in history.columns if c.startswith("bucket_")]
+    if len(bucket_cols) < 2:
+        return None
+
+    df = history[["timestamp"] + bucket_cols].copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["date"] = df["timestamp"].dt.date
+    df = df.sort_values("timestamp").groupby("date").last().reset_index()
+    df = df.sort_values("date").tail(window_days).reset_index(drop=True)
+
+    if len(df) < 5:
+        return None
+
+    data = df[bucket_cols].copy()
+    # Drop columns with more than 50% NaN or near-constant (std < 0.5 pts)
+    data = data.dropna(axis=1, thresh=max(1, len(data) // 2))
+    data = data.loc[:, data.std() >= 0.5]
+    if data.shape[1] < 2:
+        return None
+
+    result = spearmanr(data.values, nan_policy="omit")
+    corr_matrix = np.array(result.statistic) if result.statistic.ndim == 2 else np.array([[1.0, result.statistic], [result.statistic, 1.0]])
+    n = corr_matrix.shape[0]
+    if n < 2:
+        return None
+    idx = np.triu_indices(n, k=1)
+    return float(np.abs(corr_matrix[idx]).mean())
+
+
+def correlation_regime(value: float | None) -> str:
+    """Classify cross-bucket correlation into a named regime."""
+    if value is None:
+        return "insufficient"
+    if value < 0.30:
+        return "decorrelated"
+    if value < 0.60:
+        return "normal"
+    return "crisis_synchronous"
 
 
 def build_trend_svg(history: pd.DataFrame, events: list | None = None) -> str:

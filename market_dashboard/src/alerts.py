@@ -75,7 +75,7 @@ def _indicator_label(scoring: dict, ref: str) -> str:
 
 def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None) -> int:
     """Build alert messages, dispatch, and persist state. Returns count sent."""
-    from src.history import compute_composite_momentum
+    from src.history import compute_composite_momentum, cross_bucket_correlation, correlation_regime
     prev = _load_state()
     messages: list[str] = []
 
@@ -129,6 +129,22 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         if cur_band != prev_band:
             prev["rapid_rise_alerts"] = []
 
+    # 5b. Sustained crisis-synchronous cross-bucket correlation (3+ consecutive days)
+    if history is not None and not history.empty:
+        corr_val = cross_bucket_correlation(history)
+        regime = correlation_regime(corr_val)
+        streak = prev.get("corr_regime_streak", 0)
+        if regime == "crisis_synchronous":
+            streak += 1
+        else:
+            streak = 0
+        prev["corr_regime_streak"] = streak
+        if streak == 3:  # fires exactly once, on the 3rd day
+            messages.append(
+                f"CROSS-BUCKET CORRELATION ELEVATED: {corr_val:.2f} (3 days sustained). "
+                f"Buckets moving in lockstep — typical pre-crisis or risk-off signature."
+            )
+
     # 5. Data staleness — first occurrence only per indicator
     stale_now = set(scoring.get("stale_indicators", []))
     stale_prev = set(prev.get("stale_indicators", []))
@@ -151,6 +167,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         "orange_indicators": cur_oranges,
         "rapid_rise_alerts": prev.get("rapid_rise_alerts", []),
         "stale_indicators": list(stale_now),
+        "corr_regime_streak": prev.get("corr_regime_streak", 0),
     }
 
     if not messages:

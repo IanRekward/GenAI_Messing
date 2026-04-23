@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.history import build_trend_svg, compute_composite_momentum
+from src.history import build_trend_svg, compute_composite_momentum, cross_bucket_correlation, correlation_regime
 from src.indicator_detail import build_indicator_detail
 
 OUTPUT_DIR = Path("output")
@@ -158,6 +158,28 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   </div>
 </div>"""
 
+    # ── Correlation card ────────────────────────────────────────────────────
+    corr_val = cross_bucket_correlation(history)
+    corr_regime = correlation_regime(corr_val)
+    _CORR_COLOR = {
+        "decorrelated": "#22cc44", "normal": "#8b949e",
+        "crisis_synchronous": "#ff4444", "insufficient": "#6e7681",
+    }
+    corr_color = _CORR_COLOR.get(corr_regime, "#6e7681")
+    corr_display = f"{corr_val:.2f}" if corr_val is not None else "—"
+    corr_label = corr_regime.replace("_", " ")
+    correlation_card = f"""
+<div class="card" style="display:flex;align-items:center;gap:20px;padding:14px 18px">
+  <div>
+    <div style="font-size:1.6rem;font-weight:700;color:{corr_color}">{corr_display}</div>
+    <div style="font-size:.75rem;color:#6e7681">cross-bucket corr (30d)</div>
+  </div>
+  <div>
+    <div style="font-weight:600;color:{corr_color}">{corr_label.upper()}</div>
+    <div style="font-size:.75rem;color:#6e7681">&lt;0.30 decorrelated · 0.30–0.60 normal · ≥0.60 crisis</div>
+  </div>
+</div>"""
+
     # ── Trend chart ─────────────────────────────────────────────────────────
     events = _load_events()
     trend_card = f"""
@@ -244,6 +266,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     <span class="ts">Last refreshed: {ts}</span>
   </div>
   {composite_card}
+  {correlation_card}
   {trend_card}
   <div class="bucket-grid">{buckets_html}</div>
   {news_html}
