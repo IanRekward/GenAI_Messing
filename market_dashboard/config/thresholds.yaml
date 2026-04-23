@@ -1,0 +1,127 @@
+# Trigger thresholds for each indicator.
+# Values are in the same units as the raw indicator (after any scaling).
+#
+# direction: high → value >= threshold triggers the level (normal case)
+# direction: low  → value <= threshold triggers the level (inverted indicators)
+#
+# Adjust these to your own risk tolerance. The defaults are calibrated to
+# roughly 2000–2025 history for U.S. market stress.
+
+indicators:
+
+  # --- Equity Volatility ---
+  vix:
+    direction: high
+    yellow: 20.0
+    orange: 28.0
+    red: 35.0
+
+  sp500_1m_vol:
+    direction: high
+    yellow: 16.0
+    orange: 24.0
+    red: 32.0
+
+  # --- Credit Spreads ---
+  hy_oas:                     # ICE BofA HY OAS, in %
+    direction: high
+    yellow: 4.0
+    orange: 5.5
+    red: 7.5
+
+  ig_oas:                     # ICE BofA BBB OAS, in %
+    direction: high
+    yellow: 1.80
+    orange: 2.40
+    red: 3.20
+
+  # --- Rates & Yield Curve ---
+  yield_curve:                # 10Y-2Y spread, in %; negative = inverted
+    direction: low
+    yellow: 0.10
+    orange: -0.25
+    red: -0.75
+
+  ten_year:                   # 10Y yield, in %
+    direction: high
+    yellow: 4.25
+    orange: 4.75
+    red: 5.25
+
+  # --- Financial Conditions ---
+  nfci:                       # Chicago Fed NFCI; 0 = historical average; positive = tighter
+    direction: high
+    yellow: 0.10
+    orange: 0.40
+    red: 0.80
+
+  stlfsi:                     # St. Louis Fed FSI; 0 = average; positive = stress
+    direction: high
+    yellow: 0.50
+    orange: 1.00
+    red: 2.00
+
+  # --- Inflation ---
+  breakeven_5y:               # 5Y breakeven inflation, in %
+    direction: high
+    yellow: 2.50
+    orange: 3.00
+    red: 3.50
+
+  cpi_yoy:                    # CPI year-over-year %, trailing 12 months
+    direction: high
+    yellow: 3.50
+    orange: 5.00
+    red: 7.00
+
+  # --- Funding & Liquidity ---
+  sofr_spread:                # SOFR minus daily EFFR, in bps
+    direction: high
+    yellow: 5.0
+    orange: 15.0
+    red: 40.0
+
+  repo_stress:                # Manual: 0=calm, 1=elevated, 2=crisis, 3=extreme
+    direction: high
+    yellow: 1
+    orange: 2
+    red: 3
+
+  # --- Commodities & Energy ---
+  wti_crude:                  # WTI crude, in $/bbl
+    direction: high
+    yellow: 85.0
+    orange: 100.0
+    red: 120.0
+
+  oil_vol:                    # WTI 1-month realized vol, annualized %
+    direction: high
+    yellow: 30.0
+    orange: 45.0
+    red: 60.0
+
+  # --- Economic Momentum ---
+  jobless_claims:             # 4-week avg initial claims, in thousands
+    direction: high
+    yellow: 260.0
+    orange: 300.0
+    red: 375.0
+
+  unemployment:               # Unemployment rate, in %
+    direction: high
+    yellow: 4.5
+    orange: 5.5
+    red: 7.0
+
+  # --- Sentiment ---
+  aaii_bull_bear:             # AAII bull% minus bear%; lower = more fear
+    direction: low
+    yellow: 0.0
+    orange: -10.0
+    red: -20.0
+
+  iran_trigger:               # Manual: 0=calm, 1=elevated, 2=crisis
+    direction: high
+    yellow: 1
+    orange: 2
+    red: 3

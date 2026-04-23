@@ -1,0 +1,201 @@
+"""
+Composite scoring: orchestrates data fetching, indicator calculations, and bucket weighting.
+"""
+from __future__ import annotations
+
+from datetime import datetime
+
+import pandas as pd
+import yaml
+
+from src import fetch, indicators as ind
+
+
+def load_weights(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def load_thresholds(path: str) -> dict:
+    with open(path) as f:
+        return yaml.safe_load(f)
+
+
+def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[float, pd.Series | None]:
+    """
+    Return (current_raw_value, history_series) for one indicator.
+    history_series may be None for manual indicators or when not computable.
+    """
+    years = int(env.get("HISTORY_YEARS", 10))
+
+    if cfg.get("manual"):
+        return float(manual.get(key, 0)), None
+
+    if key == "vix":
+        s = fetch.fetch_yfinance_series("^VIX", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "sp500_1m_vol":
+        s = fetch.fetch_yfinance_series("^GSPC", env, years)
+        vol_s = ind.realized_vol_series(s)
+        return float(vol_s.iloc[-1]), vol_s
+
+    if key == "hy_oas":
+        s = fetch.fetch_fred_series("BAMLH0A0HYM2", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "ig_oas":
+        s = fetch.fetch_fred_series("BAMLC0A4CBBB", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "yield_curve":
+        s = fetch.fetch_fred_series("T10Y2Y", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "ten_year":
+        s = fetch.fetch_yfinance_series("^TNX", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "nfci":
+        s = fetch.fetch_fred_series("NFCI", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "stlfsi":
+        s = fetch.fetch_fred_series("STLFSI4", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "breakeven_5y":
+        s = fetch.fetch_fred_series("T5YIE", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "cpi_yoy":
+        s = fetch.fetch_fred_series("CPIAUCSL", env, years)
+        yoy_s = ind.yoy_series(s)
+        return float(yoy_s.iloc[-1]), yoy_s
+
+    if key == "sofr_spread":
+        sofr = fetch.fetch_fred_series("SOFR", env, years)
+        effr = fetch.fetch_fred_series("DFF", env, years)
+        combined = pd.concat([sofr.rename("sofr"), effr.rename("effr")], axis=1)
+        combined = combined.ffill().dropna()
+        spread = (combined["sofr"] - combined["effr"]) * 100  # pct → bps
+        return float(spread.iloc[-1]), spread
+
+    if key == "wti_crude":
+        s = fetch.fetch_yfinance_series("CL=F", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "oil_vol":
+        s = fetch.fetch_yfinance_series("CL=F", env, years)
+        vol_s = ind.realized_vol_series(s)
+        return float(vol_s.iloc[-1]), vol_s
+
+    if key == "jobless_claims":
+        s = fetch.fetch_fred_series("IC4WSA", env, years)
+        scale = float(cfg.get("scale", 1.0))
+        s = s * scale
+        return float(s.iloc[-1]), s
+
+    if key == "unemployment":
+        s = fetch.fetch_fred_series("UNRATE", env, years)
+        return float(s.iloc[-1]), s
+
+    raise ValueError(f"Unknown indicator key: {key}")
+
+
+def _band_from_score(score: float) -> str:
+    if score >= 70:
+        return "red"
+    if score >= 50:
+        return "orange"
+    if score >= 30:
+        return "yellow"
+    return "green"
+
+
+def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
+    """
+    Fetch all data, score every indicator, aggregate into buckets and composite.
+    Returns the full scoring dict (bands are placeholder 'green' until triggers.py runs).
+    """
+    bucket_results: dict = {}
+    errors: list[str] = []
+
+    for bkey, bcfg in weights["buckets"].items():
+        bucket_weight = float(bcfg["weight"])
+        ind_results: dict = {}
+        weighted_sum = 0.0
+        weight_used = 0.0
+
+        for ikey, icfg in bcfg["indicators"].items():
+            iweight = float(icfg["weight"])
+            invert = bool(icfg.get("invert", False))
+
+            try:
+                raw, series = _fetch_indicator(ikey, icfg, env, manual)
+
+                if series is not None and len(series) >= 10:
+                    pct = ind.compute_percentile(series)
+                    zscore = ind.compute_zscore(series)
+                else:
+                    pct = 50.0
+                    zscore = 0.0
+
+                score = ind.percentile_to_score(pct, invert)
+                ind_results[ikey] = {
+                    "label": icfg["label"],
+                    "raw": round(raw, 4) if raw == raw else None,  # nan check
+                    "zscore": round(zscore, 2),
+                    "percentile": round(pct, 1),
+                    "score": score,
+                    "band": "green",
+                    "unit": icfg.get("unit", ""),
+                    "manual": bool(icfg.get("manual", False)),
+                    "invert": invert,
+                }
+
+            except Exception as exc:
+                errors.append(f"{ikey}: {exc}")
+                score = 50.0
+                ind_results[ikey] = {
+                    "label": icfg["label"],
+                    "raw": None,
+                    "zscore": None,
+                    "percentile": None,
+                    "score": score,
+                    "band": "green",
+                    "unit": icfg.get("unit", ""),
+                    "manual": bool(icfg.get("manual", False)),
+                    "invert": invert,
+                    "error": str(exc),
+                }
+
+            weighted_sum += score * iweight
+            weight_used += iweight
+
+        bucket_score = weighted_sum / weight_used if weight_used > 0 else 50.0
+        bucket_results[bkey] = {
+            "label": bcfg["label"],
+            "weight": bucket_weight,
+            "score": round(bucket_score, 1),
+            "band": "green",
+            "indicators": ind_results,
+        }
+
+    total_weight = sum(b["weight"] for b in bucket_results.values())
+    composite = (
+        sum(b["score"] * b["weight"] for b in bucket_results.values()) / total_weight
+        if total_weight > 0
+        else 50.0
+    )
+
+    return {
+        "composite": round(composite, 1),
+        "composite_band": _band_from_score(composite),
+        "red_count": 0,
+        "orange_count": 0,
+        "yellow_count": 0,
+        "run_timestamp": datetime.now().isoformat(),
+        "buckets": bucket_results,
+        "errors": errors,
+    }

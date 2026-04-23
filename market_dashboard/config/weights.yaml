@@ -1,0 +1,148 @@
+# Bucket and indicator weights for the composite stress score.
+# Bucket weights must sum to 1.0.
+# Indicator weights within each bucket must sum to 1.0.
+#
+# invert: true  → lower raw value = more stress (e.g. inverted yield curve)
+# manual: true  → value comes from data/manual_overrides.json, not an API
+# scale:        → multiply raw API value by this before storing (e.g. 0.001 to convert persons → K)
+# unit:         → display unit shown on the dashboard
+
+buckets:
+  equity_volatility:
+    label: Equity Volatility
+    weight: 0.18
+    indicators:
+      vix:
+        label: VIX
+        weight: 0.65
+        invert: false
+        unit: ""
+      sp500_1m_vol:
+        label: "S&P 500 1M Realized Vol"
+        weight: 0.35
+        invert: false
+        unit: "%"
+
+  credit_spreads:
+    label: Credit Spreads
+    weight: 0.20
+    indicators:
+      hy_oas:
+        label: HY Option-Adjusted Spread
+        weight: 0.60
+        invert: false
+        unit: "%"
+      ig_oas:
+        label: IG BBB Option-Adjusted Spread
+        weight: 0.40
+        invert: false
+        unit: "%"
+
+  rates_curve:
+    label: "Rates & Yield Curve"
+    weight: 0.13
+    indicators:
+      yield_curve:
+        label: "10Y–2Y Spread"
+        weight: 0.65
+        invert: true        # more negative = more inverted = more stress
+        unit: "%"
+      ten_year:
+        label: 10Y Treasury Yield
+        weight: 0.35
+        invert: false
+        unit: "%"
+
+  financial_conditions:
+    label: Financial Conditions
+    weight: 0.14
+    indicators:
+      nfci:
+        label: Chicago Fed NFCI
+        weight: 0.55
+        invert: false
+        unit: ""
+      stlfsi:
+        label: St. Louis Fed FSI
+        weight: 0.45
+        invert: false
+        unit: ""
+
+  inflation:
+    label: Inflation Pressure
+    weight: 0.09
+    indicators:
+      breakeven_5y:
+        label: 5Y Inflation Breakeven
+        weight: 0.55
+        invert: false
+        unit: "%"
+      cpi_yoy:
+        label: CPI Year-over-Year
+        weight: 0.45
+        invert: false
+        unit: "%"
+
+  funding_liquidity:
+    label: "Funding & Liquidity"
+    weight: 0.08
+    indicators:
+      sofr_spread:
+        label: SOFR Spread to EFFR
+        weight: 0.50
+        invert: false
+        unit: bps
+      repo_stress:
+        label: Repo Market Stress
+        weight: 0.50
+        invert: false
+        unit: "0–3"
+        manual: true
+
+  commodities:
+    label: "Commodities & Energy"
+    weight: 0.07
+    indicators:
+      wti_crude:
+        label: WTI Crude Oil
+        weight: 0.55
+        invert: false
+        unit: "$/bbl"
+      oil_vol:
+        label: Oil 1M Realized Vol
+        weight: 0.45
+        invert: false
+        unit: "%"
+
+  economic_momentum:
+    label: Economic Momentum
+    weight: 0.07
+    indicators:
+      jobless_claims:
+        label: Initial Claims (4-wk avg)
+        weight: 0.55
+        invert: false
+        unit: K
+        scale: 0.001    # FRED IC4WSA is in persons; display in thousands
+      unemployment:
+        label: Unemployment Rate
+        weight: 0.45
+        invert: false
+        unit: "%"
+
+  sentiment:
+    label: Sentiment
+    weight: 0.04
+    indicators:
+      aaii_bull_bear:
+        label: "AAII Bull–Bear Spread"
+        weight: 0.65
+        invert: true        # lower (more bearish) = more stress
+        unit: "%"
+        manual: true
+      iran_trigger:
+        label: Geopolitical Risk
+        weight: 0.35
+        invert: false
+        unit: "0–2"
+        manual: true

@@ -1,0 +1,12 @@
+.env
+data/*.json
+data/*.csv
+output/dashboard.html
+__pycache__/
+*.pyc
+.venv/
+venv/
+.DS_Store
+# Keep markers so empty dirs persist in git
+!data/.gitkeep
+!output/.gitkeep
