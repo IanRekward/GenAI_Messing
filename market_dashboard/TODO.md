@@ -16,8 +16,8 @@ For detailed implementation briefs see [ROADMAP.md](ROADMAP.md). Recommended
 execution order with priority in parentheses. Check off as Sonnet completes
 each.
 
-- [ ] **Step 0** — Restore 10-bucket weights.yaml from .bak *(blocking)*
-- [ ] **Brief 2** — Minimum viable test suite *(high value, half day)*
+- [x] **Step 0** — Restore 10-bucket weights.yaml from .bak *(done 2026-04-23)*
+- [x] **Brief 2** — Minimum viable test suite *(done 2026-04-23 — 22 tests, 0.24s)*
 - [ ] **Brief 1** — Config schema validation + data-driven registry *(high, half day)*
 - [ ] **Brief 4A** — Historical events overlay on trend chart *(1 hour UX win)*
 - [ ] **Brief 3** — Rate-of-change signal layer *(high, half day)*

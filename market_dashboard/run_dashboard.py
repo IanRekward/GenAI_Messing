@@ -25,6 +25,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from dotenv import load_dotenv
 
+from src.config import validate_config, ConfigError
 from src.scoring import compute_composite, load_weights, load_thresholds
 from src.triggers import annotate_results
 from src.news import get_news_brief
@@ -89,9 +90,14 @@ def main():
         print(" Market Stress Dashboard")
         print("=" * 60)
 
-    # Load configs
+    # Load and validate configs — aborts with a clear message on any drift
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
+    try:
+        validate_config(weights, thresholds)
+    except ConfigError as e:
+        print(f"\n  CONFIG ERROR: {e}\n")
+        sys.exit(1)
     manual = load_manual_overrides()
 
     # Score everything
