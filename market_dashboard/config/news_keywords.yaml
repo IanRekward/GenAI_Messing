@@ -1,0 +1,121 @@
+# Keyword lists per indicator for cross-referencing news headlines with alert triggers.
+# When an indicator fires a red/orange alert, headlines matching these keywords are
+# extracted and passed to Haiku for targeted context in the Pushover message.
+
+indicators:
+  vix:
+    - vix
+    - volatility
+    - fear gauge
+    - options skew
+    - cboe
+  sp500_1m_vol:
+    - s&p 500
+    - spx
+    - equity volatility
+    - stock market
+  hy_oas:
+    - high yield
+    - junk bond
+    - credit spreads
+    - hy spread
+    - corporate bonds
+  ig_oas:
+    - investment grade
+    - ig spread
+    - corporate bond
+    - credit market
+  yield_curve:
+    - yield curve
+    - inversion
+    - 10-year
+    - 2-year
+    - treasury spread
+  ten_year:
+    - 10-year yield
+    - treasury yield
+    - bond yield
+    - rate hike
+    - fed funds
+  nfci:
+    - financial conditions
+    - credit tightening
+    - lending standards
+  stlfsi:
+    - financial stress
+    - stress index
+    - liquidity crunch
+  breakeven_5y:
+    - inflation expectations
+    - breakeven
+    - tips
+    - inflation swap
+  cpi_yoy:
+    - inflation
+    - cpi
+    - consumer prices
+    - price index
+  sofr_spread:
+    - sofr
+    - overnight rate
+    - repo rate
+    - funding stress
+    - libor
+  wti_crude:
+    - oil
+    - crude
+    - wti
+    - brent
+    - opec
+    - energy prices
+  oil_vol:
+    - oil volatility
+    - crude oil
+    - energy market
+  jobless_claims:
+    - jobless claims
+    - unemployment claims
+    - initial claims
+    - layoffs
+  unemployment:
+    - unemployment
+    - jobs report
+    - nonfarm payrolls
+    - labor market
+  usd_index:
+    - dollar index
+    - usd
+    - dollar strength
+    - em currency
+    - emerging market currency
+  euro_hy_oas:
+    - european high yield
+    - euro credit
+    - ecb
+    - euro bond
+  em_corp_oas:
+    - emerging market
+    - em bonds
+    - em debt
+    - developing market
+  eem_vol:
+    - emerging market
+    - eem
+    - em equity
+    - developing market stocks
+  repo_stress:
+    - repo market
+    - repo rate
+    - overnight repo
+    - collateral
+  aaii_bull_bear:
+    - investor sentiment
+    - aaii
+    - bull bear
+    - retail investors
+  iran_trigger:
+    - iran
+    - geopolitical
+    - middle east
+    - oil supply disruption
+    - sanctions

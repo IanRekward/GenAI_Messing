@@ -189,6 +189,21 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         return 0
 
     body = "\n\n".join(messages)
+
+    # Append news context for triggered indicators
+    triggered_keys: set[str] = set()
+    for bk, bkt in scoring["buckets"].items():
+        for ik, ind in bkt["indicators"].items():
+            if ind.get("band") in ("red", "orange"):
+                triggered_keys.add(ik)
+    try:
+        from src.news import get_trigger_news_context
+        news_ctx = get_trigger_news_context(triggered_keys, env)
+        if news_ctx:
+            body += f"\n\nNews context:\n{news_ctx}"
+    except Exception:
+        pass
+
     title = f"Market Stress: {cur_band.upper()} ({scoring['composite']:.0f}/100)"
 
     sent = 0
