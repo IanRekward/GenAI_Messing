@@ -4,7 +4,7 @@
 thresholds:
   daily: 3       # FRED/yfinance daily series: tolerate 3-day weekend/holiday gaps
   weekly: 10     # FRED weekly (NFCI, STLFSI, jobless claims): published with ~1wk lag
-  monthly: 40    # FRED monthly (CPI, UNRATE): ~30-day publication lag
+  monthly: 60    # FRED monthly (CPI, UNRATE): period indexed to month-start + ~30d publication lag
 
 indicators:
   vix: daily
@@ -22,7 +22,7 @@ indicators:
   oil_vol: daily
   jobless_claims: weekly
   unemployment: monthly
-  usd_index: daily
+  usd_index: weekly  # DTWEXBGS (H.10) is published weekly by the Fed, not daily
   euro_hy_oas: daily
   em_corp_oas: daily
   eem_vol: daily
