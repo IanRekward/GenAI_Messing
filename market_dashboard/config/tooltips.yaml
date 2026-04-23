@@ -81,7 +81,7 @@ indicators:
     tip: "ICE BofA EM Corporate Bond Spread (%). Emerging market companies borrowing in dollars are acutely exposed to dollar strength and global risk-off. Above 3.8% = stressed."
   eem_vol:
     tip: "1-month realized volatility of the EEM ETF (EM equities, annualized %). Captures cross-border contagion. EM equity vol spikes often precede U.S. credit stress by 2–4 weeks."
-  aaii_bull_bear:
-    tip: "AAII weekly survey: % bulls minus % bears. Below zero = more bears than bulls. Below -10% is historically contrarian bullish. Updated manually from aaii.com each week."
+  cnn_fear_greed:
+    tip: "CNN Fear & Greed index (0=extreme fear, 100=extreme greed). Composite of 7 market signals. Below 25 = extreme fear. Above 75 = extreme greed. Falls back to Univ. of Michigan Consumer Sentiment if CNN is unavailable."
   iran_trigger:
     tip: "Manual geopolitical risk score (0=calm, 1=elevated, 2=crisis). Captures tail risks from Iran/Gulf tensions, which can cause sudden oil supply disruptions."

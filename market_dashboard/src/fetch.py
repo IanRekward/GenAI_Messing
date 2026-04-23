@@ -48,9 +48,8 @@ def _retry_get(url: str, params: dict, timeout: int) -> "requests.Response":
     raise last_exc  # type: ignore[misc]
 
 MANUAL_DEFAULTS: dict = {
-    "repo_stress": 0,       # 0=calm 1=elevated 2=crisis 3=extreme
-    "aaii_bull_bear": 10.0, # % bulls minus % bears; update weekly from aaii.com
-    "iran_trigger": 0,      # 0=calm 1=elevated 2=crisis
+    "repo_stress": 0,   # 0=calm 1=elevated 2=crisis 3=extreme
+    "iran_trigger": 0,  # 0=calm 1=elevated 2=crisis
 }
 
 
@@ -135,6 +134,57 @@ def fetch_fred_series(series_id: str, env: dict, years: int = 10) -> pd.Series:
     series = pd.Series(values, index=pd.to_datetime(dates))
     _write_cache(cpath, series)
     return series
+
+
+def fetch_cnn_fear_greed(env: dict) -> pd.Series:
+    """
+    Fetch CNN Fear & Greed index (0=extreme fear, 100=extreme greed).
+    Daily data; accumulates history across runs with a 12h cache TTL.
+    Raises StaleCacheFallback if live fetch fails but a cached series exists.
+    """
+    cache_hours = float(env.get("CACHE_HOURS", 12))
+    cpath = _cache_path("cnn_fear_greed")
+    if _cache_valid(cpath, cache_hours):
+        return _read_cache(cpath)
+
+    _HEADERS = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, */*",
+    }
+    try:
+        resp = requests.get(
+            "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+            headers=_HEADERS,
+            timeout=20,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        hist = data.get("fear_and_greed_historical", {}).get("data", [])
+        if not hist:
+            raise RuntimeError("CNN Fear & Greed: no historical data in response")
+    except Exception as exc:
+        if cpath.exists():
+            raise StaleCacheFallback(_read_cache(cpath), "cnn_fear_greed", str(exc))
+        raise
+
+    dates = pd.DatetimeIndex([
+        pd.Timestamp(int(row["x"]) // 1000, unit="s").normalize()
+        for row in hist
+    ])
+    values = [float(row["y"]) for row in hist]
+    new_series = pd.Series(values, index=dates).sort_index()
+
+    # Accumulate with existing cache to build multi-year history
+    if cpath.exists():
+        existing = _read_cache(cpath)
+        new_series = pd.concat([existing, new_series]).groupby(level=0).last().sort_index()
+
+    _write_cache(cpath, new_series)
+    return new_series
 
 
 def load_cadence_config(path: str = "config/series_cadence.yaml") -> dict:

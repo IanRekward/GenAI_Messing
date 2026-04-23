@@ -108,10 +108,11 @@ indicators:
     - repo rate
     - overnight repo
     - collateral
-  aaii_bull_bear:
+  cnn_fear_greed:
+    - fear and greed
     - investor sentiment
-    - aaii
-    - bull bear
+    - market sentiment
+    - risk appetite
     - retail investors
   iran_trigger:
     - iran

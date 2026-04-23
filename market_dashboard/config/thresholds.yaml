@@ -114,11 +114,11 @@ indicators:
     red: 7.0
 
   # --- Sentiment ---
-  aaii_bull_bear:             # AAII bull% minus bear%; lower = more fear
+  cnn_fear_greed:             # 0=extreme fear, 100=extreme greed; lower = more stress
     direction: low
-    yellow: 0.0
-    orange: -10.0
-    red: -20.0
+    yellow: 45.0
+    orange: 35.0
+    red: 25.0
 
   iran_trigger:               # Manual: 0=calm, 1=elevated, 2=crisis
     direction: high

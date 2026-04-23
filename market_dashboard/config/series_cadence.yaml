@@ -1,5 +1,5 @@
 # Maximum calendar days since last observation before a staleness warning fires.
-# Manual indicators (aaii_bull_bear, iran_trigger, repo_stress) are excluded — no series.
+# iran_trigger and repo_stress remain fully manual — no automated source.
 
 thresholds:
   daily: 3       # FRED/yfinance daily series: tolerate 3-day weekend/holiday gaps
@@ -26,3 +26,4 @@ indicators:
   euro_hy_oas: daily
   em_corp_oas: daily
   eem_vol: daily
+  cnn_fear_greed: daily   # CNN Fear & Greed; falls back to FRED UMCSENT if unavailable

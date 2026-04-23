@@ -29,8 +29,9 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "wti_crude", "oil_vol",
     "jobless_claims", "unemployment",
     "usd_index", "euro_hy_oas", "em_corp_oas", "eem_vol",
+    "cnn_fear_greed",
     # manual-only indicators (no fetch handler needed)
-    "repo_stress", "aaii_bull_bear", "iran_trigger",
+    "repo_stress", "iran_trigger",
 })
 
 _WEIGHT_TOLERANCE = 1e-4

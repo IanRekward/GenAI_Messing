@@ -134,12 +134,11 @@ buckets:
     label: Sentiment
     weight: 0.04
     indicators:
-      aaii_bull_bear:
-        label: "AAII Bull–Bear Spread"
+      cnn_fear_greed:
+        label: "CNN Fear & Greed"
         weight: 0.65
-        invert: true        # lower (more bearish) = more stress
-        unit: "%"
-        manual: true
+        invert: true        # lower score (more fear) = more stress
+        unit: "0–100"
       iran_trigger:
         label: Geopolitical Risk
         weight: 0.35

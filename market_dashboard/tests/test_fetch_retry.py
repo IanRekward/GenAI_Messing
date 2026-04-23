@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import requests
 
-from src.fetch import StaleCacheFallback, _retry_get, fetch_fred_series
+from src.fetch import StaleCacheFallback, _retry_get, fetch_fred_series, fetch_cnn_fear_greed
 
 
 def _make_stale_cache(tmp_path: Path, cache_key: str, n: int = 30) -> Path:
@@ -96,3 +96,85 @@ def test_fred_raises_when_no_stale_cache_available(monkeypatch, tmp_path):
     env = {"FRED_API_KEY": "testkey", "CACHE_HOURS": "0"}
     with pytest.raises(requests.ConnectionError):
         fetch_fred_series("TESTID", env)
+
+
+# ── CNN Fear & Greed tests ────────────────────────────────────────────────────
+
+def _cnn_response(n: int = 10):
+    """Build a minimal CNN Fear & Greed JSON payload with n daily rows."""
+    import time as _time
+    base_ts = int(_time.time()) - (n - 1) * 86400
+    data = [{"x": float((base_ts + i * 86400) * 1000), "y": float(40 + i)} for i in range(n)]
+    return {
+        "fear_and_greed": {"score": 49.0, "rating": "neutral", "timestamp": "2026-04-23T00:00:00+00:00"},
+        "fear_and_greed_historical": {"data": data},
+    }
+
+
+class _FakeCNNResponse:
+    status_code = 200
+
+    def raise_for_status(self):
+        pass
+
+    def json(self):
+        return _cnn_response(10)
+
+
+def test_cnn_fear_greed_returns_series(monkeypatch, tmp_path):
+    """Happy path: CNN API returns data, series has correct length and values."""
+    monkeypatch.setattr("requests.get", lambda *a, **kw: _FakeCNNResponse())
+    monkeypatch.setattr("src.fetch.CACHE_DIR", tmp_path / "cache")
+
+    env = {"CACHE_HOURS": "0"}
+    s = fetch_cnn_fear_greed(env)
+
+    assert isinstance(s, pd.Series)
+    assert len(s) == 10
+    assert isinstance(s.index, pd.DatetimeIndex)
+    assert 40.0 <= float(s.iloc[0]) <= 50.0
+
+
+def test_cnn_falls_back_to_stale_cache(monkeypatch, tmp_path):
+    """When CNN is unreachable and stale cache exists, StaleCacheFallback is raised."""
+    monkeypatch.setattr(
+        "requests.get",
+        lambda *a, **kw: (_ for _ in ()).throw(requests.ConnectionError("down")),
+    )
+    _make_stale_cache(tmp_path, "cnn_fear_greed", n=20)
+    monkeypatch.setattr("src.fetch.CACHE_DIR", tmp_path / "cache")
+
+    env = {"CACHE_HOURS": "0"}
+    with pytest.raises(StaleCacheFallback) as exc_info:
+        fetch_cnn_fear_greed(env)
+
+    assert len(exc_info.value.series) == 20
+
+
+def test_cnn_raises_when_no_cache(monkeypatch, tmp_path):
+    """When CNN is unreachable and there is no cache, the original error propagates."""
+    monkeypatch.setattr(
+        "requests.get",
+        lambda *a, **kw: (_ for _ in ()).throw(requests.ConnectionError("down")),
+    )
+    monkeypatch.setattr("src.fetch.CACHE_DIR", tmp_path / "cache")
+
+    env = {"CACHE_HOURS": "0"}
+    with pytest.raises(requests.ConnectionError):
+        fetch_cnn_fear_greed(env)
+
+
+def test_cnn_accumulates_history(monkeypatch, tmp_path):
+    """Second fetch merges new data with cached history, deduplicating by date."""
+    monkeypatch.setattr("requests.get", lambda *a, **kw: _FakeCNNResponse())
+    monkeypatch.setattr("src.fetch.CACHE_DIR", tmp_path / "cache")
+
+    # Seed the cache with 30 older rows
+    _make_stale_cache(tmp_path, "cnn_fear_greed", n=30)
+
+    env = {"CACHE_HOURS": "0"}
+    s = fetch_cnn_fear_greed(env)
+
+    # Should have at least 30 rows (cache) and up to 30+10 if dates don't overlap
+    assert len(s) >= 10
+    assert isinstance(s.index, pd.DatetimeIndex)

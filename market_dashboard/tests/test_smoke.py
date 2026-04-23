@@ -24,7 +24,7 @@ def test_smoke_full_config(monkeypatch):
 
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
-    manual = {k: 0 for k in ["repo_stress", "aaii_bull_bear", "iran_trigger"]}
+    manual = {k: 0 for k in ["repo_stress", "iran_trigger"]}
     env = {"HISTORY_YEARS": "10"}
 
     scoring = compute_composite(weights, env, manual)

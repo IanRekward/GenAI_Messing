@@ -29,6 +29,20 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
     """
     years = int(env.get("HISTORY_YEARS", 10))
 
+    if key == "cnn_fear_greed":
+        try:
+            s = fetch.fetch_cnn_fear_greed(env)
+            return float(s.iloc[-1]), s
+        except StaleCacheFallback:
+            raise  # caller scores stale data and logs a warning
+        except Exception as cnn_exc:
+            # CNN unavailable with no local cache — try FRED UMCSENT as fallback
+            try:
+                s = fetch.fetch_fred_series("UMCSENT", env, years)
+                return float(s.iloc[-1]), s
+            except Exception:
+                raise cnn_exc  # both failed; caller will default to 50.0
+
     if cfg.get("manual"):
         return float(manual.get(key, 0)), None
 
