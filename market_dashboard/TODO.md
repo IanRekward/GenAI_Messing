@@ -31,6 +31,7 @@ each.
 - [ ] Brief 11 — Audit log for alerts
 - [ ] Brief 12 — Provenance stamp on each run
 - [ ] Brief 13 — History pruning/archival
+- [ ] **Brief 14** — Dashboard tooltips: plain-English explanations of every indicator, bucket, band, and composite score *(last on list)*
 
 ## Sonnet onboarding instructions
 

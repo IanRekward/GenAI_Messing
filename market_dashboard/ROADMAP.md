@@ -97,8 +97,9 @@ everything downstream safe.
 | 11 | B11 | Audit log for alerts | Low-Med | S | — |
 | 12 | B12 | Provenance stamp on each run | Low | S | B1 |
 | 13 | B13 | History pruning/archival | Low | S | — |
+| 14 | B14 | Dashboard tooltips — plain-English explanations of every element | High | M | B4 |
 
-Briefs 1–5 are written in full below. Briefs 6–13 are sketched and can be
+Briefs 1–5 are written in full below. Briefs 6–14 are sketched and can be
 expanded when the user is ready to pick them up.
 
 ---
@@ -710,6 +711,130 @@ score changes unexpectedly, whether the data changed or the calculation did.
 Current history.csv grows forever. Cap at ~2 years; archive older rows into
 `data/history_archive.parquet`. Backtest engine already uses separate cache,
 so no impact on it.
+
+### Brief 14 — Dashboard tooltips (plain-English explanations of every element)
+
+**Dependencies:** Brief 4B (indicator drill-down ships first — tooltips build
+on that infrastructure).
+
+**Problem:** Many indicators are opaque even to finance professionals. "SOFR
+Spread to EFFR" or "NFCI" mean nothing without context. The dashboard gives
+numbers and bands but no explanation of what each thing measures, why it
+matters, or how to interpret it alongside the rest of the model.
+
+**Design decision:** CSS-only hover tooltips — no JavaScript, works on static
+GitHub Pages. Every tappable/hoverable element gets a `title` attribute (for
+mobile long-press and screen readers) AND a CSS `:hover` tooltip bubble (for
+desktop). Content is authored in `config/tooltips.yaml` so it can be updated
+without touching Python code.
+
+**Files to create:**
+
+1. **`config/tooltips.yaml`** — plain-English descriptions for every element:
+   ```yaml
+   composite:
+     title: "Composite Stress Score"
+     what: "A weighted average of all 10 buckets, scored 0–100. Higher = more stress."
+     interpret: "Under 30 is calm. 30–50 is elevated but normal. Above 50 means at
+       least one area of the market is flashing warning signs. Above 70 is rare and
+       serious — historically precedes significant drawdowns within 3–6 months."
+     why: "No single indicator predicts crashes reliably. This composite synthesizes
+       credit, volatility, rates, funding, commodities, and global signals into one
+       number so you can scan quickly without reading 20 charts."
+
+   bands:
+     green: "Below 30: calm conditions. History suggests low near-term drawdown risk."
+     yellow: "30–50: elevated. Worth monitoring but not actionable on its own."
+     orange: "50–70: stressed. At least one bucket is firing warnings. Consider
+       reducing risk in the affected area."
+     red: "Above 70: high stress. Historically associated with elevated drawdown risk
+       in the following 30–90 days. Review your positions."
+
+   buckets:
+     equity_volatility:
+       what: "Measures fear and uncertainty in the stock market."
+       why: "Spikes in VIX and realized vol are early warning signs of panic selling.
+         High equity vol often precedes or accompanies credit and funding stress."
+     credit_spreads:
+       what: "Measures how much extra yield investors demand to hold corporate bonds
+         over risk-free Treasuries."
+       why: "Widening spreads mean lenders are getting nervous about default risk.
+         Historically, HY spread blowouts precede recessions by 6–12 months."
+     # ... one entry per bucket ...
+
+   indicators:
+     vix:
+       what: "The CBOE Volatility Index — the market's expectation of S&P 500 volatility
+         over the next 30 days, derived from options prices."
+       interpret: "Below 15 = calm. 15–25 = normal. 25–35 = elevated fear.
+         Above 35 = panic. The all-time high was ~89 during the 2008 crisis."
+       why: "VIX is the market's single most-watched fear gauge. Sustained elevated
+         VIX means institutions are paying up to hedge, which tends to be
+         self-reinforcing."
+     sofr_spread:
+       what: "The gap between SOFR (what banks actually charge each other overnight)
+         and the Fed's target rate (EFFR). Measured in basis points (0.01%)."
+       interpret: "Near zero is normal. A spread above 10–15 bps suggests banks are
+         charging each other more than the Fed's benchmark — a sign of liquidity
+         stress in the overnight funding market."
+       why: "A precursor to 2008 was the LIBOR-OIS spread blowing out. SOFR spread
+         is the modern equivalent. Small moves matter: a 20 bps spread is a
+         loud warning."
+     # ... one entry per indicator ...
+   ```
+
+2. **`src/dashboard.py`** — load tooltips.yaml, add tooltip markup:
+   - Composite score card: wrap the number and band in a `<span>` with CSS
+     tooltip showing `what` + `interpret`.
+   - Each band badge: tooltip showing the band description.
+   - Each bucket header: tooltip with bucket `what` + `why`.
+   - Each indicator row: tooltip with indicator `what` + `interpret` + `why`.
+   - Percentile column: persistent small note "Percentile rank vs 10yr history"
+     on first row of each bucket (not per-row — clutters mobile).
+
+3. **CSS additions in `_CSS`**:
+   ```css
+   .tip{position:relative;cursor:help}
+   .tip::after{content:attr(data-tip);position:absolute;left:0;top:100%;
+     background:#1c2128;color:#c9d1d9;padding:8px 12px;border-radius:6px;
+     border:1px solid #30363d;font-size:.78rem;line-height:1.5;width:280px;
+     z-index:100;white-space:normal;display:none;pointer-events:none}
+   .tip:hover::after,.tip:focus::after{display:block}
+   ```
+   CSS-only, no JS. `data-tip` attribute holds the tooltip text.
+   For mobile: add `title` attribute with the same text (long-press on iOS
+   shows the title as a native tooltip).
+
+**Content principles for tooltips.yaml:**
+- Every entry answers three questions: what does this measure, how do I
+  interpret the current reading, and why should I care.
+- Use plain English. No acronyms without expansion on first use.
+- Include historical anchors: "During 2008, VIX hit 89." "A SOFR spread
+  above 20 bps is rare — last seen in Sept 2019."
+- Keep each tooltip under 300 characters for the CSS bubble. Put the longer
+  version in the drill-down detail page (Brief 4B).
+- Cross-context notes: if VIX and HY spreads are both elevated, that's more
+  serious than either alone. The tooltip for VIX should mention this.
+
+**Edge cases:**
+- Missing tooltip key: dashboard renders without the tooltip (no crash).
+  Log a warning to the errors list so missing entries are visible.
+- Mobile `data-tip` CSS trick: works on iOS Safari and Chrome Android via
+  `:focus` pseudo-class when the element is tapped. The `tabindex="0"` on
+  the `.tip` span enables this.
+- GitHub Pages: pure CSS, no JS needed, static hosting compatible.
+- Long tooltip text: cap at 280px wide with `white-space:normal`. Long
+  entries will wrap. Test on mobile (375px viewport).
+
+**Success criteria:**
+- Hovering over every indicator label shows a tooltip with `what`,
+  `interpret`, and `why` content.
+- Works on iPhone Safari (tap → tooltip shows via `:focus` + `tabindex`).
+- No JS, works on GitHub Pages.
+- All 10 buckets and all ~22 indicators have tooltip entries in
+  tooltips.yaml (no missing keys).
+- A missing key in tooltips.yaml produces a warning in the errors section,
+  not a crash.
 
 ---
 

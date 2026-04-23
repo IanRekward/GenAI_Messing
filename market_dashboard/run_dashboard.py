@@ -129,7 +129,7 @@ def main():
     if not args.no_alerts:
         if not args.quiet:
             print("\n[5/5] Checking alerts...")
-        sent = send_alerts(scoring, env)
+        sent = send_alerts(scoring, env, history)
         if not args.quiet and sent == 0:
             print("  No new alerts to send.")
     elif not args.quiet:

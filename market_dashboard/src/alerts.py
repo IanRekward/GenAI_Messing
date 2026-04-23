@@ -7,8 +7,12 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import requests
+
+if TYPE_CHECKING:
+    import pandas as pd
 
 DATA_DIR = Path("data")
 STATE_FILE = DATA_DIR / "alert_state.json"
@@ -69,8 +73,9 @@ def _indicator_label(scoring: dict, ref: str) -> str:
     return scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {}).get("label", ikey)
 
 
-def send_alerts(scoring: dict, env: dict) -> int:
+def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None) -> int:
     """Build alert messages, dispatch, and persist state. Returns count sent."""
+    from src.history import compute_composite_momentum
     prev = _load_state()
     messages: list[str] = []
 
@@ -107,10 +112,28 @@ def send_alerts(scoring: dict, env: dict) -> int:
         labels = [_indicator_label(scoring, r) for r in new_oranges[:5]]
         messages.append(f"2+ NEW ORANGE TRIGGERS: {', '.join(labels)}")
 
+    # 4. Rapid rise without band change (early warning)
+    if history is not None and not history.empty:
+        mom = compute_composite_momentum(history)
+        v7 = mom.get("velocity_7d")
+        if v7 is not None and v7 >= 10 and cur_band in ("yellow", "orange"):
+            rise_key = f"rapid_rise_{cur_band}"
+            if rise_key not in prev.get("rapid_rise_alerts", []):
+                messages.append(
+                    f"RAPID RISE: composite +{v7:.0f} pts in 7 days "
+                    f"({mom['regime'].replace('_', ' ')}). "
+                    f"Watch for imminent band escalation."
+                )
+                prev.setdefault("rapid_rise_alerts", []).append(rise_key)
+        # Reset rapid_rise tracker on band change
+        if cur_band != prev_band:
+            prev["rapid_rise_alerts"] = []
+
     new_state = {
         "composite_band": cur_band,
         "red_indicators": cur_reds,
         "orange_indicators": cur_oranges,
+        "rapid_rise_alerts": prev.get("rapid_rise_alerts", []),
     }
 
     if not messages:

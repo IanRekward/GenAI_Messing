@@ -1,0 +1,23 @@
+# Significant market events shown as vertical markers on the trend chart.
+# Any event whose date falls within the visible 90-day window is rendered.
+# Add new entries here — no code changes required.
+
+events:
+  - date: 2008-09-15
+    label: "Lehman"
+  - date: 2011-08-08
+    label: "US downgrade"
+  - date: 2015-08-24
+    label: "China selloff"
+  - date: 2018-12-24
+    label: "Dec selloff"
+  - date: 2020-03-16
+    label: "COVID"
+  - date: 2022-01-24
+    label: "Rate shock"
+  - date: 2022-09-28
+    label: "UK gilts"
+  - date: 2023-03-10
+    label: "SVB"
+  - date: 2025-04-07
+    label: "Tariff shock"

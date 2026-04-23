@@ -14,7 +14,7 @@ HISTORY_FILE = DATA_DIR / "history.csv"
 _BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
 
-def log_run(scoring: dict, spx_close: float | None = None) -> None:
+def log_run(scoring: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     row: dict = {
         "timestamp": scoring["run_timestamp"],
@@ -26,17 +26,6 @@ def log_run(scoring: dict, spx_close: float | None = None) -> None:
     }
     for bkey, bucket in scoring["buckets"].items():
         row[f"bucket_{bkey}"] = bucket["score"]
-
-    # Extended schema (BACKTEST_DESIGN.md §8a): log individual indicator raws
-    for bkey, bucket in scoring["buckets"].items():
-        for ikey, ind in bucket.get("indicators", {}).items():
-            raw = ind.get("raw")
-            if raw is not None:
-                row[f"raw_{bkey}__{ikey}"] = raw
-
-    # SPX close (passed separately since it isn't in the scoring dict by default)
-    if spx_close is not None:
-        row["spx_close"] = spx_close
 
     df_new = pd.DataFrame([row])
     if HISTORY_FILE.exists():
@@ -57,92 +46,66 @@ def load_history(days: int = 90) -> pd.DataFrame:
     return df[df["timestamp"] >= cutoff].sort_values("timestamp").reset_index(drop=True)
 
 
-def compute_rolling_ic(history: pd.DataFrame, forward_days: int = 30,
-                       window_days: int = 180) -> pd.DataFrame:
+def compute_composite_momentum(history: pd.DataFrame) -> dict:
     """
-    Compute rolling Spearman IC of the composite score vs realized forward SPX drawdown.
-    Requires 'composite' and 'spx_close' columns and at least forward_days + window_days of data.
+    Returns velocity and acceleration of the composite score.
 
-    Returns a DataFrame with columns: timestamp, rolling_ic, n_obs.
+    Keys:
+      velocity_7d:      score change over last 7 calendar days (None if <8 rows)
+      velocity_30d:     score change over last 30 calendar days (None if <31 rows)
+      acceleration_7d:  velocity_7d minus prior week's velocity (None if <15 rows)
+      regime:           str — one of accelerating_up / decelerating_up /
+                        accelerating_down / decelerating_down / flat / insufficient
     """
-    from scipy import stats as _stats
-    if "spx_close" not in history.columns or len(history) < 10:
-        return pd.DataFrame(columns=["timestamp", "rolling_ic", "n_obs"])
+    if history.empty or len(history) < 2:
+        return {"velocity_7d": None, "velocity_30d": None,
+                "acceleration_7d": None, "regime": "insufficient"}
 
-    df = history[["timestamp", "composite", "spx_close"]].dropna().copy()
-    df = df.sort_values("timestamp").reset_index(drop=True)
+    df = history[["timestamp", "composite"]].copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["date"] = df["timestamp"].dt.date
+    df = df.sort_values("timestamp").groupby("date").last().reset_index()
+    df = df.sort_values("date").reset_index(drop=True)
 
-    # Compute realized forward max-drawdown for each row
-    fwd_dd = []
-    for i, row in df.iterrows():
-        end_ts = row["timestamp"] + timedelta(days=forward_days)
-        future = df.loc[df["timestamp"].between(row["timestamp"], end_ts), "spx_close"]
-        if len(future) < 2:
-            fwd_dd.append(float("nan"))
-        else:
-            peak, trough = future.iloc[0], future.min()
-            fwd_dd.append((peak - trough) / peak if peak > 0 else float("nan"))
+    if len(df) < 2:
+        return {"velocity_7d": None, "velocity_30d": None,
+                "acceleration_7d": None, "regime": "insufficient"}
 
-    df["fwd_drawdown"] = fwd_dd
-    df = df.dropna(subset=["fwd_drawdown"])
+    latest = df.iloc[-1]
+    latest_date = pd.Timestamp(latest["date"])
+    latest_score = float(latest["composite"])
 
-    if len(df) < 10:
-        return pd.DataFrame(columns=["timestamp", "rolling_ic", "n_obs"])
+    def _score_at(days_ago: int) -> float | None:
+        target = latest_date - pd.Timedelta(days=days_ago)
+        past = df[pd.to_datetime(df["date"]) <= target]
+        if past.empty:
+            return None
+        return float(past.iloc[-1]["composite"])
 
-    # Rolling IC over a trailing window
-    rows = []
-    for i in range(len(df)):
-        t = df["timestamp"].iloc[i]
-        start = t - timedelta(days=window_days)
-        w = df[df["timestamp"].between(start, t)]
-        if len(w) < 10:
-            rows.append({"timestamp": t, "rolling_ic": float("nan"), "n_obs": len(w)})
-            continue
-        r, _ = _stats.spearmanr(w["composite"].values, w["fwd_drawdown"].values)
-        rows.append({"timestamp": t, "rolling_ic": float(r), "n_obs": len(w)})
+    s7 = _score_at(7)
+    s30 = _score_at(30)
+    s14 = _score_at(14)
 
-    return pd.DataFrame(rows)
+    v7 = round(latest_score - s7, 2) if s7 is not None else None
+    v30 = round(latest_score - s30, 2) if s30 is not None else None
+    v7_prior = round(s7 - s14, 2) if (s7 is not None and s14 is not None) else None
+    a7 = round(v7 - v7_prior, 2) if (v7 is not None and v7_prior is not None) else None
 
+    _FLAT = 3.0
+    if v7 is None:
+        regime = "insufficient"
+    elif abs(v7) < _FLAT:
+        regime = "flat"
+    elif v7 > 0:
+        regime = "accelerating_up" if (a7 is not None and a7 > 0) else "decelerating_up"
+    else:
+        regime = "accelerating_down" if (a7 is not None and a7 < 0) else "decelerating_down"
 
-def degradation_status(rolling_ic_df: pd.DataFrame, backtest_ic: float = 0.15) -> dict:
-    """
-    Apply Q3 two-tier degradation thresholds (BACKTEST_DESIGN.md §11 Q3).
-
-    Returns dict with keys: status ('ok'/'warning'/'alert'), latest_ic, message.
-    """
-    if rolling_ic_df.empty or rolling_ic_df["rolling_ic"].dropna().empty:
-        return {"status": "unknown", "latest_ic": None,
-                "message": "Insufficient history for IC computation (need 30+ days with SPX data)."}
-
-    latest = rolling_ic_df["rolling_ic"].dropna().iloc[-1]
-    drop_pct = (backtest_ic - latest) / backtest_ic if backtest_ic > 0 else 0
-
-    # Warning: IC dropped >40% from baseline OR fell below 0.15
-    if latest < 0.15 or drop_pct > 0.40:
-        # Alert: IC dropped >60% from baseline AND stayed below 0.05 for 60+ days
-        recent_60d = rolling_ic_df.dropna(subset=["rolling_ic"]).tail(60)
-        if drop_pct > 0.60 and (recent_60d["rolling_ic"] < 0.05).all():
-            return {
-                "status": "alert",
-                "latest_ic": round(float(latest), 3),
-                "message": f"ALERT: IC {latest:.3f} has been below 0.05 for 60+ days (baseline: {backtest_ic:.3f}). "
-                           "Model may have structurally degraded."
-            }
-        return {
-            "status": "warning",
-            "latest_ic": round(float(latest), 3),
-            "message": f"Warning: Rolling IC {latest:.3f} dropped {drop_pct*100:.0f}% from backtest baseline ({backtest_ic:.3f})."
-        }
-
-    return {
-        "status": "ok",
-        "latest_ic": round(float(latest), 3),
-        "message": f"Model performance nominal. Rolling IC: {latest:.3f} (baseline: {backtest_ic:.3f})."
-    }
+    return {"velocity_7d": v7, "velocity_30d": v30,
+            "acceleration_7d": a7, "regime": regime}
 
 
-def build_trend_svg(history: pd.DataFrame) -> str:
+def build_trend_svg(history: pd.DataFrame, events: list | None = None) -> str:
     if history.empty or len(history) < 2:
         return (
             '<p style="color:#6e7681;font-style:italic;padding:8px 0">'
@@ -156,8 +119,18 @@ def build_trend_svg(history: pd.DataFrame) -> str:
     scores = history["composite"].tolist()
     n = len(scores)
 
+    timestamps = history["timestamp"].tolist()
+    t_min = pd.to_datetime(timestamps[0]).timestamp()
+    t_max = pd.to_datetime(timestamps[-1]).timestamp()
+
     def x(i: int) -> float:
         return PL + (i / (n - 1)) * pw if n > 1 else float(PL)
+
+    def x_date(dt) -> float | None:
+        t = pd.to_datetime(dt).timestamp()
+        if t_max == t_min or not (t_min <= t <= t_max):
+            return None
+        return PL + ((t - t_min) / (t_max - t_min)) * pw
 
     def y(v: float) -> float:
         return PT + (1.0 - v / 100.0) * ph
@@ -178,6 +151,20 @@ def build_trend_svg(history: pd.DataFrame) -> str:
             f'<text x="{PL-4}" y="{yg+4:.1f}" font-size="10" fill="#6e7681" text-anchor="end">{val}</text>'
         )
 
+    # Event markers
+    event_markers = ""
+    for ev in (events or []):
+        ex = x_date(ev["date"])
+        if ex is None:
+            continue
+        label = ev.get("label", "")
+        event_markers += (
+            f'<line x1="{ex:.1f}" y1="{PT}" x2="{ex:.1f}" y2="{PT+ph}" '
+            f'stroke="#6e7681" stroke-width="1" stroke-dasharray="3,3"/>'
+            f'<text x="{ex:.1f}" y="{PT-2}" font-size="9" fill="#6e7681" '
+            f'text-anchor="middle" transform="rotate(-35,{ex:.1f},{PT-2})">{label}</text>'
+        )
+
     # Score polyline
     pts = " ".join(f"{x(i):.1f},{y(s):.1f}" for i, s in enumerate(scores))
     line = f'<polyline points="{pts}" fill="none" stroke="#4d9de0" stroke-width="2" stroke-linejoin="round"/>'
@@ -189,7 +176,6 @@ def build_trend_svg(history: pd.DataFrame) -> str:
     dot = f'<circle cx="{lx:.1f}" cy="{ly:.1f}" r="4" fill="{dot_col}"/>'
 
     # Date axis labels
-    timestamps = history["timestamp"].tolist()
     label_indices = sorted({0, n // 4, n // 2, 3 * n // 4, n - 1})
     date_labels = ""
     for i in label_indices:
@@ -202,6 +188,6 @@ def build_trend_svg(history: pd.DataFrame) -> str:
 
     return (
         f'<svg width="{W}" height="{H}" xmlns="http://www.w3.org/2000/svg">'
-        f"{bg}{grid}{line}{dot}{date_labels}"
+        f"{bg}{grid}{event_markers}{line}{dot}{date_labels}"
         f"</svg>"
     )
