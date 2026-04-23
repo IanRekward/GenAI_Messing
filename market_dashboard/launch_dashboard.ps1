@@ -12,7 +12,7 @@ $output     = Join-Path $projectDir "output\dashboard.html"
 Set-Location $projectDir
 
 # Run the dashboard refresh (shows a brief console window with progress)
-& $python $script --no-alerts
+& $python $script --no-alerts --publish
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Dashboard run failed (exit code $LASTEXITCODE)" -ForegroundColor Red
     Read-Host "Press Enter to close"
