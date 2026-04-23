@@ -14,12 +14,12 @@ buckets:
     indicators:
       vix:
         label: VIX
-        weight: 0.65
+        weight: 0.8814
         invert: false
         unit: ""
       sp500_1m_vol:
         label: "S&P 500 1M Realized Vol"
-        weight: 0.35
+        weight: 0.1186
         invert: false
         unit: "%"
 
@@ -29,12 +29,12 @@ buckets:
     indicators:
       hy_oas:
         label: HY Option-Adjusted Spread
-        weight: 0.60
+        weight: 0.6
         invert: false
         unit: "%"
       ig_oas:
         label: IG BBB Option-Adjusted Spread
-        weight: 0.40
+        weight: 0.4
         invert: false
         unit: "%"
 
@@ -59,12 +59,12 @@ buckets:
     indicators:
       nfci:
         label: Chicago Fed NFCI
-        weight: 0.55
+        weight: 0.0
         invert: false
         unit: ""
       stlfsi:
         label: St. Louis Fed FSI
-        weight: 0.45
+        weight: 1.0
         invert: false
         unit: ""
 
@@ -89,12 +89,12 @@ buckets:
     indicators:
       sofr_spread:
         label: SOFR Spread to EFFR
-        weight: 0.50
+        weight: 0.5
         invert: false
         unit: bps
       repo_stress:
         label: Repo Market Stress
-        weight: 0.50
+        weight: 0.5
         invert: false
         unit: "0–3"
         manual: true
@@ -105,12 +105,12 @@ buckets:
     indicators:
       wti_crude:
         label: WTI Crude Oil
-        weight: 0.55
+        weight: 0.0
         invert: false
         unit: "$/bbl"
       oil_vol:
         label: Oil 1M Realized Vol
-        weight: 0.45
+        weight: 1.0
         invert: false
         unit: "%"
 
@@ -153,21 +153,21 @@ buckets:
     indicators:
       usd_index:
         label: "Broad Dollar Index"
-        weight: 0.30
+        weight: 0.3529
         invert: false       # stronger dollar = more EM debt stress
         unit: ""
       euro_hy_oas:
         label: "Euro HY OAS"
-        weight: 0.25
+        weight: 0.2941
         invert: false
         unit: "%"
       em_corp_oas:
         label: "EM Corporate OAS"
-        weight: 0.25
+        weight: 0.2941
         invert: false
         unit: "%"
       eem_vol:
         label: "EM Equity 1M Realized Vol"
-        weight: 0.20
+        weight: 0.0588
         invert: false
         unit: "%"

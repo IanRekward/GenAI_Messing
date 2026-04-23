@@ -67,6 +67,54 @@ def _indicator_ic_series(df: pd.DataFrame, spx: pd.Series, horizon_days: int = 3
     return pd.Series(results)
 
 
+def _patch_weights_file(path: str, updates: dict[tuple[str, str], float]) -> None:
+    """
+    Edit weights.yaml in-place, replacing only indicator weight values.
+    Preserves all comments, blank lines, and non-weight fields.
+
+    Identifies each indicator by tracking bucket/indicator context via
+    indentation and key names, then replaces the immediately-following
+    'weight:' line value.
+    """
+    with open(path, encoding="utf-8") as f:
+        lines = f.readlines()
+
+    out = []
+    current_bucket: str | None = None
+    current_indicator: str | None = None
+    pending_weight_replace: float | None = None   # write this value on the next 'weight:' line
+
+    for line in lines:
+        stripped = line.lstrip()
+        indent = len(line) - len(stripped)
+
+        # Detect context from indentation + key structure (no value on same line, ends with ':')
+        if stripped.endswith(":\n") and ":" not in stripped[:-2]:
+            key = stripped[:-2].strip()
+            if indent == 2:               # top-level bucket key
+                current_bucket = key
+                current_indicator = None
+                pending_weight_replace = None
+            elif indent == 6:             # indicator key (6 spaces under bucket.indicators)
+                current_indicator = key
+                # Check if this (bucket, indicator) has an update
+                update = updates.get((current_bucket, current_indicator))
+                pending_weight_replace = update   # may be None if no change needed
+
+        # Replace the weight line if we're waiting for one
+        if pending_weight_replace is not None and stripped.startswith("weight:"):
+            # Build replacement, preserving the leading whitespace
+            ws = " " * indent
+            out.append(f"{ws}weight: {pending_weight_replace}\n")
+            pending_weight_replace = None
+            continue
+
+        out.append(line)
+
+    with open(path, "w", encoding="utf-8") as f:
+        f.writelines(out)
+
+
 def run_recalibration(
     full_csv: str = "output/backtest_full.csv",
     subset_csv: str = "output/backtest_subset.csv",
@@ -183,10 +231,15 @@ def run_recalibration(
     print(f"Indicators to keep:  {(df_summary['action'].str.startswith('keep')).sum()}")
 
     if apply:
-        # Write updated weights.yaml
-        with open(weights_path, "w") as f:
-            yaml.dump(updated_weights, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
-        print(f"\nWeights updated and written to {weights_path}")
+        # Build map of (bucket, indicator) -> new normalised weight (plain Python float)
+        weight_updates: dict[tuple[str, str], float] = {}
+        for _, row in df_summary.iterrows():
+            nw = row.get("normalised_weight")
+            if nw is not None and not (isinstance(nw, float) and np.isnan(nw)):
+                weight_updates[(row["bucket"], row["indicator"])] = float(round(float(nw), 4))
+
+        _patch_weights_file(weights_path, weight_updates)
+        print(f"\nWeights patched in-place in {weights_path} (comments preserved).")
         print("Re-run the dashboard to use the new weights.")
     else:
         print("\nPreview only.  Run with --apply to write updated weights.yaml.")
