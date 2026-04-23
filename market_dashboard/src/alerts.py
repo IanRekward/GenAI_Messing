@@ -75,9 +75,11 @@ You are a concise financial risk advisor writing a push notification.
 Given a market stress alert and the current model state, write exactly 3 sentences:
   1. What the triggered indicator(s) mean and why they just fired.
   2. What the broader model context implies — is stress broad or isolated?
-  3. One specific, practical action the investor should consider.
+  3. One specific, practical action: what to reduce or sell AND what to buy \
+or hold as a defensive alternative (e.g. Treasuries, gold, cash, defensive \
+sectors).
 Rules: plain English only, no jargon, no bullet points, no asterisks, \
-present tense, total response under 420 characters."""
+present tense, total response under 450 characters."""
 
 
 def _build_model_summary(triggers: list[str], scoring: dict) -> str:
