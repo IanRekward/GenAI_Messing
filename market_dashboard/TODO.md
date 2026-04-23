@@ -48,7 +48,7 @@
   Use Opus 4.7 to: review current architecture for improvements, write thorough
   documentation, and generate a prioritized feature enhancement roadmap.
 
-- [ ] **Contextual interpretation in Pushover notifications**
+- [x] **Contextual interpretation in Pushover notifications**
   Current alerts are terse and cryptic (e.g. "NEW RED TRIGGERS (1): Oil 1M Realized Vol"),
   which requires opening the dashboard to understand. Enrich alerts with a one-or-two
   sentence interpretation so the notification itself is actionable.
@@ -63,7 +63,7 @@
   Option 2 is richer but adds latency and dependency on Anthropic API being up during alerts.
   Decide during design phase.
 
-- [ ] **Windows taskbar shortcut / launcher**
+- [x] **Windows taskbar shortcut / launcher**
   One-click launcher that can be pinned to the Windows taskbar. Clicking it should:
     1. Run `python run_dashboard.py` to refresh with latest data
     2. Open the generated `output/dashboard.html` in the default browser

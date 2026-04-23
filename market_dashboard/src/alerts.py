@@ -1,6 +1,8 @@
 """
 Phone alerts via Pushover (preferred) or Twilio SMS (fallback).
 State is persisted in data/alert_state.json to suppress duplicate alerts.
+Alert bodies are enriched by Claude Haiku with: indicator meaning, model
+context, and a suggested action.  Falls back gracefully if API is unavailable.
 """
 from __future__ import annotations
 
@@ -68,10 +70,87 @@ def _indicator_label(scoring: dict, ref: str) -> str:
     return scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {}).get("label", ikey)
 
 
+_CONTEXT_SYSTEM = """\
+You are a concise financial risk advisor writing a push notification.
+Given a market stress alert and the current model state, write exactly 3 sentences:
+  1. What the triggered indicator(s) mean and why they just fired.
+  2. What the broader model context implies — is stress broad or isolated?
+  3. One specific, practical action the investor should consider.
+Rules: plain English only, no jargon, no bullet points, no asterisks, \
+present tense, total response under 420 characters."""
+
+
+def _build_model_summary(triggers: list[str], scoring: dict) -> str:
+    """Compact model state string passed to Haiku as context."""
+    lines: list[str] = []
+
+    # Triggered indicators with values
+    for ref in triggers:
+        bkey, ikey = ref.split(".", 1)
+        ind = scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {})
+        label = ind.get("label", ikey)
+        raw   = ind.get("raw")
+        pct   = ind.get("percentile")
+        band  = ind.get("band", "")
+        raw_s = f"{raw:.2f}" if raw is not None else "n/a"
+        pct_s = f"{pct:.0f}th pct" if pct is not None else ""
+        lines.append(f"TRIGGER: {label} now {band.upper()} (value {raw_s}, {pct_s} of 10yr history)")
+
+    lines.append(f"COMPOSITE: {scoring['composite']:.1f}/100 ({scoring['composite_band'].upper()})")
+
+    # Elevated buckets (score >= 50)
+    hot_buckets = [
+        f"{b['label']} {b['score']:.0f}"
+        for b in scoring["buckets"].values()
+        if b["score"] >= 50
+    ]
+    if hot_buckets:
+        lines.append("ELEVATED BUCKETS: " + ", ".join(hot_buckets))
+
+    # Other red/orange indicators (not the current trigger)
+    trigger_set = set(triggers)
+    other_hot = []
+    for bkey, bkt in scoring["buckets"].items():
+        for ikey, ind in bkt["indicators"].items():
+            ref = f"{bkey}.{ikey}"
+            if ref not in trigger_set and ind.get("band") in ("red", "orange"):
+                other_hot.append(f"{ind['label']} ({ind['band']})")
+    if other_hot:
+        lines.append("OTHER ELEVATED: " + ", ".join(other_hot[:6]))
+
+    return "\n".join(lines)
+
+
+def _generate_alert_context(triggers: list[str], scoring: dict, env: dict) -> str:
+    """
+    Call Claude Haiku to produce a 3-sentence contextual interpretation.
+    Returns empty string if the API key is absent or the call fails.
+    """
+    api_key = env.get("ANTHROPIC_API_KEY", "")
+    if not api_key or api_key.startswith("your_"):
+        return ""
+
+    model_summary = _build_model_summary(triggers, scoring)
+
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=api_key)
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=150,
+            system=_CONTEXT_SYSTEM,
+            messages=[{"role": "user", "content": model_summary}],
+        )
+        return resp.content[0].text.strip()
+    except Exception:
+        return ""
+
+
 def send_alerts(scoring: dict, env: dict) -> int:
     """Build alert messages, dispatch, and persist state. Returns count sent."""
     prev = _load_state()
     messages: list[str] = []
+    context_triggers: list[str] = []   # all newly-fired indicator refs for Haiku context
 
     # 1. Composite band escalation
     cur_band = scoring["composite_band"]
@@ -93,6 +172,7 @@ def send_alerts(scoring: dict, env: dict) -> int:
     if new_reds:
         labels = [_indicator_label(scoring, r) for r in new_reds]
         messages.append(f"NEW RED TRIGGERS ({len(new_reds)}): {', '.join(labels)}")
+        context_triggers.extend(new_reds)
 
     # 3. Two or more new orange indicators
     cur_oranges = [
@@ -105,6 +185,7 @@ def send_alerts(scoring: dict, env: dict) -> int:
     if len(new_oranges) >= 2:
         labels = [_indicator_label(scoring, r) for r in new_oranges[:5]]
         messages.append(f"2+ NEW ORANGE TRIGGERS: {', '.join(labels)}")
+        context_triggers.extend(new_oranges)
 
     new_state = {
         "composite_band": cur_band,
@@ -116,7 +197,23 @@ def send_alerts(scoring: dict, env: dict) -> int:
         _save_state(new_state)
         return 0
 
+    # Deduplicate triggers, then generate Haiku interpretation
+    context_triggers = list(dict.fromkeys(context_triggers))
+    if not context_triggers:
+        # Composite-only escalation — use all currently elevated indicators as context
+        context_triggers = [
+            f"{bk}.{ik}"
+            for bk, bkt in scoring["buckets"].items()
+            for ik, ind in bkt["indicators"].items()
+            if ind.get("band") in ("red", "orange")
+        ]
+
+    context = _generate_alert_context(context_triggers, scoring, env)
+
     body = "\n\n".join(messages)
+    if context:
+        body = f"{body}\n\n{context}"
+
     title = f"Market Stress: {cur_band.upper()} ({scoring['composite']:.0f}/100)"
 
     sent = 0
