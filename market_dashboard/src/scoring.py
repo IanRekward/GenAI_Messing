@@ -166,6 +166,12 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     zscore = 0.0
 
                 score = ind.percentile_to_score(pct, invert)
+                series_data = None
+                if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
+                    series_data = {
+                        "dates": [d.strftime("%Y-%m-%d") for d in series.index],
+                        "values": [float(v) for v in series.values],
+                    }
                 ind_results[ikey] = {
                     "label": icfg["label"],
                     "raw": round(raw, 4) if raw == raw else None,  # nan check
@@ -176,6 +182,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     "unit": icfg.get("unit", ""),
                     "manual": bool(icfg.get("manual", False)),
                     "invert": invert,
+                    "_series": series_data,
                 }
 
             except Exception as exc:

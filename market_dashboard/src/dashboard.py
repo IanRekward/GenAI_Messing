@@ -10,6 +10,7 @@ import pandas as pd
 import yaml
 
 from src.history import build_trend_svg, compute_composite_momentum
+from src.indicator_detail import build_indicator_detail
 
 OUTPUT_DIR = Path("output")
 
@@ -47,6 +48,11 @@ td:nth-child(3){text-align:right;width:34%}
 .err summary{cursor:pointer;font-weight:600}
 .footer{margin-top:28px;font-size:.75rem;color:#484f58;text-align:center}
 .manual-tag{font-size:.72rem;color:#6e7681;font-style:italic;margin-left:4px}
+.detail-section{margin-bottom:14px}
+.detail-section>details{background:#161b22;border-radius:8px;padding:12px 16px;margin-bottom:6px}
+.detail-section>details>summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none;display:flex;justify-content:space-between;align-items:center}
+.detail-section>details>summary::-webkit-details-marker{display:none}
+.detail-section>details[open]>summary{margin-bottom:8px}
 """
 
 
@@ -109,6 +115,17 @@ def _load_events() -> list:
         return []
 
 
+def _load_thresholds() -> dict:
+    path = Path("config/thresholds.yaml")
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return data.get("indicators", {}) if data else {}
+    except Exception:
+        return {}
+
+
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "dashboard.html"
@@ -150,20 +167,38 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
 </div>"""
 
     # ── Bucket grid ─────────────────────────────────────────────────────────
+    thresholds = _load_thresholds()
     buckets_html = ""
-    for bucket in scoring["buckets"].values():
+    detail_blocks = ""
+    for bkey, bucket in scoring["buckets"].items():
         bc = _color(bucket["band"])
         rows = ""
-        for ind in bucket["indicators"].values():
+        for ikey, ind in bucket["indicators"].items():
             manual_tag = '<span class="manual-tag">(manual)</span>' if ind.get("manual") else ""
             pct = ind.get("percentile")
             pct_str = f"{pct:.0f}th" if pct is not None else "—"
+            label_html = (
+                f'<a href="#{ikey}_detail" style="color:inherit;text-decoration:none">'
+                f"{ind['label']}"
+                f"</a>"
+            )
             rows += (
                 f"<tr>"
-                f"<td>{_dot(ind['band'])}{ind['label']}{manual_tag}</td>"
+                f"<td>{_dot(ind['band'])}{label_html}{manual_tag}</td>"
                 f"<td>{_fmt_raw(ind)}</td>"
                 f"<td>{pct_str} {_badge(ind['band'])}</td>"
                 f"</tr>"
+            )
+            # Build collapsible detail block
+            thresh_cfg = thresholds.get(ikey)
+            detail_fragment = build_indicator_detail(ikey, ind, thresh_cfg)
+            badge_html = _badge(ind["band"])
+            detail_blocks += (
+                f'<details><summary><span>{ind["label"]}</span>'
+                f'<span style="font-weight:400;font-size:.8rem">'
+                f'{_fmt_raw(ind)} &nbsp;{badge_html}</span></summary>'
+                f"{detail_fragment}"
+                f"</details>"
             )
         buckets_html += f"""
 <div class="bucket" style="border-color:{bc}">
@@ -212,6 +247,10 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   {trend_card}
   <div class="bucket-grid">{buckets_html}</div>
   {news_html}
+  <div class="card detail-section">
+    <h2 style="margin-bottom:10px">Indicator Details</h2>
+    {detail_blocks}
+  </div>
   {errors_html}
   <div class="footer">Not financial advice &nbsp;·&nbsp; Data: FRED, Yahoo Finance &nbsp;·&nbsp; Scores are percentile ranks vs {scoring.get('history_years', 10)}-year history</div>
 </div>
