@@ -31,7 +31,7 @@ from src.news import get_news_brief
 from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
 from src.history import log_run, load_history
-from src.alerts import send_alerts
+from src.alerts import send_alerts, send_heartbeat
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -73,6 +73,7 @@ def main():
     parser.add_argument("--no-alerts", action="store_true", help="Skip phone alerts")
     parser.add_argument("--quiet", action="store_true", help="Less console output")
     parser.add_argument("--publish", action="store_true", help="Push dashboard to GitHub Pages")
+    parser.add_argument("--heartbeat", action="store_true", help="Send daily Pushover confirmation for 31 days")
     args = parser.parse_args()
 
     # Load env vars from .env
@@ -130,6 +131,10 @@ def main():
 
     # Write dashboard
     output_path = write_dashboard(scoring, news, history)
+
+    # Heartbeat confirmation for first 31 days
+    if args.heartbeat:
+        send_heartbeat(scoring, env)
 
     # Optionally publish to GitHub Pages
     if args.publish:
