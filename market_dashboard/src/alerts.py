@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
 DATA_DIR = Path("data")
 STATE_FILE = DATA_DIR / "alert_state.json"
+ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 
 _BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
 
@@ -31,6 +32,17 @@ def _save_state(state: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with open(STATE_FILE, "w") as f:
         json.dump(state, f, indent=2)
+
+
+def _log_alert(title: str, body: str) -> None:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    entry = json.dumps({
+        "timestamp": datetime.now().isoformat(),
+        "title": title,
+        "body": body,
+    })
+    with open(ALERT_LOG, "a", encoding="utf-8") as f:
+        f.write(entry + "\n")
 
 
 def _send_pushover(title: str, message: str, env: dict) -> bool:
@@ -205,6 +217,8 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         pass
 
     title = f"Market Stress: {cur_band.upper()} ({scoring['composite']:.0f}/100)"
+
+    _log_alert(title, body)
 
     sent = 0
     if _send_pushover(title, body, env):

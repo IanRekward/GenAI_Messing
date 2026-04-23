@@ -3,6 +3,8 @@ Run logging and trend-chart generation.
 """
 from __future__ import annotations
 
+import hashlib
+import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -15,6 +17,27 @@ HISTORY_FILE = DATA_DIR / "history.csv"
 _BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
 
+def _weights_hash() -> str:
+    """MD5 of config/weights.yaml for provenance tracking."""
+    try:
+        content = Path("config/weights.yaml").read_bytes()
+        return hashlib.md5(content).hexdigest()[:8]
+    except Exception:
+        return ""
+
+
+def _code_sha() -> str:
+    """Short git HEAD SHA, or empty string if not in a git repo."""
+    try:
+        result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return result.stdout.strip() if result.returncode == 0 else ""
+    except Exception:
+        return ""
+
+
 def log_run(scoring: dict) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     row: dict = {
@@ -24,6 +47,8 @@ def log_run(scoring: dict) -> None:
         "red_count": scoring["red_count"],
         "orange_count": scoring["orange_count"],
         "yellow_count": scoring["yellow_count"],
+        "weights_hash": _weights_hash(),
+        "code_sha": _code_sha(),
     }
     for bkey, bucket in scoring["buckets"].items():
         row[f"bucket_{bkey}"] = bucket["score"]
@@ -34,6 +59,32 @@ def log_run(scoring: dict) -> None:
     else:
         df_combined = df_new
     df_combined.to_csv(HISTORY_FILE, index=False)
+
+
+_ARCHIVE_FILE = DATA_DIR / "history_archive.parquet"
+_MAX_HISTORY_DAYS = 730  # ~2 years
+
+
+def prune_history() -> None:
+    """Move rows older than 2 years from history.csv to history_archive.parquet."""
+    if not HISTORY_FILE.exists():
+        return
+    df = pd.read_csv(HISTORY_FILE)
+    if df.empty:
+        return
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    cutoff = datetime.now() - timedelta(days=_MAX_HISTORY_DAYS)
+    old = df[df["timestamp"] < cutoff]
+    if old.empty:
+        return
+    # Append old rows to archive
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if _ARCHIVE_FILE.exists():
+        existing = pd.read_parquet(_ARCHIVE_FILE)
+        old = pd.concat([existing, old], ignore_index=True).drop_duplicates(subset=["timestamp"])
+    old.to_parquet(_ARCHIVE_FILE, index=False)
+    # Keep only recent rows in live file
+    df[df["timestamp"] >= cutoff].reset_index(drop=True).to_csv(HISTORY_FILE, index=False)
 
 
 def load_history(days: int = 90) -> pd.DataFrame:

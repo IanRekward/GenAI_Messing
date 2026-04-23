@@ -31,7 +31,7 @@ from src.triggers import annotate_results
 from src.news import get_news_brief
 from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
-from src.history import log_run, load_history
+from src.history import log_run, load_history, prune_history
 from src.alerts import send_alerts, send_heartbeat, send_weekly_digest
 
 
@@ -114,6 +114,7 @@ def main():
     if not args.quiet:
         print("\n[3/5] Logging to history...")
     log_run(scoring)
+    prune_history()
     history = load_history(days=90)
 
     # News

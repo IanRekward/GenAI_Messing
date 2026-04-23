@@ -53,6 +53,9 @@ td:nth-child(3){text-align:right;width:34%}
 .detail-section>details>summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none;display:flex;justify-content:space-between;align-items:center}
 .detail-section>details>summary::-webkit-details-marker{display:none}
 .detail-section>details[open]>summary{margin-bottom:8px}
+.tip{position:relative;cursor:help;border-bottom:1px dotted #6e7681}
+.tip::after{content:attr(data-tip);position:absolute;left:0;top:110%;background:#1c2128;color:#c9d1d9;padding:8px 12px;border-radius:6px;border:1px solid #30363d;font-size:.76rem;line-height:1.5;width:280px;z-index:200;white-space:normal;display:none;pointer-events:none;font-weight:400}
+.tip:hover::after,.tip:focus::after{display:block}
 """
 
 
@@ -115,6 +118,28 @@ def _load_events() -> list:
         return []
 
 
+def _load_tooltips() -> dict:
+    path = Path("config/tooltips.yaml")
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return data or {}
+    except Exception:
+        return {}
+
+
+def _tip(text: str, tip_str: str, tag: str = "span") -> str:
+    """Wrap text in a CSS tooltip span. tip_str is HTML-escaped automatically."""
+    if not tip_str:
+        return text
+    safe = tip_str.replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+    return (
+        f'<{tag} class="tip" data-tip="{safe}" tabindex="0">'
+        f"{text}</{tag}>"
+    )
+
+
 def _load_thresholds() -> dict:
     path = Path("config/thresholds.yaml")
     if not path.exists():
@@ -135,20 +160,26 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     band_color = _color(band)
     band_bg = _BAND_BG.get(band, "#161b22")
     ts = datetime.fromisoformat(scoring["run_timestamp"]).strftime("%b %d, %Y  %H:%M")
+    tooltips = _load_tooltips()
 
     # ── Momentum ────────────────────────────────────────────────────────────
     mom = compute_composite_momentum(history)
     mom_html = _fmt_momentum(mom, band_color)
 
     # ── Composite card ──────────────────────────────────────────────────────
+    composite_tip = tooltips.get("composite", {}).get("tip", "")
+    band_tip = tooltips.get("bands", {}).get(band, "")
+    mom_tip = tooltips.get("momentum", {}).get("tip", "")
+    composite_score_html = _tip(f"{composite:.0f}", composite_tip)
+    band_label_html = _tip(band, band_tip)
     composite_card = f"""
 <div class="composite" style="background:{band_bg};border-left:6px solid {band_color}">
   <div>
-    <div class="score-num" style="color:{band_color}">{composite:.0f}</div>
+    <div class="score-num" style="color:{band_color}">{composite_score_html}</div>
     <div class="score-sub">out of 100</div>
   </div>
   <div>
-    <div class="score-band" style="color:{band_color}">{band}</div>
+    <div class="score-band" style="color:{band_color}">{band_label_html}</div>
     {mom_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
@@ -168,10 +199,12 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     corr_color = _CORR_COLOR.get(corr_regime, "#6e7681")
     corr_display = f"{corr_val:.2f}" if corr_val is not None else "—"
     corr_label = corr_regime.replace("_", " ")
+    corr_tip = tooltips.get("correlation", {}).get("tip", "")
+    corr_display_html = _tip(corr_display, corr_tip) if corr_tip else corr_display
     correlation_card = f"""
 <div class="card" style="display:flex;align-items:center;gap:20px;padding:14px 18px">
   <div>
-    <div style="font-size:1.6rem;font-weight:700;color:{corr_color}">{corr_display}</div>
+    <div style="font-size:1.6rem;font-weight:700;color:{corr_color}">{corr_display_html}</div>
     <div style="font-size:.75rem;color:#6e7681">cross-bucket corr (30d)</div>
   </div>
   <div>
@@ -190,18 +223,23 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
 
     # ── Bucket grid ─────────────────────────────────────────────────────────
     thresholds = _load_thresholds()
+    ind_tooltips = tooltips.get("indicators", {})
+    bucket_tooltips = tooltips.get("buckets", {})
     buckets_html = ""
     detail_blocks = ""
     for bkey, bucket in scoring["buckets"].items():
         bc = _color(bucket["band"])
+        bkt_tip = bucket_tooltips.get(bkey, {}).get("tip", "")
         rows = ""
         for ikey, ind in bucket["indicators"].items():
             manual_tag = '<span class="manual-tag">(manual)</span>' if ind.get("manual") else ""
             pct = ind.get("percentile")
             pct_str = f"{pct:.0f}th" if pct is not None else "—"
+            itip = ind_tooltips.get(ikey, {}).get("tip", "")
+            inner_label = _tip(ind["label"], itip) if itip else ind["label"]
             label_html = (
                 f'<a href="#{ikey}_detail" style="color:inherit;text-decoration:none">'
-                f"{ind['label']}"
+                f"{inner_label}"
                 f"</a>"
             )
             rows += (
@@ -222,10 +260,11 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
                 f"{detail_fragment}"
                 f"</details>"
             )
+        bkt_label_html = _tip(bucket["label"], bkt_tip) if bkt_tip else bucket["label"]
         buckets_html += f"""
 <div class="bucket" style="border-color:{bc}">
   <div class="bkt-hdr">
-    <h2>{bucket['label']}</h2>
+    <h2>{bkt_label_html}</h2>
     <span class="bkt-score" style="color:{bc}">{bucket['score']:.0f}<span style="color:#6e7681;font-size:.8rem;font-weight:400">/100</span></span>
   </div>
   <table><tbody>{rows}</tbody></table>
