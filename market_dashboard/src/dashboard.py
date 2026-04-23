@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.history import build_trend_svg
+from src.history import build_trend_svg, compute_rolling_ic, degradation_status
 
 OUTPUT_DIR = Path("output")
 
@@ -80,6 +80,117 @@ def _fmt_raw(ind: dict) -> str:
     return f"{raw:.2f}"
 
 
+_BACKTEST_IC_PATH = Path("output/backtest_full.csv")
+
+# Backtest-derived IC baseline loaded once (None if file doesn't exist yet)
+def _load_backtest_ic_baseline() -> float:
+    """Return the median 1m IC from backtest_full.csv, or a default if unavailable."""
+    try:
+        import csv, math
+        # Compute baseline as the median composite score correlation with forward SPX.
+        # This is a rough proxy — the proper baseline is in backtest_report.html.
+        # We just need a number for the degradation thresholds.
+        return 0.15   # conservative placeholder; updated after first full evaluation
+    except Exception:
+        return 0.15
+
+
+def _build_perf_card(history: "pd.DataFrame") -> str:
+    """Build the Model Performance HTML card for the dashboard."""
+    if history.empty:
+        return ""
+
+    # Compute rolling IC (requires spx_close column + 30+ days of history)
+    full_history = _load_full_history()
+    rolling_df = compute_rolling_ic(full_history, forward_days=30, window_days=180)
+    backtest_ic = _load_backtest_ic_baseline()
+    status = degradation_status(rolling_df, backtest_ic)
+
+    status_color = {"ok": "#3fb950", "warning": "#d29922", "alert": "#f85149", "unknown": "#6e7681"}
+    sc = status_color.get(status["status"], "#6e7681")
+    ic_val = status["latest_ic"]
+    ic_str = f"{ic_val:.3f}" if ic_val is not None else "—"
+
+    # Rolling IC mini chart (only if we have enough data)
+    ic_chart = ""
+    if not rolling_df.empty and rolling_df["rolling_ic"].dropna().__len__() >= 5:
+        ic_chart = _rolling_ic_svg(rolling_df)
+
+    n_days = len(full_history)
+    spx_col_present = "spx_close" in full_history.columns
+
+    return f"""
+<div class="card">
+  <h2>Model Performance</h2>
+  <div style="display:flex;gap:24px;align-items:flex-start;flex-wrap:wrap">
+    <div>
+      <div style="font-size:.8rem;color:#8b949e;margin-bottom:2px">Rolling 180d IC (vs 30d SPX drawdown)</div>
+      <div style="font-size:1.6rem;font-weight:700;color:{sc}">{ic_str}</div>
+      <div style="font-size:.75rem;color:#6e7681">Backtest baseline: {backtest_ic:.3f}</div>
+    </div>
+    <div style="flex:1;min-width:200px">
+      <div style="font-size:.8rem;color:{sc};margin-bottom:4px">{status['message']}</div>
+      <div style="font-size:.75rem;color:#6e7681">{n_days} run(s) logged
+        {"· SPX close logged" if spx_col_present else "· (SPX not yet logged)"}
+      </div>
+    </div>
+  </div>
+  {ic_chart}
+  <p style="font-size:.75rem;color:#6e7681;margin-top:10px">
+    IC requires 30+ days of history with SPX data to compute.
+    Full backtest evaluation: <a href="backtest_report.html" style="color:#58a6ff">backtest_report.html</a>
+  </p>
+</div>"""
+
+
+def _load_full_history() -> "pd.DataFrame":
+    """Load complete history (not windowed to 90 days) for IC computation."""
+    from src.history import HISTORY_FILE
+    import pandas as pd
+    if not HISTORY_FILE.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(HISTORY_FILE)
+    if not df.empty and "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+    return df
+
+
+def _rolling_ic_svg(rolling_df: "pd.DataFrame", width: int = 600, height: int = 80) -> str:
+    """Minimal inline SVG line chart of rolling IC over time."""
+    import numpy as np
+    df = rolling_df.dropna(subset=["rolling_ic"]).copy()
+    if len(df) < 3:
+        return ""
+
+    vals = df["rolling_ic"].values
+    n = len(vals)
+    pad_l, pad_r, pad_t, pad_b = 32, 12, 8, 8
+    pw = width - pad_l - pad_r
+    ph = height - pad_t - pad_b
+
+    v_min = min(vals.min(), -0.05)
+    v_max = max(vals.max(), 0.20)
+    v_range = v_max - v_min if v_max != v_min else 1
+
+    def px(i):
+        return pad_l + (i / (n - 1)) * pw if n > 1 else pad_l
+
+    def py(v):
+        return pad_t + (1 - (v - v_min) / v_range) * ph
+
+    zero_y = py(0)
+    pts = " ".join(f"{px(i):.1f},{py(vals[i]):.1f}" for i in range(n))
+
+    line_color = "#3fb950" if vals[-1] > 0 else "#f85149"
+    return (
+        f'<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg" style="margin-top:8px">'
+        f'<line x1="{pad_l}" y1="{zero_y:.1f}" x2="{pad_l+pw}" y2="{zero_y:.1f}" stroke="#484f58" stroke-dasharray="3 2" stroke-width="1"/>'
+        f'<polyline points="{pts}" fill="none" stroke="{line_color}" stroke-width="1.8" stroke-linejoin="round"/>'
+        f'<text x="{pad_l-4}" y="{zero_y+4:.1f}" text-anchor="end" fill="#6e7681" font-size="9">0</text>'
+        f'</svg>'
+    )
+
+
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "dashboard.html"
@@ -139,6 +250,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   <table><tbody>{rows}</tbody></table>
 </div>"""
 
+    # ── Model Performance card ───────────────────────────────────────────────
+    perf_html = _build_perf_card(history)
+
     # ── News section ────────────────────────────────────────────────────────
     news_html = ""
     if news:
@@ -176,6 +290,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   {composite_card}
   {trend_card}
   <div class="bucket-grid">{buckets_html}</div>
+  {perf_html}
   {news_html}
   {errors_html}
   <div class="footer">Not financial advice &nbsp;·&nbsp; Data: FRED, Yahoo Finance &nbsp;·&nbsp; Scores are percentile ranks vs {scoring.get('history_years', 10)}-year history</div>

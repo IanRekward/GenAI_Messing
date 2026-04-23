@@ -10,7 +10,7 @@
 buckets:
   equity_volatility:
     label: Equity Volatility
-    weight: 0.18
+    weight: 0.15
     indicators:
       vix:
         label: VIX
@@ -25,7 +25,7 @@ buckets:
 
   credit_spreads:
     label: Credit Spreads
-    weight: 0.20
+    weight: 0.17
     indicators:
       hy_oas:
         label: HY Option-Adjusted Spread
@@ -40,7 +40,7 @@ buckets:
 
   rates_curve:
     label: "Rates & Yield Curve"
-    weight: 0.13
+    weight: 0.12
     indicators:
       yield_curve:
         label: "10Y–2Y Spread"
@@ -55,7 +55,7 @@ buckets:
 
   financial_conditions:
     label: Financial Conditions
-    weight: 0.14
+    weight: 0.13
     indicators:
       nfci:
         label: Chicago Fed NFCI
@@ -146,3 +146,28 @@ buckets:
         invert: false
         unit: "0–2"
         manual: true
+
+  global_spillover:
+    label: "Global Spillover & Cross-Border Risk"
+    weight: 0.08
+    indicators:
+      usd_index:
+        label: "Broad Dollar Index"
+        weight: 0.30
+        invert: false       # stronger dollar = more EM debt stress
+        unit: ""
+      euro_hy_oas:
+        label: "Euro HY OAS"
+        weight: 0.25
+        invert: false
+        unit: "%"
+      em_corp_oas:
+        label: "EM Corporate OAS"
+        weight: 0.25
+        invert: false
+        unit: "%"
+      eem_vol:
+        label: "EM Equity 1M Realized Vol"
+        weight: 0.20
+        invert: false
+        unit: "%"

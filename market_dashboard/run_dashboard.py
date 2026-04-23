@@ -25,7 +25,7 @@ from src.scoring import compute_composite, load_weights, load_thresholds
 from src.triggers import annotate_results
 from src.news import get_news_brief
 from src.dashboard import write_dashboard
-from src.fetch import load_manual_overrides
+from src.fetch import load_manual_overrides, fetch_yfinance_series
 from src.history import log_run, load_history
 from src.alerts import send_alerts
 
@@ -69,7 +69,12 @@ def main():
     # Log to history before alerts (so chart includes current run)
     if not args.quiet:
         print("\n[3/5] Logging to history...")
-    log_run(scoring)
+    try:
+        spx_series = fetch_yfinance_series("^GSPC", env)
+        spx_close = float(spx_series.iloc[-1])
+    except Exception:
+        spx_close = None
+    log_run(scoring, spx_close=spx_close)
     history = load_history(days=90)
 
     # News

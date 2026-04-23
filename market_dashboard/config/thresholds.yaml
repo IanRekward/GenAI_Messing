@@ -125,3 +125,28 @@ indicators:
     yellow: 1
     orange: 2
     red: 3
+
+  # --- Global Spillover & Cross-Border Risk ---
+  usd_index:                  # FRED DTWEXBGS; nominal broad dollar index; strong dollar = EM stress
+    direction: high
+    yellow: 115.0
+    orange: 122.0
+    red: 128.0
+
+  euro_hy_oas:                # ICE BofA Euro HY OAS, in %
+    direction: high
+    yellow: 4.5
+    orange: 6.0
+    red: 8.5
+
+  em_corp_oas:                # ICE BofA EM Corporate Plus OAS, in %
+    direction: high
+    yellow: 2.8
+    orange: 3.8
+    red: 5.5
+
+  eem_vol:                    # iShares EM ETF (EEM) 1-month realized vol, annualized %
+    direction: high
+    yellow: 18.0
+    orange: 26.0
+    red: 38.0

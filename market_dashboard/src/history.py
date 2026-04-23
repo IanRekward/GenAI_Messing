@@ -14,7 +14,7 @@ HISTORY_FILE = DATA_DIR / "history.csv"
 _BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
 
-def log_run(scoring: dict) -> None:
+def log_run(scoring: dict, spx_close: float | None = None) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     row: dict = {
         "timestamp": scoring["run_timestamp"],
@@ -26,6 +26,17 @@ def log_run(scoring: dict) -> None:
     }
     for bkey, bucket in scoring["buckets"].items():
         row[f"bucket_{bkey}"] = bucket["score"]
+
+    # Extended schema (BACKTEST_DESIGN.md §8a): log individual indicator raws
+    for bkey, bucket in scoring["buckets"].items():
+        for ikey, ind in bucket.get("indicators", {}).items():
+            raw = ind.get("raw")
+            if raw is not None:
+                row[f"raw_{bkey}__{ikey}"] = raw
+
+    # SPX close (passed separately since it isn't in the scoring dict by default)
+    if spx_close is not None:
+        row["spx_close"] = spx_close
 
     df_new = pd.DataFrame([row])
     if HISTORY_FILE.exists():
@@ -44,6 +55,91 @@ def load_history(days: int = 90) -> pd.DataFrame:
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     cutoff = datetime.now() - timedelta(days=days)
     return df[df["timestamp"] >= cutoff].sort_values("timestamp").reset_index(drop=True)
+
+
+def compute_rolling_ic(history: pd.DataFrame, forward_days: int = 30,
+                       window_days: int = 180) -> pd.DataFrame:
+    """
+    Compute rolling Spearman IC of the composite score vs realized forward SPX drawdown.
+    Requires 'composite' and 'spx_close' columns and at least forward_days + window_days of data.
+
+    Returns a DataFrame with columns: timestamp, rolling_ic, n_obs.
+    """
+    from scipy import stats as _stats
+    if "spx_close" not in history.columns or len(history) < 10:
+        return pd.DataFrame(columns=["timestamp", "rolling_ic", "n_obs"])
+
+    df = history[["timestamp", "composite", "spx_close"]].dropna().copy()
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+
+    # Compute realized forward max-drawdown for each row
+    fwd_dd = []
+    for i, row in df.iterrows():
+        end_ts = row["timestamp"] + timedelta(days=forward_days)
+        future = df.loc[df["timestamp"].between(row["timestamp"], end_ts), "spx_close"]
+        if len(future) < 2:
+            fwd_dd.append(float("nan"))
+        else:
+            peak, trough = future.iloc[0], future.min()
+            fwd_dd.append((peak - trough) / peak if peak > 0 else float("nan"))
+
+    df["fwd_drawdown"] = fwd_dd
+    df = df.dropna(subset=["fwd_drawdown"])
+
+    if len(df) < 10:
+        return pd.DataFrame(columns=["timestamp", "rolling_ic", "n_obs"])
+
+    # Rolling IC over a trailing window
+    rows = []
+    for i in range(len(df)):
+        t = df["timestamp"].iloc[i]
+        start = t - timedelta(days=window_days)
+        w = df[df["timestamp"].between(start, t)]
+        if len(w) < 10:
+            rows.append({"timestamp": t, "rolling_ic": float("nan"), "n_obs": len(w)})
+            continue
+        r, _ = _stats.spearmanr(w["composite"].values, w["fwd_drawdown"].values)
+        rows.append({"timestamp": t, "rolling_ic": float(r), "n_obs": len(w)})
+
+    return pd.DataFrame(rows)
+
+
+def degradation_status(rolling_ic_df: pd.DataFrame, backtest_ic: float = 0.15) -> dict:
+    """
+    Apply Q3 two-tier degradation thresholds (BACKTEST_DESIGN.md §11 Q3).
+
+    Returns dict with keys: status ('ok'/'warning'/'alert'), latest_ic, message.
+    """
+    if rolling_ic_df.empty or rolling_ic_df["rolling_ic"].dropna().empty:
+        return {"status": "unknown", "latest_ic": None,
+                "message": "Insufficient history for IC computation (need 30+ days with SPX data)."}
+
+    latest = rolling_ic_df["rolling_ic"].dropna().iloc[-1]
+    drop_pct = (backtest_ic - latest) / backtest_ic if backtest_ic > 0 else 0
+
+    # Warning: IC dropped >40% from baseline OR fell below 0.15
+    if latest < 0.15 or drop_pct > 0.40:
+        # Alert: IC dropped >60% from baseline AND stayed below 0.05 for 60+ days
+        recent_60d = rolling_ic_df.dropna(subset=["rolling_ic"]).tail(60)
+        if drop_pct > 0.60 and (recent_60d["rolling_ic"] < 0.05).all():
+            return {
+                "status": "alert",
+                "latest_ic": round(float(latest), 3),
+                "message": f"ALERT: IC {latest:.3f} has been below 0.05 for 60+ days (baseline: {backtest_ic:.3f}). "
+                           "Model may have structurally degraded."
+            }
+        return {
+            "status": "warning",
+            "latest_ic": round(float(latest), 3),
+            "message": f"Warning: Rolling IC {latest:.3f} dropped {drop_pct*100:.0f}% from backtest baseline ({backtest_ic:.3f})."
+        }
+
+    return {
+        "status": "ok",
+        "latest_ic": round(float(latest), 3),
+        "message": f"Model performance nominal. Rolling IC: {latest:.3f} (baseline: {backtest_ic:.3f})."
+    }
 
 
 def build_trend_svg(history: pd.DataFrame) -> str:

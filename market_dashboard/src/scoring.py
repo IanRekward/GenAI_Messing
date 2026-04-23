@@ -100,6 +100,23 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
         s = fetch.fetch_fred_series("UNRATE", env, years)
         return float(s.iloc[-1]), s
 
+    if key == "usd_index":
+        s = fetch.fetch_fred_series("DTWEXBGS", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "euro_hy_oas":
+        s = fetch.fetch_fred_series("BAMLHE00EHYIOAS", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "em_corp_oas":
+        s = fetch.fetch_fred_series("BAMLEMCBPIOAS", env, years)
+        return float(s.iloc[-1]), s
+
+    if key == "eem_vol":
+        s = fetch.fetch_yfinance_series("EEM", env, years)
+        vol_s = ind.realized_vol_series(s)
+        return float(vol_s.iloc[-1]), vol_s
+
     raise ValueError(f"Unknown indicator key: {key}")
 
 
