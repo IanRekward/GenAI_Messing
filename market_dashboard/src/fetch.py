@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import requests
+import yaml
 import yfinance as yf
 
 DATA_DIR = Path("data")
@@ -103,6 +104,40 @@ def fetch_fred_series(series_id: str, env: dict, years: int = 10) -> pd.Series:
     series = pd.Series(values, index=pd.to_datetime(dates))
     _write_cache(cpath, series)
     return series
+
+
+def load_cadence_config(path: str = "config/series_cadence.yaml") -> dict:
+    """Load per-indicator staleness thresholds. Returns empty dict if file missing."""
+    p = Path(path)
+    if not p.exists():
+        return {}
+    with open(p) as f:
+        return yaml.safe_load(f) or {}
+
+
+def check_series_staleness(key: str, series: pd.Series | None, cadence_cfg: dict) -> str | None:
+    """
+    Returns a warning string if the series' last observation is older than the
+    configured max gap for its cadence, else None. Skips keys not in the config.
+    """
+    if series is None or series.empty:
+        return None
+    indicator_cadences = cadence_cfg.get("indicators", {})
+    cadence = indicator_cadences.get(key)
+    if cadence is None:
+        return None
+    max_gap = cadence_cfg.get("thresholds", {}).get(cadence)
+    if max_gap is None:
+        return None
+    last_date = pd.to_datetime(series.index[-1]).normalize()
+    today = pd.Timestamp.today().normalize()
+    gap_days = (today - last_date).days
+    if gap_days > max_gap:
+        return (
+            f"STALE: {key} — last observation {gap_days}d ago "
+            f"(expected ≤{max_gap}d for {cadence} series)"
+        )
+    return None
 
 
 def fetch_yfinance_series(ticker: str, env: dict, years: int = 10) -> pd.Series:

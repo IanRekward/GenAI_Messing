@@ -129,11 +129,28 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         if cur_band != prev_band:
             prev["rapid_rise_alerts"] = []
 
+    # 5. Data staleness — first occurrence only per indicator
+    stale_now = set(scoring.get("stale_indicators", []))
+    stale_prev = set(prev.get("stale_indicators", []))
+    new_stale = stale_now - stale_prev
+    if new_stale:
+        labels = []
+        for bk, bkt in scoring["buckets"].items():
+            for ik in bkt["indicators"]:
+                if ik in new_stale:
+                    labels.append(_indicator_label(scoring, f"{bk}.{ik}"))
+        messages.append(
+            f"STALE DATA ({len(new_stale)}): {', '.join(labels[:5])}"
+            f"{' +more' if len(labels) > 5 else ''} — "
+            f"last observation gap exceeds expected cadence. Check FRED/Yahoo."
+        )
+
     new_state = {
         "composite_band": cur_band,
         "red_indicators": cur_reds,
         "orange_indicators": cur_oranges,
         "rapid_rise_alerts": prev.get("rapid_rise_alerts", []),
+        "stale_indicators": list(stale_now),
     }
 
     if not messages:

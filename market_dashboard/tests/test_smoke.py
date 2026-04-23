@@ -12,8 +12,9 @@ def _mock_fetch(key, cfg, env, manual):
     """Return neutral (50th percentile) values for every indicator."""
     if cfg.get("manual"):
         return float(manual.get(key, 0)), None
-    # 100-element series, current = median → 50th percentile
-    s = pd.Series(range(1, 101), dtype=float)
+    # 100-element daily series ending today → staleness check passes
+    idx = pd.date_range(end=pd.Timestamp.today().normalize(), periods=100, freq="D")
+    s = pd.Series(range(1, 101), index=idx, dtype=float)
     return 50.0, s
 
 

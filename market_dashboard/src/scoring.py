@@ -135,8 +135,10 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     Fetch all data, score every indicator, aggregate into buckets and composite.
     Returns the full scoring dict (bands are placeholder 'green' until triggers.py runs).
     """
+    cadence_cfg = fetch.load_cadence_config()
     bucket_results: dict = {}
     errors: list[str] = []
+    stale_indicators: list[str] = []
 
     for bkey, bcfg in weights["buckets"].items():
         bucket_weight = float(bcfg["weight"])
@@ -150,6 +152,11 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
 
             try:
                 raw, series = _fetch_indicator(ikey, icfg, env, manual)
+
+                staleness_warning = fetch.check_series_staleness(ikey, series, cadence_cfg)
+                if staleness_warning:
+                    errors.append(staleness_warning)
+                    stale_indicators.append(ikey)
 
                 if series is not None and len(series) >= 10:
                     pct = ind.compute_percentile(series)
@@ -215,4 +222,5 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         "run_timestamp": datetime.now().isoformat(),
         "buckets": bucket_results,
         "errors": errors,
+        "stale_indicators": stale_indicators,
     }

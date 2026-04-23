@@ -1,0 +1,28 @@
+# Maximum calendar days since last observation before a staleness warning fires.
+# Manual indicators (aaii_bull_bear, iran_trigger, repo_stress) are excluded — no series.
+
+thresholds:
+  daily: 3       # FRED/yfinance daily series: tolerate 3-day weekend/holiday gaps
+  weekly: 10     # FRED weekly (NFCI, STLFSI, jobless claims): published with ~1wk lag
+  monthly: 40    # FRED monthly (CPI, UNRATE): ~30-day publication lag
+
+indicators:
+  vix: daily
+  sp500_1m_vol: daily
+  hy_oas: daily
+  ig_oas: daily
+  yield_curve: daily
+  ten_year: daily
+  nfci: weekly
+  stlfsi: weekly
+  breakeven_5y: daily
+  cpi_yoy: monthly
+  sofr_spread: daily
+  wti_crude: daily
+  oil_vol: daily
+  jobless_claims: weekly
+  unemployment: monthly
+  usd_index: daily
+  euro_hy_oas: daily
+  em_corp_oas: daily
+  eem_vol: daily
