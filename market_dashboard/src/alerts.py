@@ -79,13 +79,20 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     prev = _load_state()
     messages: list[str] = []
 
-    # 1. Composite band escalation
+    # 1a. Composite band escalation
     cur_band = scoring["composite_band"]
     prev_band = prev.get("composite_band", "green")
     if _BAND_ORDER.get(cur_band, 0) > _BAND_ORDER.get(prev_band, 0):
         messages.append(
             f"COMPOSITE ESCALATED: {prev_band.upper()} → {cur_band.upper()}\n"
             f"Score: {scoring['composite']:.1f}/100"
+        )
+
+    # 1b. Composite band de-escalation
+    if _BAND_ORDER.get(cur_band, 0) < _BAND_ORDER.get(prev_band, 0):
+        messages.append(
+            f"COMPOSITE IMPROVED: {prev_band.upper()} → {cur_band.upper()}\n"
+            f"Score: {scoring['composite']:.1f}/100 — stress is easing."
         )
 
     # 2. New red indicators
@@ -161,6 +168,11 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
             f"last observation gap exceeds expected cadence. Check FRED/Yahoo."
         )
 
+    # Accumulate weekly alert count
+    weekly_alert_count = prev.get("weekly_alert_count", 0)
+    if messages:
+        weekly_alert_count += 1
+
     new_state = {
         "composite_band": cur_band,
         "red_indicators": cur_reds,
@@ -168,6 +180,8 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         "rapid_rise_alerts": prev.get("rapid_rise_alerts", []),
         "stale_indicators": list(stale_now),
         "corr_regime_streak": prev.get("corr_regime_streak", 0),
+        "weekly_alert_count": weekly_alert_count,
+        "weekly_digest_date": prev.get("weekly_digest_date", ""),
     }
 
     if not messages:
@@ -189,6 +203,79 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         sent = 1
 
     _save_state(new_state)
+    return sent
+
+
+def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" = None) -> bool:
+    """Send a Monday morning digest summarizing the prior week. Returns True if sent."""
+    import pandas as pd
+    today = date.today()
+    if today.weekday() != 0:  # 0 = Monday
+        return False
+
+    state = _load_state()
+    this_monday = today.isoformat()
+    if state.get("weekly_digest_date") == this_monday:
+        return False  # already sent today
+
+    weekly_alerts = state.get("weekly_alert_count", 0)
+
+    # 7-day composite range from history
+    range_str = "—"
+    velocity_str = ""
+    movers_str = ""
+    if history is not None and not history.empty:
+        from src.history import compute_composite_momentum
+        h = history.copy()
+        h["timestamp"] = pd.to_datetime(h["timestamp"])
+        cutoff = pd.Timestamp.today() - pd.Timedelta(days=7)
+        week = h[h["timestamp"] >= cutoff]
+        if not week.empty:
+            lo, hi = week["composite"].min(), week["composite"].max()
+            range_str = f"{lo:.0f}–{hi:.0f}"
+
+        # Momentum velocity
+        mom = compute_composite_momentum(history)
+        v7 = mom.get("velocity_7d")
+        if v7 is not None:
+            sign = "+" if v7 > 0 else ""
+            velocity_str = f"\nVelocity 7d: {sign}{v7:.1f} pts ({mom['regime'].replace('_', ' ')})"
+
+        # Biggest bucket movers over 7 days
+        bucket_cols = [c for c in h.columns if c.startswith("bucket_")]
+        if bucket_cols and len(h) >= 2:
+            today_row = h.sort_values("timestamp").iloc[-1]
+            past = h[h["timestamp"] <= pd.Timestamp.today() - pd.Timedelta(days=7)]
+            if not past.empty:
+                past_row = past.sort_values("timestamp").iloc[-1]
+                moves = {
+                    col.replace("bucket_", ""): float(today_row[col]) - float(past_row[col])
+                    for col in bucket_cols
+                    if col in today_row and col in past_row
+                }
+                top = sorted(moves.items(), key=lambda x: abs(x[1]), reverse=True)[:3]
+                if top:
+                    parts = [f"{k} {'+' if v > 0 else ''}{v:.1f}" for k, v in top if abs(v) >= 0.5]
+                    if parts:
+                        movers_str = f"\nBiggest movers: {', '.join(parts)}"
+
+    composite = scoring["composite"]
+    band = scoring["composite_band"]
+    title = f"Weekly Digest: {band.upper()} ({composite:.0f}/100)"
+    body = (
+        f"7-day composite range: {range_str}"
+        f"{velocity_str}"
+        f"{movers_str}"
+        f"\nAlerts this week: {weekly_alerts}"
+        f"\nhttps://ianrekward.github.io/GenAI_Messing/"
+    )
+
+    sent = _send_pushover(title, body, env)
+
+    # Reset weekly counter and mark digest sent
+    state["weekly_digest_date"] = this_monday
+    state["weekly_alert_count"] = 0
+    _save_state(state)
     return sent
 
 

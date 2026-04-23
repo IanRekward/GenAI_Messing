@@ -32,7 +32,7 @@ from src.news import get_news_brief
 from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
 from src.history import log_run, load_history
-from src.alerts import send_alerts, send_heartbeat
+from src.alerts import send_alerts, send_heartbeat, send_weekly_digest
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -137,6 +137,10 @@ def main():
 
     # Write dashboard
     output_path = write_dashboard(scoring, news, history)
+
+    # Weekly digest (sends automatically on Mondays)
+    if not args.no_alerts:
+        send_weekly_digest(scoring, env, history)
 
     # Heartbeat confirmation for first 31 days
     if args.heartbeat:
