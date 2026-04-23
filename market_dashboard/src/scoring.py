@@ -9,6 +9,7 @@ import pandas as pd
 import yaml
 
 from src import fetch, indicators as ind
+from src.fetch import StaleCacheFallback
 
 
 def load_weights(path: str) -> dict:
@@ -150,41 +151,13 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             iweight = float(icfg["weight"])
             invert = bool(icfg.get("invert", False))
 
+            stale_cache_msg: str | None = None
             try:
                 raw, series = _fetch_indicator(ikey, icfg, env, manual)
-
-                staleness_warning = fetch.check_series_staleness(ikey, series, cadence_cfg)
-                if staleness_warning:
-                    errors.append(staleness_warning)
-                    stale_indicators.append(ikey)
-
-                if series is not None and len(series) >= 10:
-                    pct = ind.compute_percentile(series)
-                    zscore = ind.compute_zscore(series)
-                else:
-                    pct = 50.0
-                    zscore = 0.0
-
-                score = ind.percentile_to_score(pct, invert)
-                series_data = None
-                if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
-                    series_data = {
-                        "dates": [d.strftime("%Y-%m-%d") for d in series.index],
-                        "values": [float(v) for v in series.values],
-                    }
-                ind_results[ikey] = {
-                    "label": icfg["label"],
-                    "raw": round(raw, 4) if raw == raw else None,  # nan check
-                    "zscore": round(zscore, 2),
-                    "percentile": round(pct, 1),
-                    "score": score,
-                    "band": "green",
-                    "unit": icfg.get("unit", ""),
-                    "manual": bool(icfg.get("manual", False)),
-                    "invert": invert,
-                    "_series": series_data,
-                }
-
+            except StaleCacheFallback as stale:
+                raw, series = float(stale.series.iloc[-1]), stale.series
+                stale_cache_msg = f"STALE CACHE: {ikey} — {stale}"
+                errors.append(stale_cache_msg)
             except Exception as exc:
                 errors.append(f"{ikey}: {exc}")
                 score = 50.0
@@ -200,6 +173,43 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     "invert": invert,
                     "error": str(exc),
                 }
+                weighted_sum += score * iweight
+                weight_used += iweight
+                continue
+
+            # Success path (live or stale-cache fallback)
+            if not stale_cache_msg:
+                staleness_warning = fetch.check_series_staleness(ikey, series, cadence_cfg)
+                if staleness_warning:
+                    errors.append(staleness_warning)
+                    stale_indicators.append(ikey)
+
+            if series is not None and len(series) >= 10:
+                pct = ind.compute_percentile(series)
+                zscore = ind.compute_zscore(series)
+            else:
+                pct = 50.0
+                zscore = 0.0
+
+            score = ind.percentile_to_score(pct, invert)
+            series_data = None
+            if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
+                series_data = {
+                    "dates": [d.strftime("%Y-%m-%d") for d in series.index],
+                    "values": [float(v) for v in series.values],
+                }
+            ind_results[ikey] = {
+                "label": icfg["label"],
+                "raw": round(raw, 4) if raw == raw else None,  # nan check
+                "zscore": round(zscore, 2),
+                "percentile": round(pct, 1),
+                "score": score,
+                "band": "green",
+                "unit": icfg.get("unit", ""),
+                "manual": bool(icfg.get("manual", False)),
+                "invert": invert,
+                "_series": series_data,
+            }
 
             weighted_sum += score * iweight
             weight_used += iweight

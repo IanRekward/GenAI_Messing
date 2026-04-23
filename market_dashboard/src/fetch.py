@@ -20,6 +20,33 @@ MANUAL_FILE = DATA_DIR / "manual_overrides.json"
 
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
+_RETRY_DELAYS = [1, 4, 16]  # seconds between attempts 1→2, 2→3, 3→4
+
+
+class StaleCacheFallback(RuntimeError):
+    """Raised when live fetch failed on all retries but stale cache is available."""
+
+    def __init__(self, series: "pd.Series", source_id: str, original_error: str):
+        self.series = series
+        super().__init__(
+            f"live fetch failed ({original_error}); using stale cache for {source_id}"
+        )
+
+
+def _retry_get(url: str, params: dict, timeout: int) -> "requests.Response":
+    """GET with exponential backoff: up to 4 attempts (1s / 4s / 16s delays)."""
+    last_exc: Exception | None = None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            resp = requests.get(url, params=params, timeout=timeout)
+            resp.raise_for_status()
+            return resp
+        except Exception as e:
+            last_exc = e
+            if attempt < len(_RETRY_DELAYS):
+                time.sleep(_RETRY_DELAYS[attempt])
+    raise last_exc  # type: ignore[misc]
+
 MANUAL_DEFAULTS: dict = {
     "repo_stress": 0,       # 0=calm 1=elevated 2=crisis 3=extreme
     "aaii_bull_bear": 10.0, # % bulls minus % bears; update weekly from aaii.com
@@ -88,8 +115,12 @@ def fetch_fred_series(series_id: str, env: dict, years: int = 10) -> pd.Series:
         "sort_order": "asc",
         "limit": 10000,
     }
-    resp = requests.get(FRED_BASE, params=params, timeout=20)
-    resp.raise_for_status()
+    try:
+        resp = _retry_get(FRED_BASE, params, timeout=20)
+    except Exception as exc:
+        if cpath.exists():
+            raise StaleCacheFallback(_read_cache(cpath), series_id, str(exc))
+        raise
 
     obs = resp.json().get("observations", [])
     dates, values = [], []
@@ -149,11 +180,27 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10) -> pd.Series:
         return _read_cache(cpath)
 
     start = (datetime.today() - timedelta(days=years * 365 + 60)).strftime("%Y-%m-%d")
-    df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
-    if df.empty:
-        raise RuntimeError(f"Yahoo Finance returned no data for {ticker}")
+    last_exc: Exception | None = None
+    raw_df = None
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            raw_df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+            if not raw_df.empty:
+                break
+            raise RuntimeError(f"Yahoo Finance returned empty data for {ticker}")
+        except Exception as exc:
+            last_exc = exc
+            raw_df = None
+            if attempt < len(_RETRY_DELAYS):
+                time.sleep(_RETRY_DELAYS[attempt])
 
-    series = df["Close"].squeeze().dropna()
+    if raw_df is None or raw_df.empty:
+        exc_msg = str(last_exc) if last_exc else f"no data for {ticker}"
+        if cpath.exists():
+            raise StaleCacheFallback(_read_cache(cpath), ticker, exc_msg)
+        raise last_exc or RuntimeError(f"Yahoo Finance returned no data for {ticker}")
+
+    series = raw_df["Close"].squeeze().dropna()
     series.index = pd.to_datetime(series.index)
     _write_cache(cpath, series)
     return series
