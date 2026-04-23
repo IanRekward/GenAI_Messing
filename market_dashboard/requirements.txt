@@ -6,3 +6,5 @@ python-dotenv>=1.0.0
 yfinance>=0.2.40
 feedparser>=6.0.10
 anthropic>=0.40.0
+pytest>=8.0.0
+pytest-mock>=3.12.0
