@@ -231,6 +231,30 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     mom_tip = tooltips.get("momentum", {}).get("tip", "")
     composite_score_html = _tip(f"{composite:.0f}", composite_tip)
     band_label_html = _tip(band, band_tip)
+    # ── Regime-aware (short-window) composite (todo 43) ─────────────────────
+    composite_short = scoring.get("composite_short")
+    composite_short_band = scoring.get("composite_short_band", "green")
+    short_years = scoring.get("history_years_short", 3)
+    regime_html = ""
+    if composite_short is not None:
+        sc_color = _color(composite_short_band)
+        delta = composite_short - composite
+        delta_str = (f"<span style='color:#ff6b6b'>▲+{delta:.1f}</span>" if delta > 3
+                     else f"<span style='color:#4dbb6a'>▼{delta:.1f}</span>" if delta < -3
+                     else "")
+        regime_tip = tooltips.get("regime_window", {}).get("tip", "")
+        inner = f"{composite_short:.0f}"
+        if regime_tip:
+            inner = _tip(inner, regime_tip)
+        regime_html = (
+            f'<div class="score-sub" style="margin-top:3px">'
+            f'<span style="color:#6e7681">{short_years}yr window: </span>'
+            f'<span style="color:{sc_color};font-weight:600">{inner}</span>'
+            f'<span style="color:#6e7681"> {composite_short_band}</span>'
+            f' {delta_str}'
+            f"</div>"
+        )
+
     composite_card = f"""
 <div class="composite" style="background:{band_bg};border-left:6px solid {band_color}">
   <div>
@@ -241,6 +265,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     <div class="score-band" style="color:{band_color}">{band_label_html}</div>
     {mom_html}
     {shock_html}
+    {regime_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
       <span class="tc"><b style="color:#ff8800">{scoring['orange_count']}</b> orange</span>

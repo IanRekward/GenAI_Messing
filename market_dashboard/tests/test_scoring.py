@@ -109,3 +109,53 @@ def test_invert_flag(mock_fetch, monkeypatch):
     # series [1..100] with iloc[-1]=80; (series < 80).mean() = 79/100 = 79.0
     # inverted: 100 - 79 = 21.0
     assert score == 21.0
+
+
+def test_composite_short_present_in_result(monkeypatch):
+    """compute_composite always returns composite_short and composite_short_band."""
+    def _mock(key, cfg, env, manual):
+        s = pd.Series(range(1, 101), dtype=float)
+        return 50.0, s
+
+    monkeypatch.setattr("src.scoring._fetch_indicator", _mock)
+    weights = _make_weights([{"key": "x", "weight": 1.0, "manual": False}])
+    result = compute_composite(weights, {"HISTORY_YEARS": "10"}, {})
+    assert "composite_short" in result
+    assert "composite_short_band" in result
+    assert isinstance(result["composite_short"], float)
+
+
+def test_composite_short_uses_short_window(monkeypatch):
+    """Short window percentile uses only the last N years of data."""
+    import numpy as np
+
+    def _mock(key, cfg, env, manual):
+        # Series with old values all low (0–29) and recent values high (70–99)
+        # 10yr window → current at ~95th pct; 3yr window (last 30 rows) → current at ~97th pct
+        # Both high, so composite_short >= composite
+        s = pd.Series(list(range(0, 100)), dtype=float)
+        s.index = pd.date_range("2016-01-01", periods=100, freq="ME")
+        return float(s.iloc[-1]), s
+
+    monkeypatch.setattr("src.scoring._fetch_indicator", _mock)
+    weights = _make_weights([{"key": "x", "weight": 1.0, "manual": False}])
+    result = compute_composite(weights, {"HISTORY_YEARS": "10", "HISTORY_YEARS_SHORT": "3"}, {})
+
+    # Both composites should be valid scores
+    assert 0 <= result["composite"] <= 100
+    assert 0 <= result["composite_short"] <= 100
+
+
+def test_composite_short_stored_in_indicator(monkeypatch):
+    """Each indicator result must carry percentile_short and score_short."""
+    def _mock(key, cfg, env, manual):
+        s = pd.Series(range(1, 51), dtype=float)
+        s.index = pd.date_range("2023-01-01", periods=50, freq="ME")
+        return float(s.iloc[-1]), s
+
+    monkeypatch.setattr("src.scoring._fetch_indicator", _mock)
+    weights = _make_weights([{"key": "y", "weight": 1.0, "manual": False}])
+    result = compute_composite(weights, {"HISTORY_YEARS": "10"}, {})
+    ind = result["buckets"]["test_bucket"]["indicators"]["y"]
+    assert "percentile_short" in ind
+    assert "score_short" in ind

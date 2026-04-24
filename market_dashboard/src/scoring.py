@@ -214,10 +214,14 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     errors: list[str] = []
     stale_indicators: list[str] = []
 
+    short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
+    short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
+
     for bkey, bcfg in weights["buckets"].items():
         bucket_weight = float(bcfg["weight"])
         ind_results: dict = {}
         weighted_sum = 0.0
+        weighted_sum_short = 0.0
         weight_used = 0.0
 
         for ikey, icfg in bcfg["indicators"].items():
@@ -239,7 +243,9 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     "raw": None,
                     "zscore": None,
                     "percentile": None,
+                    "percentile_short": None,
                     "score": score,
+                    "score_short": score,
                     "band": "green",
                     "unit": icfg.get("unit", ""),
                     "manual": bool(icfg.get("manual", False)),
@@ -247,6 +253,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     "error": str(exc),
                 }
                 weighted_sum += score * iweight
+                weighted_sum_short += score * iweight
                 weight_used += iweight
                 continue
 
@@ -264,7 +271,16 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                 pct = 50.0
                 zscore = 0.0
 
+            # Short-window (regime-aware) percentile
+            pct_short = pct  # fall back to 10yr if insufficient short-window data
+            if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
+                s_short = series.loc[series.index >= short_cutoff]
+                if len(s_short) >= 10:
+                    pct_short = ind.compute_percentile(s_short)
+
             score = ind.percentile_to_score(pct, invert)
+            score_short = ind.percentile_to_score(pct_short, invert)
+
             series_data = None
             if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
                 series_data = {
@@ -276,7 +292,9 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                 "raw": round(raw, 4) if raw == raw else None,  # nan check
                 "zscore": round(zscore, 2),
                 "percentile": round(pct, 1),
+                "percentile_short": round(pct_short, 1),
                 "score": score,
+                "score_short": score_short,
                 "band": "green",
                 "unit": icfg.get("unit", ""),
                 "manual": bool(icfg.get("manual", False)),
@@ -285,13 +303,16 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             }
 
             weighted_sum += score * iweight
+            weighted_sum_short += score_short * iweight
             weight_used += iweight
 
         bucket_score = weighted_sum / weight_used if weight_used > 0 else 50.0
+        bucket_score_short = weighted_sum_short / weight_used if weight_used > 0 else 50.0
         bucket_results[bkey] = {
             "label": bcfg["label"],
             "weight": bucket_weight,
             "score": round(bucket_score, 1),
+            "score_short": round(bucket_score_short, 1),
             "band": "green",
             "indicators": ind_results,
         }
@@ -302,10 +323,18 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         if total_weight > 0
         else 50.0
     )
+    composite_short = (
+        sum(b["score_short"] * b["weight"] for b in bucket_results.values()) / total_weight
+        if total_weight > 0
+        else 50.0
+    )
 
     return {
         "composite": round(composite, 1),
         "composite_band": _band_from_score(composite),
+        "composite_short": round(composite_short, 1),
+        "composite_short_band": _band_from_score(composite_short),
+        "history_years_short": short_years,
         "red_count": 0,
         "orange_count": 0,
         "yellow_count": 0,
