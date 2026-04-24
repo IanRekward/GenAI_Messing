@@ -32,6 +32,7 @@ each.
 - [ ] Brief 12 — Provenance stamp on each run
 - [ ] Brief 13 — History pruning/archival
 - [ ] **Paywalled news sources** — add WSJ, FT, Bloomberg headline feeds; investigate bypass options (RSS where available, archive links, scrapers with ToS review). Goal: richer news context on triggered indicators without manual effort. *(complexity: medium, legal/ToS review required first)*
+- [ ] **Backtest history visualization** — plan and build a view that replays the composite stress score through history alongside what the market actually did (e.g. SPX drawdown, forward returns). Should answer: did high stress scores precede market stress? What were the false positives? Leverage existing src/backtest.py + src/evaluation.py + src/backtest_report.py. Needs design pass before implementation — decide on time range, chart format, key metrics to surface (hit rate, lead time, false positive rate), and whether this lives on the main dashboard or a separate page. *(complexity: medium-large, design-first)*
 - [ ] **Brief 14** — Dashboard tooltips: plain-English explanations of every indicator, bucket, band, and composite score *(last on list)*
 
 ## Sonnet onboarding instructions
