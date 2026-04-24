@@ -52,6 +52,7 @@ td:nth-child(3){text-align:right;width:34%}
 .err summary{cursor:pointer;font-weight:600}
 .footer{margin-top:28px;font-size:.75rem;color:#484f58;text-align:center}
 .manual-tag{font-size:.72rem;color:#6e7681;font-style:italic;margin-left:4px}
+.no-mb{margin-bottom:0!important}
 .detail-section{margin-bottom:14px}
 .detail-section>details{background:#161b22;border-radius:8px;padding:12px 16px;margin-bottom:6px}
 .detail-section>details>summary{cursor:pointer;font-weight:600;font-size:.9rem;list-style:none;display:flex;justify-content:space-between;align-items:center}
@@ -183,7 +184,9 @@ def _build_review_card(band: str, shock_type: str) -> str:
 
     return (
         f'<div class="card" style="border-left:3px solid #30363d">'
-        f'<h2 style="margin-bottom:10px;font-size:.9rem;color:#6e7681">REVIEW PROMPTS</h2>'
+        f'<h2 style="margin-bottom:6px;font-size:.9rem;color:#6e7681">REVIEW PROMPTS</h2>'
+        f'<div style="font-size:.75rem;color:#6e7681;margin-bottom:8px">'
+        f'Questions to guide your response given current conditions</div>'
         f"{blocks}"
         f"</div>"
     )
@@ -222,6 +225,47 @@ def _load_thresholds() -> dict:
         return {}
 
 
+_CALENDAR_INDICATOR_MAP: list[tuple[str, str | None, str | None]] = [
+    ("CPI",            "cpi_yoy",                "Inflation"),
+    ("PPI",            None,                     None),
+    ("Jobless Claims", "jobless_claims",         "Economic Momentum"),
+    ("NFP",            "jobless_claims",         "Economic Momentum"),
+    ("Non-Farm",       "jobless_claims",         "Economic Momentum"),
+    ("GDP",            None,                     None),
+    ("PCE",            None,                     None),
+    ("Retail Sales",   None,                     None),
+    ("FOMC",           "ten_year",               "Rates"),
+    ("Auction",        "treasury_auction_stress","Rates"),
+    ("PMI",            None,                     None),
+    ("ISM",            None,                     None),
+]
+
+
+def _calendar_indicator_badge(label: str) -> str:
+    """Return an indicator badge or 'not in model' tag for a calendar event label."""
+    label_lower = label.lower()
+    for keyword, ind_key, bucket_label in _CALENDAR_INDICATOR_MAP:
+        if keyword.lower() in label_lower:
+            if ind_key:
+                return (
+                    f'<span style="font-size:.68rem;color:#4d9de0;'
+                    f'background:#0d2030;padding:1px 5px;border-radius:3px;'
+                    f'margin-left:6px;white-space:nowrap">'
+                    f'→ {ind_key} ({bucket_label})</span>'
+                )
+            else:
+                return (
+                    f'<span style="font-size:.68rem;color:#484f58;'
+                    f'background:#161b22;padding:1px 5px;border-radius:3px;'
+                    f'margin-left:6px">not in model</span>'
+                )
+    return (
+        f'<span style="font-size:.68rem;color:#484f58;'
+        f'background:#161b22;padding:1px 5px;border-radius:3px;'
+        f'margin-left:6px">not in model</span>'
+    )
+
+
 def _build_calendar_card(events: list) -> str:
     if not events:
         return ""
@@ -236,11 +280,13 @@ def _build_calendar_card(events: list) -> str:
             day_label = d
         dot_col = _TYPE_DOT.get(ev.get("type", "economic"), "#8b949e")
         dot = f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{dot_col};margin-right:6px;vertical-align:middle"></span>'
+        badge = _calendar_indicator_badge(ev["label"])
         rows += (
             f'<div style="display:flex;align-items:center;padding:3px 0;'
             f'border-bottom:1px solid #21262d;font-size:.83rem">'
             f'<span style="color:#6e7681;min-width:90px">{day_label}</span>'
-            f'<span>{dot}{ev["label"]}</span>'
+            f'<span style="display:flex;align-items:center;flex-wrap:wrap;gap:2px">'
+            f'{dot}{ev["label"]}{badge}</span>'
             f"</div>"
         )
     legend = (
@@ -482,16 +528,29 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     corr_label = corr_regime.replace("_", " ")
     corr_tip = tooltips.get("correlation", {}).get("tip", "")
     corr_display_html = _tip(corr_display, corr_tip) if corr_tip else corr_display
+    _CORR_CAPTION = {
+        "decorrelated": "Stress is isolated — buckets are moving independently. Risk is concentrated, not systemic.",
+        "normal": "Typical co-movement between buckets. No unusual synchronization detected.",
+        "crisis_synchronous": "Buckets moving together — a hallmark of systemic stress where diversification fails.",
+    }
+    corr_caption = _CORR_CAPTION.get(corr_regime, "")
+    corr_caption_html = (
+        f'<div style="font-size:.78rem;color:#8b949e;margin-top:8px;line-height:1.45">'
+        f'{corr_caption}</div>'
+    ) if corr_caption else ""
     correlation_card = f"""
-<div class="card" style="display:flex;align-items:center;gap:20px;padding:14px 18px">
-  <div>
-    <div style="font-size:1.6rem;font-weight:700;color:{corr_color}">{corr_display_html}</div>
-    <div style="font-size:.75rem;color:#6e7681">cross-bucket corr (30d)</div>
+<div class="card" style="padding:14px 18px">
+  <div style="display:flex;align-items:center;gap:20px">
+    <div>
+      <div style="font-size:1.6rem;font-weight:700;color:{corr_color}">{corr_display_html}</div>
+      <div style="font-size:.75rem;color:#6e7681">cross-bucket corr (30d)</div>
+    </div>
+    <div>
+      <div style="font-weight:600;color:{corr_color}">{corr_label.upper()}</div>
+      <div style="font-size:.75rem;color:#6e7681">&lt;0.30 decorrelated · 0.30–0.60 normal · ≥0.60 crisis</div>
+    </div>
   </div>
-  <div>
-    <div style="font-weight:600;color:{corr_color}">{corr_label.upper()}</div>
-    <div style="font-size:.75rem;color:#6e7681">&lt;0.30 decorrelated · 0.30–0.60 normal · ≥0.60 crisis</div>
-  </div>
+  {corr_caption_html}
 </div>"""
 
     # ── Trend chart ─────────────────────────────────────────────────────────
@@ -499,6 +558,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     trend_card = f"""
 <div class="card">
   <h2>90-Day Composite Trend</h2>
+  <div style="font-size:.75rem;color:#6e7681;margin-bottom:6px">Composite stress score (0–100) over the last 90 days &nbsp;·&nbsp; Green &lt;30 &nbsp;·&nbsp; Yellow 30–50 &nbsp;·&nbsp; Orange 50–70 &nbsp;·&nbsp; Red ≥70 &nbsp;·&nbsp; Today is on the right</div>
   {build_trend_svg(history, events)}
 </div>"""
 
@@ -646,6 +706,19 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     # ── Escalation scenarios / pre-mortem (TOP-3 item 3) ────────────────────
     escalation_card = _build_escalation_card(scoring)
 
+    # ── Side-by-side action row: REVIEW PROMPTS + ESCALATION SCENARIOS ───────
+    if review_card and escalation_card:
+        r_flush = review_card.replace('<div class="card"', '<div class="card no-mb"', 1)
+        e_flush = escalation_card.replace('<div class="card"', '<div class="card no-mb"', 1)
+        action_row = (
+            f'<div style="display:flex;gap:14px;margin-bottom:14px;align-items:flex-start">'
+            f'<div style="flex:1;min-width:0">{r_flush}</div>'
+            f'<div style="flex:1;min-width:0">{e_flush}</div>'
+            f'</div>'
+        )
+    else:
+        action_row = review_card + escalation_card
+
     # ── Errors ──────────────────────────────────────────────────────────────
     errors_html = ""
     if scoring.get("errors"):
@@ -684,10 +757,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     <span class="ts">Last refreshed: {ts}</span>
   </div>
   {staleness_banner}
-  {narrative_card}
   {composite_card}
-  {review_card}
-  {escalation_card}
+  {action_row}
+  {narrative_card}
   {analog_card}
   {correlation_card}
   {trend_card}
