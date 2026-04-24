@@ -34,41 +34,29 @@ Sonnet starts.
 
 ### Phase A — Verify & clean (30–60 min)
 
-- [ ] **Verification sweep** — run `python run_dashboard.py --no-alerts --quiet` end-to-end. Open the generated `dashboard.html`. Confirm the shipped feature list above actually renders / fires correctly (event overlay on trend chart, correlation card, staleness handling, weekly digest, audit log writes to `data/alert_log.jsonl`, provenance columns in `data/history.csv`). If any gap is real, open a dedicated TODO under Phase C.
-- [ ] **Delete `config/weights.yaml.bak`** — Brief 1 shipped and pre-commit hook prevents drift. Git is the backup. Per ROADMAP §pre-feature refactor item 3.
+- [x] **Verification sweep** — all shipped briefs confirmed rendering: event overlay, correlation card, staleness, audit log, provenance (weights_hash populated; code_sha empty as expected — primary dir has no git). Pruning archive absent but OK (25 rows, < 2yr). No gaps found.
+- [x] **Delete `config/weights.yaml.bak`** — done (was never in git; only existed in primary dir).
 
 ### Phase B — Dashboard UX (1–2 days of high-leverage polish)
 
 Grouped into batches so the same HTML / config file is only touched once per batch.
 
-- [ ] **UX Batch A — Layout & explainer captions** *(1–2 hrs, pure HTML)*
-  Single pass through `src/dashboard.py`. Consolidates 6 items:
-  1. Add explainer sentence to REVIEW PROMPTS card (mirror ESCALATION SCENARIOS format).
-  2. Side-by-side layout: REVIEW PROMPTS + ESCALATION SCENARIOS cards adjacent.
-  3. Cross-bucket correlation card: 1–2 sentence plain-English caption under the number.
-  4. 90-Day Composite Trend: add subtitle explaining what's shown + band meanings + "today is on the right".
-  5. Macro calendar: per-event "→ cpi_yoy (Inflation Pressure)" badge when the event drives a model indicator; "not in model" otherwise.
-  6. Move the "new brief" / orientation highlight below the two action cards — composite score leads the page.
+- [x] **UX Batch A — Layout & explainer captions** *(commit cfe6101)*
+  All 6 items shipped: explainer on REVIEW PROMPTS, side-by-side action cards, correlation caption, trend subtitle + band key, calendar indicator badges, composite leads page with narrative moved below action cards.
 
-- [ ] **UX Batch B — Weight display & bar chart** *(3–4 hrs)*
-  All touches bucket/indicator rendering; single refactor pass. Pull all numbers from `config/weights.yaml` — never hardcode.
-  1. Bucket header shows "X% of composite".
-  2. Each indicator row shows "X% of bucket · Y% of composite" (composite share = bucket_weight × indicator_weight).
-  3. Small horizontal bar chart under each bucket title visualizing indicator weights (compact, no axes).
+- [x] **UX Batch B — Weight display & bar chart** *(commit da9ba03)*
+  All 3 items shipped: bucket header shows "X% of composite", each indicator row shows "X% of bucket · Y% of composite", compact 5px flex bar chart under each bucket title. All weights pulled live from weights.yaml.
 
-- [ ] **Brief 4B — Indicator drill-down pages** *(half day)*
-  Per-indicator inline `<details>` block with 10yr chart + stats (min/max/median/percentile/current). See [ROADMAP.md §Brief 4B](ROADMAP.md). Pre-req for UX Batch C.
+- [x] **Brief 4B — Indicator drill-down pages** *(already shipped — src/indicator_detail.py)*
+  Per-indicator `<details>` block with 10yr SVG chart + stats (min/max/median/percentile/current/last-obs). Wired into dashboard.py, links from indicator labels in bucket table.
 
-- [ ] **UX Batch C — Full tooltip coverage** *(half day)*
-  Consolidates UX item 9 + Brief 14. Builds on Brief 4B + existing `config/tooltips.yaml`.
-  1. Plain-English tooltip on every indicator row: what it measures, what high/low means, why it matters.
-  2. Tooltips on composite, bucket labels, band labels, regime terms.
-  3. All copy lives in `config/tooltips.yaml`. Extend schema if needed.
+- [x] **UX Batch C — Full tooltip coverage** *(effectively shipped + regime_adjusted added)*
+  All 26 indicators, 11 buckets, composite, bands, correlation, shock_type, regime_window all have tooltips in config/tooltips.yaml and are rendered. Added regime_adjusted key (was referenced in code but missing from YAML).
 
 ### Phase C — Remaining brief work
 
-- [ ] **Brief 8 (second half) — Deescalation alerts** *(1–2 hrs)*
-  Mirror of escalation alert: fire Pushover when composite band improves (red→orange, orange→yellow, yellow→green). Debounce using same buffer pattern as escalation. Update `data/alert_state.json` schema if needed. See [ROADMAP.md §Brief 8 sketch](ROADMAP.md).
+- [x] **Brief 8 (second half) — Deescalation alerts** — already shipped
+  Section 1b in `send_alerts()` fires `composite_improvement` alert with same debounce buffer when band order drops. Tested in `tests/test_alert_controls.py` (de-escalation tests at lines 68–72).
 
 ### Phase D — Design-first (route through Opus before Sonnet executes) 🅾️
 
@@ -165,47 +153,11 @@ When starting work on any Brief:
 
 ---
 
-## Mid-task handoff — 2026-04-24, Opus → Sonnet
+## Status as of 2026-04-24 (post-Sonnet 4.6 execution pass)
 
-**Context:** Opus did a full-repo audit and rewrote this file into an execution
-queue. Many briefs turned out to be already shipped; they've been moved into the
-Completed block above. Ian has now switched to `/model sonnet` to execute Phase A
-and Phase B.
+Phases A, B, and C are fully complete. All items either shipped or confirmed
+already-shipped during this session. Only Phase D remains, and each item there
+requires an Opus design pass before Sonnet can execute.
 
-**Start here:**
-
-1. Phase A → **Verification sweep** (first unchecked item).
-   - Run `python run_dashboard.py --no-alerts --quiet` from the primary dir.
-   - Open the generated `dashboard.html` and confirm each Phase A target actually
-     renders/fires: event overlay on the 90-day trend chart (Brief 4A), correlation
-     card (Brief 5), staleness rendering when a series is old (Brief 6), audit-log
-     writes to `data/alert_log.jsonl` (Brief 11), `weights_hash`/`code_sha` columns
-     in `data/history.csv` (Brief 12), pruning behavior (Brief 13, rows beyond 2yr
-     archived to `history_archive.parquet`).
-   - If any item is silently NOT wired up, open a dedicated TODO under Phase C
-     ("Brief X — fix gap found during verification") and tell Ian which ones
-     slipped through. Don't re-order the queue without surfacing it.
-2. Phase A → **Delete `config/weights.yaml.bak`**. Brief 1 + pre-commit hook make
-   it obsolete. Commit separately with a message noting Step 0 is fully closed.
-3. Phase B → **UX Batch A** (layout + captions, 1–2 hrs). Single pass through
-   `src/dashboard.py`. Six self-contained edits listed in the batch.
-4. Continue down Phase B (Batch B → Brief 4B → Batch C) as time allows.
-
-**Gotchas Opus hit during the audit (save yourself the same trip):**
-- The co-author trailer in commits should match the running model — use
-  `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>` while Sonnet is
-  driving.
-- Pre-commit hook validates the `_genai_tmp/` copy of `weights.yaml`, not the
-  primary dir copy. If UX Batch A touches any config, sync to `_genai_tmp` first.
-- `tooltips.yaml` already exists and is consumed by the dashboard — UX Batch C
-  should extend it, not create a parallel file.
-
-**Flag and switch back to Opus if:**
-- A "shipped" brief turns out to have a real gap beyond a trivial fix.
-- A UX item has a real design ambiguity (not a style preference — an actual
-  "should this be one card or two" question).
-- You hit Phase D and Ian hasn't explicitly picked one of the design-first items
-  to open.
-
-**Delete this section** when Phase A + Phase B are done. Leave a fresh handoff
-note if you end mid-phase.
+**Next start point:** Read Phase D items, confirm with Ian which one to open,
+then route through Opus for design before Sonnet implements.

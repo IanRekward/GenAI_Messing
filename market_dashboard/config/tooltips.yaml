@@ -21,6 +21,9 @@ correlation:
 regime_window:
   tip: "Composite score recomputed using only the trailing 3-year window for percentile ranking. Highlights stress that looks normal vs. 10 years of history but elevated vs. the recent regime — useful when the market has been calm for years."
 
+regime_adjusted:
+  tip: "Composite score adjusted for current velocity and shock type. A fast shock in orange territory pushes this higher; a recovery trend pulls it lower. Shows where the model thinks stress is heading, not just where it is."
+
 shock_type:
   fast_shock: "Composite rose ≥8 pts in 7 days, or ≥4 pts with 3+ buckets accelerating simultaneously. Fast shocks (2020 COVID, 2022 rate shock) demand prompt attention; they rarely revert quickly."
   slow_burn: "Composite is elevated (≥40) but moving slowly — lingering stress without acute escalation. Classic in late-cycle credit deterioration and pre-recession periods. Can persist for months."
