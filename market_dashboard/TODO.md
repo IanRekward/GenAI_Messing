@@ -159,5 +159,39 @@ Phases A, B, and C are fully complete. All items either shipped or confirmed
 already-shipped during this session. Only Phase D remains, and each item there
 requires an Opus design pass before Sonnet can execute.
 
-**Next start point:** Read Phase D items, confirm with Ian which one to open,
-then route through Opus for design before Sonnet implements.
+---
+
+## Mid-task handoff — 2026-04-24, Sonnet → Opus
+
+**Context:** Sonnet completed all of Phase A, B, and C. Ian is now switching to
+Opus 4.7 for Phase D design decisions.
+
+**Commits this session:**
+- `cfe6101` — UX Batch A (layout, action cards side-by-side, captions, calendar badges)
+- `da9ba03` — UX Batch B (weight % display, indicator bar charts)
+- `c8a65be` — Cleanup (regime_adjusted tooltip, TODO housekeeping)
+
+**Start here (Opus):**
+
+Phase D has 4 items, all requiring design decisions before Sonnet can execute.
+Pick whichever Ian wants to open first and produce a concrete implementation
+brief. Recommended priority order by value/complexity:
+
+1. **Backtest history visualization** — clearest value, bounded scope. Decide:
+   main-dashboard card or separate HTML page? What 3–4 metrics to show?
+   Write the brief for Sonnet to implement using the existing `src/backtest.py`
+   + `src/evaluation.py` + `src/backtest_report.py`.
+
+2. **VIX term-structure** — small scope, clear question. Is ^VIX9D available
+   via yfinance and does the slope add signal beyond raw VIX? Confirm ticker
+   availability, decide bucket placement, write the indicator spec.
+
+3. **Brief 10 (regime-aware weighting)** — large, multi-day. Design the API:
+   how do two VIX-tercile weight sets get selected at score time, how do they
+   interact with Brief 3 momentum, and what does `history.csv` record?
+
+4. **Paywalled news** — blocked on Ian's feed preference + ToS review. Don't
+   design until Ian picks the sources.
+
+**Delete this section** when Opus completes its design pass and hands off to
+Sonnet for implementation.
