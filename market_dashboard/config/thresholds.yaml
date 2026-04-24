@@ -60,6 +60,19 @@ indicators:
     orange: 1.5
     red: 2.0
 
+  # --- Breadth & Trend ---
+  sector_breadth:             # % of S&P sectors below 200d MA; 0%=all above=calm, 100%=crash
+    direction: high
+    yellow: 40.0
+    orange: 60.0
+    red: 80.0
+
+  spx_200dma_distance:        # SPX % distance from 200d MA; negative = below MA = stress
+    direction: low
+    yellow: -3.0
+    orange: -8.0
+    red: -15.0
+
   # --- Financial Conditions ---
   nfci:                       # Chicago Fed NFCI; 0 = historical average; positive = tighter
     direction: high

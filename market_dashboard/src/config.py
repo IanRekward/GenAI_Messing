@@ -31,12 +31,13 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "usd_index", "euro_hy_oas", "em_corp_oas", "eem_vol",
     "cnn_fear_greed",
     "treasury_auction_stress",
+    "sector_breadth", "spx_200dma_distance",
     # manual-only indicators (no fetch handler needed)
     "repo_stress", "iran_trigger",
 })
 
 _WEIGHT_TOLERANCE = 1e-4
-_MIN_BUCKETS = 10  # expected bucket count; raises if a bucket is silently removed
+_MIN_BUCKETS = 11  # expected bucket count; raises if a bucket is silently removed
 
 
 def validate_config(weights: dict, thresholds: dict) -> None:

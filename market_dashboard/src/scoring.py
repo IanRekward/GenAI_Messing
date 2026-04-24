@@ -143,6 +143,14 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
         raw_val, series = _compute_auction_stress(r10, r30)
         return raw_val, series
 
+    if key == "sector_breadth":
+        raw_val, series = _compute_sector_breadth(env, years)
+        return raw_val, series
+
+    if key == "spx_200dma_distance":
+        raw_val, series = _compute_spx_200dma_distance(env, years)
+        return raw_val, series
+
     raise ValueError(f"Unknown indicator key: {key}")
 
 
@@ -192,6 +200,51 @@ def _compute_auction_stress(
         .sort_index()
     )
     return float(combined.iloc[-1]), combined
+
+
+_SECTOR_ETFS = [
+    "XLY", "XLC", "XLK", "XLE", "XLV",
+    "XLI", "XLF", "XLB", "XLRE", "XLU", "XLP",
+]
+
+
+def _compute_sector_breadth(env: dict, years: int) -> tuple[float, pd.Series]:
+    """
+    Percentage of S&P 500 sector ETFs trading below their 200-day MA.
+    0% = all above MA (calm); 100% = all below MA (market-wide downtrend).
+    Raises RuntimeError if fewer than 5 sectors are available.
+    """
+    sector_data: dict[str, pd.Series] = {}
+    for ticker in _SECTOR_ETFS:
+        try:
+            sector_data[ticker] = fetch.fetch_yfinance_series(ticker, env, years)
+        except Exception:
+            continue
+
+    if len(sector_data) < 5:
+        raise RuntimeError(
+            f"sector_breadth: only {len(sector_data)}/{len(_SECTOR_ETFS)} sectors available"
+        )
+
+    df = pd.DataFrame(sector_data).dropna(how="all")
+    ma200 = df.rolling(200).mean()
+    below_ma = (df < ma200).fillna(False)
+    n_avail = (~df.isna()).sum(axis=1).clip(lower=1)
+    ratio = (below_ma.sum(axis=1) / n_avail * 100).dropna()
+
+    return float(ratio.iloc[-1]), ratio
+
+
+def _compute_spx_200dma_distance(env: dict, years: int) -> tuple[float, pd.Series]:
+    """
+    SPX % distance from its 200-day MA. Negative = below MA = stress.
+    Uses the already-cached ^GSPC series from sp500_1m_vol.
+    """
+    s = fetch.fetch_yfinance_series("^GSPC", env, years)
+    ma200 = s.rolling(200).mean().dropna()
+    s_aligned = s.reindex(ma200.index)
+    distance_pct = ((s_aligned - ma200) / ma200 * 100).dropna()
+    return float(distance_pct.iloc[-1]), distance_pct
 
 
 def _band_from_score(score: float) -> str:

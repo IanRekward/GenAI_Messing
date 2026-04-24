@@ -121,6 +121,18 @@ indicators:
     - rate volatility
     - yield volatility
     - swaption
+  sector_breadth:
+    - market breadth
+    - sector rotation
+    - 200-day moving average
+    - sectors below
+    - broad market
+  spx_200dma_distance:
+    - s&p 500
+    - 200-day average
+    - death cross
+    - bear market
+    - market correction
   treasury_auction_stress:
     - treasury auction
     - bid-to-cover
