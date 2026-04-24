@@ -162,3 +162,50 @@ When starting work on any Brief:
 - [x] Backtesting design spec — [BACKTEST_DESIGN.md](BACKTEST_DESIGN.md)
 - [x] Architectural review & Phase 6+ roadmap — [ROADMAP.md](ROADMAP.md)
 - [x] Cross-model working agreement — [CLAUDE.md](CLAUDE.md)
+
+---
+
+## Mid-task handoff — 2026-04-24, Opus → Sonnet
+
+**Context:** Opus did a full-repo audit and rewrote this file into an execution
+queue. Many briefs turned out to be already shipped; they've been moved into the
+Completed block above. Ian has now switched to `/model sonnet` to execute Phase A
+and Phase B.
+
+**Start here:**
+
+1. Phase A → **Verification sweep** (first unchecked item).
+   - Run `python run_dashboard.py --no-alerts --quiet` from the primary dir.
+   - Open the generated `dashboard.html` and confirm each Phase A target actually
+     renders/fires: event overlay on the 90-day trend chart (Brief 4A), correlation
+     card (Brief 5), staleness rendering when a series is old (Brief 6), audit-log
+     writes to `data/alert_log.jsonl` (Brief 11), `weights_hash`/`code_sha` columns
+     in `data/history.csv` (Brief 12), pruning behavior (Brief 13, rows beyond 2yr
+     archived to `history_archive.parquet`).
+   - If any item is silently NOT wired up, open a dedicated TODO under Phase C
+     ("Brief X — fix gap found during verification") and tell Ian which ones
+     slipped through. Don't re-order the queue without surfacing it.
+2. Phase A → **Delete `config/weights.yaml.bak`**. Brief 1 + pre-commit hook make
+   it obsolete. Commit separately with a message noting Step 0 is fully closed.
+3. Phase B → **UX Batch A** (layout + captions, 1–2 hrs). Single pass through
+   `src/dashboard.py`. Six self-contained edits listed in the batch.
+4. Continue down Phase B (Batch B → Brief 4B → Batch C) as time allows.
+
+**Gotchas Opus hit during the audit (save yourself the same trip):**
+- The co-author trailer in commits should match the running model — use
+  `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>` while Sonnet is
+  driving.
+- Pre-commit hook validates the `_genai_tmp/` copy of `weights.yaml`, not the
+  primary dir copy. If UX Batch A touches any config, sync to `_genai_tmp` first.
+- `tooltips.yaml` already exists and is consumed by the dashboard — UX Batch C
+  should extend it, not create a parallel file.
+
+**Flag and switch back to Opus if:**
+- A "shipped" brief turns out to have a real gap beyond a trivial fix.
+- A UX item has a real design ambiguity (not a style preference — an actual
+  "should this be one card or two" question).
+- You hit Phase D and Ian hasn't explicitly picked one of the design-first items
+  to open.
+
+**Delete this section** when Phase A + Phase B are done. Leave a fresh handoff
+note if you end mid-phase.
