@@ -5,6 +5,16 @@ Read this before touching any file. These rules override defaults.
 
 ---
 
+## Note to future models — keep this document alive
+
+If you learn something in your session that would have helped you at the start —
+a non-obvious workflow step, a constraint that bit you, a decision that was
+debated and settled — **add it here before you finish**. This document is only
+useful if it grows with the project. Don't wait to be asked. If you're the first
+model to hit a sharp edge, smooth it for the next one.
+
+---
+
 ## What this project is
 
 A personal market stress early-warning dashboard for Ian, an active investor.
