@@ -189,6 +189,44 @@ def compute_bucket_momentum(history: pd.DataFrame) -> dict:
     return result
 
 
+_FAST_SHOCK_V7   = 8.0   # pts/7d threshold for "fast" single-trigger
+_FAST_BROAD_V7   = 4.0   # pts/7d when multiple buckets accelerating
+_FAST_MIN_BUCKETS = 3    # how many accelerating buckets triggers broad fast-shock
+_RECOVERY_V7     = -5.0  # pts/7d; falling from elevated composite
+_RECOVERY_MIN    = 30.0  # composite must be above this to be "recovery" not just "calm"
+_SLOWBURN_MIN    = 40.0  # composite must be above this to be "slow burn"
+
+
+def classify_shock_type(history: "pd.DataFrame", scoring: dict) -> str:
+    """
+    Classify the current market stress regime using composite momentum and bucket velocities.
+
+    Returns one of:
+      fast_shock    — composite rose ≥8 pts/7d, or ≥4 pts with 3+ buckets accelerating
+      slow_burn     — composite ≥40 and moving slowly (lingering elevated stress)
+      recovery      — composite falling from an elevated level (≥30) at ≥5 pts/7d
+      calm          — composite below threshold, no significant velocity
+      insufficient  — not enough history to classify
+    """
+    mom = compute_composite_momentum(history)
+    bkt_vel = compute_bucket_momentum(history)
+
+    v7 = mom.get("velocity_7d")
+    if v7 is None:
+        return "insufficient"
+
+    composite = float(scoring.get("composite", 0.0))
+    n_accel = sum(1 for v in bkt_vel.values() if v is not None and v > 3.0)
+
+    if composite > _RECOVERY_MIN and v7 <= _RECOVERY_V7:
+        return "recovery"
+    if v7 >= _FAST_SHOCK_V7 or (v7 >= _FAST_BROAD_V7 and n_accel >= _FAST_MIN_BUCKETS):
+        return "fast_shock"
+    if composite >= _SLOWBURN_MIN and abs(v7) < _FAST_SHOCK_V7:
+        return "slow_burn"
+    return "calm"
+
+
 def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> float | None:
     """
     Mean absolute pairwise Spearman correlation across all bucket_* score columns

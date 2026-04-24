@@ -9,7 +9,10 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.history import build_trend_svg, compute_composite_momentum, compute_bucket_momentum, cross_bucket_correlation, correlation_regime
+from src.history import (
+    build_trend_svg, compute_composite_momentum, compute_bucket_momentum,
+    cross_bucket_correlation, correlation_regime, classify_shock_type,
+)
 from src.indicator_detail import build_indicator_detail
 
 OUTPUT_DIR = Path("output")
@@ -201,6 +204,27 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     mom = compute_composite_momentum(history)
     mom_html = _fmt_momentum(mom, band_color)
 
+    # ── Shock-type classification (todo 42) ──────────────────────────────────
+    _SHOCK_COLOR = {
+        "fast_shock": "#ff4444", "slow_burn": "#ffcc00",
+        "recovery": "#22cc44",   "calm": "#6e7681", "insufficient": "",
+    }
+    _SHOCK_LABEL = {
+        "fast_shock": "FAST SHOCK", "slow_burn": "SLOW BURN",
+        "recovery": "RECOVERY",     "calm": "CALM",
+    }
+    shock_type = classify_shock_type(history, scoring)
+    shock_html = ""
+    if shock_type in _SHOCK_LABEL:
+        sc = _SHOCK_COLOR.get(shock_type, "#6e7681")
+        shock_tip = tooltips.get("shock_type", {}).get(shock_type, "")
+        inner = _tip(_SHOCK_LABEL[shock_type], shock_tip) if shock_tip else _SHOCK_LABEL[shock_type]
+        shock_html = (
+            f'<div class="score-sub" style="margin-top:4px">'
+            f'<span style="color:{sc};font-weight:600;font-size:.78rem">{inner}</span>'
+            f"</div>"
+        )
+
     # ── Composite card ──────────────────────────────────────────────────────
     composite_tip = tooltips.get("composite", {}).get("tip", "")
     band_tip = tooltips.get("bands", {}).get(band, "")
@@ -216,6 +240,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   <div>
     <div class="score-band" style="color:{band_color}">{band_label_html}</div>
     {mom_html}
+    {shock_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
       <span class="tc"><b style="color:#ff8800">{scoring['orange_count']}</b> orange</span>

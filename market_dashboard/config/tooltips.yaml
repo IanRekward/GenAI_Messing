@@ -18,6 +18,12 @@ momentum:
 correlation:
   tip: "Mean absolute pairwise correlation across all 10 bucket scores (30-day window). Above 0.60 = crisis-synchronous: buckets moving together, the signature of a broad risk-off event."
 
+shock_type:
+  fast_shock: "Composite rose ≥8 pts in 7 days, or ≥4 pts with 3+ buckets accelerating simultaneously. Fast shocks (2020 COVID, 2022 rate shock) demand prompt attention; they rarely revert quickly."
+  slow_burn: "Composite is elevated (≥40) but moving slowly — lingering stress without acute escalation. Classic in late-cycle credit deterioration and pre-recession periods. Can persist for months."
+  recovery: "Composite is falling from an elevated level at ≥5 pts/7d. Stress is unwinding. Historically, recoveries can stall or reverse — watch for re-escalation in credit and funding buckets."
+  calm: "Composite is low and stable. No significant directional velocity across buckets."
+
 buckets:
   equity_volatility:
     tip: "Measures fear and uncertainty in the stock market. Spikes in VIX and realized vol are early warning signs of panic selling and typically precede credit and funding stress."
