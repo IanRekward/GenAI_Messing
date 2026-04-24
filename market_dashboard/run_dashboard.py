@@ -34,6 +34,8 @@ from src.fetch import load_manual_overrides
 from src.history import log_run, load_history, prune_history
 from src.alerts import send_alerts, send_heartbeat, send_weekly_digest, score_past_alerts
 from src.calendar import fetch_upcoming_events
+from src.narrative import generate_narrative
+from src.history import compute_composite_momentum, compute_bucket_momentum, classify_shock_type
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -147,8 +149,22 @@ def main():
     except Exception:
         pass
 
+    # Daily narrative paragraph (Claude Haiku synthesis)
+    mom = compute_composite_momentum(history)
+    bkt_vel = compute_bucket_momentum(history)
+    shock_type = classify_shock_type(history, scoring)
+    history_summary = {
+        "shock_type": shock_type,
+        "velocity_7d": mom.get("velocity_7d"),
+        "regime": mom.get("regime", "insufficient"),
+        "bucket_velocities": bkt_vel,
+    }
+    narrative = generate_narrative(scoring, history_summary, env)
+
     # Write dashboard
-    output_path = write_dashboard(scoring, news, history, calendar_events=calendar_events)
+    output_path = write_dashboard(scoring, news, history,
+                                  calendar_events=calendar_events,
+                                  narrative=narrative)
 
     # Weekly digest (sends automatically on Mondays)
     if not args.no_alerts:

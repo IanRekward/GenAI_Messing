@@ -253,7 +253,8 @@ def _build_calendar_card(events: list) -> str:
 
 
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
-                    calendar_events: list | None = None) -> Path:
+                    calendar_events: list | None = None,
+                    narrative: str = "") -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "dashboard.html"
 
@@ -518,6 +519,16 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   {errs}
 </details>"""
 
+    # ── Narrative card (todo 1) ──────────────────────────────────────────────
+    narrative_card = ""
+    if narrative:
+        narrative_card = (
+            f'<div class="card" style="border-left:3px solid #4d9de0;font-size:.88rem;'
+            f'line-height:1.6;color:#c9d1d9">{narrative}'
+            f'<div style="margin-top:6px;font-size:.72rem;color:#484f58">'
+            f'AI-generated summary (Claude) · not financial advice</div></div>'
+        )
+
     # ── Calendar card ───────────────────────────────────────────────────────
     calendar_card = _build_calendar_card(calendar_events or [])
 
@@ -536,6 +547,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     <span class="ts">Last refreshed: {ts}</span>
   </div>
   {staleness_banner}
+  {narrative_card}
   {composite_card}
   {review_card}
   {correlation_card}
