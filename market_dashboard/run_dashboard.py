@@ -26,7 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dotenv import load_dotenv
 
 from src.config import validate_config, ConfigError
-from src.scoring import compute_composite, load_weights, load_thresholds
+from src.scoring import compute_composite, load_weights, load_thresholds, COMPUTED_HANDLERS
 from src.triggers import annotate_results
 from src.news import get_news_brief
 from src.dashboard import write_dashboard
@@ -100,7 +100,7 @@ def main():
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
     try:
-        validate_config(weights, thresholds)
+        validate_config(weights, thresholds, frozenset(COMPUTED_HANDLERS.keys()))
     except ConfigError as e:
         print(f"\n  CONFIG ERROR: {e}\n")
         sys.exit(1)

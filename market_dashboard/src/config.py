@@ -39,8 +39,12 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
 _WEIGHT_TOLERANCE = 1e-4
 _MIN_BUCKETS = 11  # expected bucket count; raises if a bucket is silently removed
 
+_VALID_SOURCE_TYPES = frozenset({"yfinance", "fred", "computed", "manual"})
+_VALID_TRANSFORMS = frozenset({"realized_vol_series", "yoy_series"})
 
-def validate_config(weights: dict, thresholds: dict) -> None:
+
+def validate_config(weights: dict, thresholds: dict,
+                    computed_handlers: "frozenset[str] | None" = None) -> None:
     """
     Validate that weights.yaml and thresholds.yaml are internally consistent
     and that every indicator key has a known handler.
@@ -52,6 +56,7 @@ def validate_config(weights: dict, thresholds: dict) -> None:
     _validate_indicator_keys(weights)
     _validate_no_duplicate_keys(weights)
     _validate_threshold_keys(weights, thresholds)
+    _validate_sources(weights, computed_handlers or frozenset())
 
 
 def _validate_bucket_count(weights: dict) -> None:
@@ -110,6 +115,48 @@ def _validate_no_duplicate_keys(weights: dict) -> None:
                     f"'{seen[ikey]}' and '{bkey}'. Keys must be unique."
                 )
             seen[ikey] = bkey
+
+
+def _validate_sources(weights: dict, computed_handlers: frozenset) -> None:
+    for bkey, bcfg in weights["buckets"].items():
+        for ikey, icfg in bcfg.get("indicators", {}).items():
+            src = icfg.get("source")
+            if src is None:
+                raise ConfigError(
+                    f"Indicator '{ikey}' in bucket '{bkey}' is missing a 'source:' field. "
+                    f"Add source.type (yfinance/fred/computed/manual) to config/weights.yaml."
+                )
+            stype = src.get("type")
+            if stype not in _VALID_SOURCE_TYPES:
+                raise ConfigError(
+                    f"Indicator '{ikey}' has unknown source type '{stype}'. "
+                    f"Must be one of: {sorted(_VALID_SOURCE_TYPES)}."
+                )
+            if stype == "yfinance" and not src.get("ticker"):
+                raise ConfigError(
+                    f"Indicator '{ikey}' source type 'yfinance' requires a 'ticker' field."
+                )
+            if stype == "fred" and not src.get("series_id"):
+                raise ConfigError(
+                    f"Indicator '{ikey}' source type 'fred' requires a 'series_id' field."
+                )
+            if stype == "computed":
+                handler = src.get("handler")
+                if not handler:
+                    raise ConfigError(
+                        f"Indicator '{ikey}' source type 'computed' requires a 'handler' field."
+                    )
+                if computed_handlers and handler not in computed_handlers:
+                    raise ConfigError(
+                        f"Indicator '{ikey}' references computed handler '{handler}' "
+                        f"which is not registered in scoring.COMPUTED_HANDLERS."
+                    )
+            transform = src.get("transform")
+            if transform and transform not in _VALID_TRANSFORMS:
+                raise ConfigError(
+                    f"Indicator '{ikey}' has unknown transform '{transform}'. "
+                    f"Must be one of: {sorted(_VALID_TRANSFORMS)}."
+                )
 
 
 def _validate_threshold_keys(weights: dict, thresholds: dict) -> None:

@@ -23,135 +23,105 @@ def load_thresholds(path: str) -> dict:
         return yaml.safe_load(f)
 
 
+def _handler_cnn_fear_greed(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    try:
+        s = fetch.fetch_cnn_fear_greed(env)
+        return float(s.iloc[-1]), s
+    except StaleCacheFallback:
+        raise
+    except Exception as cnn_exc:
+        try:
+            s = fetch.fetch_fred_series("UMCSENT", env, years)
+            return float(s.iloc[-1]), s
+        except Exception:
+            raise cnn_exc
+
+
+def _handler_sofr_spread(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    sofr = fetch.fetch_fred_series("SOFR", env, years)
+    effr = fetch.fetch_fred_series("DFF", env, years)
+    combined = pd.concat([sofr.rename("sofr"), effr.rename("effr")], axis=1)
+    combined = combined.ffill().dropna()
+    spread = (combined["sofr"] - combined["effr"]) * 100  # pct → bps
+    return float(spread.iloc[-1]), spread
+
+
+def _handler_treasury_auction_stress(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    r10 = fetch.fetch_treasury_auction_results("Note", "10-Year", env)
+    r30 = fetch.fetch_treasury_auction_results("Bond", "30-Year", env)
+    raw_val, series = _compute_auction_stress(r10, r30)
+    return raw_val, series
+
+
+def _handler_sector_breadth(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    return _compute_sector_breadth(env, years)
+
+
+def _handler_spx_200dma_distance(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    return _compute_spx_200dma_distance(env, years)
+
+
+# Registry of computed handlers — keyed by handler name in weights.yaml source.handler.
+# config.py validates against this at startup.
+COMPUTED_HANDLERS: dict = {
+    "cnn_fear_greed":          _handler_cnn_fear_greed,
+    "sofr_spread":             _handler_sofr_spread,
+    "treasury_auction_stress": _handler_treasury_auction_stress,
+    "sector_breadth":          _handler_sector_breadth,
+    "spx_200dma_distance":     _handler_spx_200dma_distance,
+}
+
+_TRANSFORMS = {
+    "realized_vol_series": ind.realized_vol_series,
+    "yoy_series":          ind.yoy_series,
+}
+
+
 def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[float, pd.Series | None]:
     """
     Return (current_raw_value, history_series) for one indicator.
-    history_series may be None for manual indicators or when not computable.
+    Dispatches based on cfg["source"]["type"] from weights.yaml.
+    history_series may be None for manual indicators.
     """
+    from src.config import ConfigError
     years = int(env.get("HISTORY_YEARS", 10))
+    src = cfg.get("source", {})
+    stype = src.get("type")
 
-    if key == "cnn_fear_greed":
-        try:
-            s = fetch.fetch_cnn_fear_greed(env)
-            return float(s.iloc[-1]), s
-        except StaleCacheFallback:
-            raise  # caller scores stale data and logs a warning
-        except Exception as cnn_exc:
-            # CNN unavailable with no local cache — try FRED UMCSENT as fallback
-            try:
-                s = fetch.fetch_fred_series("UMCSENT", env, years)
-                return float(s.iloc[-1]), s
-            except Exception:
-                raise cnn_exc  # both failed; caller will default to 50.0
-
-    if cfg.get("manual"):
+    if stype == "manual" or cfg.get("manual"):
         return float(manual.get(key, 0)), None
 
-    if key == "vix":
-        s = fetch.fetch_yfinance_series("^VIX", env, years)
+    if stype == "computed":
+        handler_name = src.get("handler", key)
+        handler = COMPUTED_HANDLERS.get(handler_name)
+        if handler is None:
+            raise ConfigError(f"No computed handler registered for '{handler_name}'")
+        return handler(key, cfg, env, manual, years)
+
+    if stype == "yfinance":
+        ticker = src["ticker"]
+        s = fetch.fetch_yfinance_series(ticker, env, years)
+        transform = src.get("transform")
+        if transform:
+            s = _TRANSFORMS[transform](s)
         return float(s.iloc[-1]), s
 
-    if key == "sp500_1m_vol":
-        s = fetch.fetch_yfinance_series("^GSPC", env, years)
-        vol_s = ind.realized_vol_series(s)
-        return float(vol_s.iloc[-1]), vol_s
-
-    if key == "hy_oas":
-        s = fetch.fetch_fred_series("BAMLH0A0HYM2", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "ig_oas":
-        s = fetch.fetch_fred_series("BAMLC0A4CBBB", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "yield_curve":
-        s = fetch.fetch_fred_series("T10Y2Y", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "ten_year":
-        s = fetch.fetch_yfinance_series("^TNX", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "move_index":
-        s = fetch.fetch_yfinance_series("^MOVE", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "nfci":
-        s = fetch.fetch_fred_series("NFCI", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "stlfsi":
-        s = fetch.fetch_fred_series("STLFSI4", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "breakeven_5y":
-        s = fetch.fetch_fred_series("T5YIE", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "cpi_yoy":
-        s = fetch.fetch_fred_series("CPIAUCSL", env, years)
-        yoy_s = ind.yoy_series(s)
-        return float(yoy_s.iloc[-1]), yoy_s
-
-    if key == "sofr_spread":
-        sofr = fetch.fetch_fred_series("SOFR", env, years)
-        effr = fetch.fetch_fred_series("DFF", env, years)
-        combined = pd.concat([sofr.rename("sofr"), effr.rename("effr")], axis=1)
-        combined = combined.ffill().dropna()
-        spread = (combined["sofr"] - combined["effr"]) * 100  # pct → bps
-        return float(spread.iloc[-1]), spread
-
-    if key == "wti_crude":
-        s = fetch.fetch_yfinance_series("CL=F", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "oil_vol":
-        s = fetch.fetch_yfinance_series("CL=F", env, years)
-        vol_s = ind.realized_vol_series(s)
-        return float(vol_s.iloc[-1]), vol_s
-
-    if key == "jobless_claims":
-        s = fetch.fetch_fred_series("IC4WSA", env, years)
+    if stype == "fred":
+        series_id = src["series_id"]
+        s = fetch.fetch_fred_series(series_id, env, years)
         scale = float(cfg.get("scale", 1.0))
-        s = s * scale
+        if scale != 1.0:
+            s = s * scale
+        transform = src.get("transform")
+        if transform:
+            s = _TRANSFORMS[transform](s)
         return float(s.iloc[-1]), s
 
-    if key == "unemployment":
-        s = fetch.fetch_fred_series("UNRATE", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "usd_index":
-        s = fetch.fetch_fred_series("DTWEXBGS", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "euro_hy_oas":
-        s = fetch.fetch_fred_series("BAMLHE00EHYIOAS", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "em_corp_oas":
-        s = fetch.fetch_fred_series("BAMLEMCBPIOAS", env, years)
-        return float(s.iloc[-1]), s
-
-    if key == "eem_vol":
-        s = fetch.fetch_yfinance_series("EEM", env, years)
-        vol_s = ind.realized_vol_series(s)
-        return float(vol_s.iloc[-1]), vol_s
-
-    if key == "treasury_auction_stress":
-        r10 = fetch.fetch_treasury_auction_results("Note", "10-Year", env)
-        r30 = fetch.fetch_treasury_auction_results("Bond", "30-Year", env)
-        raw_val, series = _compute_auction_stress(r10, r30)
-        return raw_val, series
-
-    if key == "sector_breadth":
-        raw_val, series = _compute_sector_breadth(env, years)
-        return raw_val, series
-
-    if key == "spx_200dma_distance":
-        raw_val, series = _compute_spx_200dma_distance(env, years)
-        return raw_val, series
-
-    raise ValueError(f"Unknown indicator key: {key}")
+    # Fallback for old-format configs without source field (should not occur post-Brief 1)
+    raise ConfigError(
+        f"Indicator '{key}' has no valid source type (got '{stype}'). "
+        f"Add a source: field to config/weights.yaml."
+    )
 
 
 def _zscore_list(values: list[float]) -> list[float]:

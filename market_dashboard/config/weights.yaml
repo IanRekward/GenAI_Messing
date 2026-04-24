@@ -6,6 +6,11 @@
 # manual: true  → value comes from data/manual_overrides.json, not an API
 # scale:        → multiply raw API value by this before storing (e.g. 0.001 to convert persons → K)
 # unit:         → display unit shown on the dashboard
+# source:       → how to fetch this indicator (authoritative registry)
+#   type: yfinance   → fetch via yfinance; requires ticker
+#   type: fred       → fetch via FRED API; requires series_id
+#   type: computed   → custom handler; requires handler name registered in scoring.COMPUTED_HANDLERS
+#   type: manual     → value read from data/manual_overrides.json
 
 buckets:
   equity_volatility:
@@ -15,11 +20,18 @@ buckets:
       vix:
         label: VIX
         weight: 0.65
+        source:
+          type: yfinance
+          ticker: "^VIX"
         invert: false
         unit: ""
       sp500_1m_vol:
         label: "S&P 500 1M Realized Vol"
         weight: 0.35
+        source:
+          type: yfinance
+          ticker: "^GSPC"
+          transform: realized_vol_series
         invert: false
         unit: "%"
 
@@ -30,11 +42,17 @@ buckets:
       hy_oas:
         label: HY Option-Adjusted Spread
         weight: 0.60
+        source:
+          type: fred
+          series_id: "BAMLH0A0HYM2"
         invert: false
         unit: "%"
       ig_oas:
         label: IG BBB Option-Adjusted Spread
         weight: 0.40
+        source:
+          type: fred
+          series_id: "BAMLC0A4CBBB"
         invert: false
         unit: "%"
 
@@ -45,21 +63,33 @@ buckets:
       yield_curve:
         label: "10Y–2Y Spread"
         weight: 0.45
+        source:
+          type: fred
+          series_id: "T10Y2Y"
         invert: true        # more negative = more inverted = more stress
         unit: "%"
       ten_year:
         label: 10Y Treasury Yield
         weight: 0.20
+        source:
+          type: yfinance
+          ticker: "^TNX"
         invert: false
         unit: "%"
       move_index:
         label: "MOVE Index (Rate Vol)"
         weight: 0.20
+        source:
+          type: yfinance
+          ticker: "^MOVE"
         invert: false
         unit: ""
       treasury_auction_stress:
         label: "Treasury Auction Stress"
         weight: 0.15
+        source:
+          type: computed
+          handler: treasury_auction_stress
         invert: false
         unit: "σ"
 
@@ -70,11 +100,17 @@ buckets:
       nfci:
         label: Chicago Fed NFCI
         weight: 0.55
+        source:
+          type: fred
+          series_id: "NFCI"
         invert: false
         unit: ""
       stlfsi:
         label: St. Louis Fed FSI
         weight: 0.45
+        source:
+          type: fred
+          series_id: "STLFSI4"
         invert: false
         unit: ""
 
@@ -85,11 +121,18 @@ buckets:
       breakeven_5y:
         label: 5Y Inflation Breakeven
         weight: 0.55
+        source:
+          type: fred
+          series_id: "T5YIE"
         invert: false
         unit: "%"
       cpi_yoy:
         label: CPI Year-over-Year
         weight: 0.45
+        source:
+          type: fred
+          series_id: "CPIAUCSL"
+          transform: yoy_series
         invert: false
         unit: "%"
 
@@ -100,11 +143,16 @@ buckets:
       sofr_spread:
         label: SOFR Spread to EFFR
         weight: 0.50
+        source:
+          type: computed
+          handler: sofr_spread
         invert: false
         unit: bps
       repo_stress:
         label: Repo Market Stress
         weight: 0.50
+        source:
+          type: manual
         invert: false
         unit: "0–3"
         manual: true
@@ -116,11 +164,18 @@ buckets:
       wti_crude:
         label: WTI Crude Oil
         weight: 0.55
+        source:
+          type: yfinance
+          ticker: "CL=F"
         invert: false
         unit: "$/bbl"
       oil_vol:
         label: Oil 1M Realized Vol
         weight: 0.45
+        source:
+          type: yfinance
+          ticker: "CL=F"
+          transform: realized_vol_series
         invert: false
         unit: "%"
 
@@ -131,12 +186,18 @@ buckets:
       jobless_claims:
         label: Initial Claims (4-wk avg)
         weight: 0.55
+        source:
+          type: fred
+          series_id: "IC4WSA"
         invert: false
         unit: K
         scale: 0.001    # FRED IC4WSA is in persons; display in thousands
       unemployment:
         label: Unemployment Rate
         weight: 0.45
+        source:
+          type: fred
+          series_id: "UNRATE"
         invert: false
         unit: "%"
 
@@ -147,11 +208,16 @@ buckets:
       cnn_fear_greed:
         label: "CNN Fear & Greed"
         weight: 0.65
+        source:
+          type: computed
+          handler: cnn_fear_greed
         invert: true        # lower score (more fear) = more stress
         unit: "0–100"
       iran_trigger:
         label: Geopolitical Risk
         weight: 0.35
+        source:
+          type: manual
         invert: false
         unit: "0–2"
         manual: true
@@ -163,21 +229,34 @@ buckets:
       usd_index:
         label: "Broad Dollar Index"
         weight: 0.30
+        source:
+          type: fred
+          series_id: "DTWEXBGS"
         invert: false       # stronger dollar = more EM debt stress
         unit: ""
       euro_hy_oas:
         label: "Euro HY OAS"
         weight: 0.25
+        source:
+          type: fred
+          series_id: "BAMLHE00EHYIOAS"
         invert: false
         unit: "%"
       em_corp_oas:
         label: "EM Corporate OAS"
         weight: 0.25
+        source:
+          type: fred
+          series_id: "BAMLEMCBPIOAS"
         invert: false
         unit: "%"
       eem_vol:
         label: "EM Equity 1M Realized Vol"
         weight: 0.20
+        source:
+          type: yfinance
+          ticker: "EEM"
+          transform: realized_vol_series
         invert: false
         unit: "%"
 
@@ -188,10 +267,16 @@ buckets:
       sector_breadth:
         label: "Sector Breadth (% below 200d MA)"
         weight: 0.60
+        source:
+          type: computed
+          handler: sector_breadth
         invert: false       # higher % below = more stress
         unit: "%"
       spx_200dma_distance:
         label: "SPX Distance from 200d MA"
         weight: 0.40
+        source:
+          type: computed
+          handler: spx_200dma_distance
         invert: true        # more negative (below MA) = more stress
         unit: "%"
