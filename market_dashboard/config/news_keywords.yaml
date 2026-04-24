@@ -121,6 +121,15 @@ indicators:
     - rate volatility
     - yield volatility
     - swaption
+  treasury_auction_stress:
+    - treasury auction
+    - bid-to-cover
+    - indirect bidder
+    - bond auction
+    - treasury demand
+    - auction tail
+    - dealer takedown
+    - primary dealer
   iran_trigger:
     - iran
     - geopolitical

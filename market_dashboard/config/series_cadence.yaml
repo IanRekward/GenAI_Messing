@@ -28,3 +28,4 @@ indicators:
   eem_vol: daily
   cnn_fear_greed: daily   # CNN Fear & Greed; falls back to FRED UMCSENT if unavailable
   move_index: daily
+  treasury_auction_stress: weekly  # 10Y/30Y auctions roughly monthly; warn if no new data in 10d

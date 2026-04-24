@@ -30,6 +30,7 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "jobless_claims", "unemployment",
     "usd_index", "euro_hy_oas", "em_corp_oas", "eem_vol",
     "cnn_fear_greed",
+    "treasury_auction_stress",
     # manual-only indicators (no fetch handler needed)
     "repo_stress", "iran_trigger",
 })

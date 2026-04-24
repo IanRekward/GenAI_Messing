@@ -55,6 +55,8 @@ indicators:
     tip: "10-Year U.S. Treasury yield (%). High rates compress equity valuations and increase debt-service burdens. Above 5%+ has historically preceded stress events."
   move_index:
     tip: "ICE BofA MOVE Index — implied volatility of U.S. Treasuries from options (basis points). Above 100 = elevated rate uncertainty. Above 175 = crisis level. Peaked at ~264 in COVID, ~182 during SVB (2023)."
+  treasury_auction_stress:
+    tip: "Composite z-score of Treasury auction quality (10Y Note + 30Y Bond). Combines bid-to-cover ratio, indirect bidder %, and dealer takedown % vs trailing 12-month auctions. Above 1.5σ = weak demand; above 2.0σ = rare stress historically seen ahead of funding dislocations."
   nfci:
     tip: "Chicago Fed National Financial Conditions Index. Zero = historical average. Positive = tighter-than-average conditions. Above 0.40 = materially tight. Hit 1.26 during COVID."
   stlfsi:

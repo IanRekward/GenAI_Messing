@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 import yaml
 
@@ -136,7 +137,61 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
         vol_s = ind.realized_vol_series(s)
         return float(vol_s.iloc[-1]), vol_s
 
+    if key == "treasury_auction_stress":
+        r10 = fetch.fetch_treasury_auction_results("Note", "10-Year", env)
+        r30 = fetch.fetch_treasury_auction_results("Bond", "30-Year", env)
+        raw_val, series = _compute_auction_stress(r10, r30)
+        return raw_val, series
+
     raise ValueError(f"Unknown indicator key: {key}")
+
+
+def _zscore_list(values: list[float]) -> list[float]:
+    """Return z-scores for a list of floats; returns zeros if std is near zero."""
+    arr = np.array(values, dtype=float)
+    mu, sigma = arr.mean(), arr.std()
+    if sigma < 1e-10:
+        return [0.0] * len(values)
+    return list((arr - mu) / sigma)
+
+
+def _compute_auction_stress(
+    r10: list[dict], r30: list[dict]
+) -> tuple[float, pd.Series]:
+    """
+    Build a composite auction stress time series from 10Y Note + 30Y Bond results.
+
+    Stress score per auction = -(0.4*z_b2c + 0.4*z_indirect) + 0.2*z_dealer
+    (low bid-to-cover, low indirect bidder, high dealer takedown → high stress)
+
+    Returns (latest_stress_zscore, pd.Series indexed by auction date).
+    """
+
+    def _stress_series(results: list[dict]) -> pd.Series:
+        if len(results) < fetch._AUCTION_MIN_COUNT:
+            return pd.Series(dtype=float)
+        dates = pd.to_datetime([r["date"] for r in results])
+        z_b2c  = _zscore_list([r["bid_to_cover"]  for r in results])
+        z_ind  = _zscore_list([r["indirect_pct"]  for r in results])
+        z_dlr  = _zscore_list([r["dealer_pct"]    for r in results])
+        stress = [-0.4 * b - 0.4 * i + 0.2 * d
+                  for b, i, d in zip(z_b2c, z_ind, z_dlr)]
+        return pd.Series(stress, index=dates)
+
+    s10 = _stress_series(r10)
+    s30 = _stress_series(r30)
+
+    if s10.empty and s30.empty:
+        raise RuntimeError("treasury_auction_stress: insufficient data from TreasuryDirect")
+
+    # Interleave both series; on same date, take mean
+    combined = (
+        pd.concat([s10, s30])
+        .groupby(level=0)
+        .mean()
+        .sort_index()
+    )
+    return float(combined.iloc[-1]), combined
 
 
 def _band_from_score(score: float) -> str:

@@ -33,6 +33,7 @@ from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
 from src.history import log_run, load_history, prune_history
 from src.alerts import send_alerts, send_heartbeat, send_weekly_digest, score_past_alerts
+from src.calendar import fetch_upcoming_events
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -139,8 +140,15 @@ def main():
     elif not args.quiet:
         print("\n[5/5] Alerts skipped (--no-alerts)")
 
+    # Upcoming macro events for calendar card
+    calendar_events: list = []
+    try:
+        calendar_events = fetch_upcoming_events(env)
+    except Exception:
+        pass
+
     # Write dashboard
-    output_path = write_dashboard(scoring, news, history)
+    output_path = write_dashboard(scoring, news, history, calendar_events=calendar_events)
 
     # Weekly digest (sends automatically on Mondays)
     if not args.no_alerts:

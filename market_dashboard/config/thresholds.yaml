@@ -54,6 +54,12 @@ indicators:
     orange: 135.0
     red: 175.0
 
+  treasury_auction_stress:    # Composite z-score (10Y+30Y b/c, indirect%, dealer%); higher = weaker demand
+    direction: high
+    yellow: 1.0
+    orange: 1.5
+    red: 2.0
+
   # --- Financial Conditions ---
   nfci:                       # Chicago Fed NFCI; 0 = historical average; positive = tighter
     direction: high

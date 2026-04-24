@@ -254,3 +254,76 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10) -> pd.Series:
     series.index = pd.to_datetime(series.index)
     _write_cache(cpath, series)
     return series
+
+
+_TD_SEARCH_URL = "https://www.treasurydirect.gov/TA_WS/securities/search"
+# Minimum auctions needed for a meaningful z-score baseline
+_AUCTION_MIN_COUNT = 5
+
+
+def fetch_treasury_auction_results(
+    security_type: str, term: str, env: dict, count: int = 24
+) -> list[dict]:
+    """
+    Fetch the last `count` completed auction results from TreasuryDirect for
+    the given security_type (Note/Bond/TIPS) and term (e.g. '10-Year').
+
+    Returns list of dicts:
+      {"date": "YYYY-MM-DD", "bid_to_cover": float,
+       "indirect_pct": float, "dealer_pct": float}
+    Returns [] on any error or if fewer than _AUCTION_MIN_COUNT results.
+    """
+    cache_hours = float(env.get("CACHE_HOURS", 12))
+    safe_key = f"td_auction_{security_type}_{term}".replace(" ", "_").replace("-", "")
+    cpath = _cache_path(safe_key)
+
+    if _cache_valid(cpath, cache_hours):
+        with open(cpath) as f:
+            return json.load(f).get("results", [])
+
+    try:
+        resp = requests.get(
+            _TD_SEARCH_URL,
+            params={"type": security_type, "pagesize": count, "format": "json"},
+            timeout=20,
+        )
+        resp.raise_for_status()
+        raw = resp.json()
+        if not isinstance(raw, list):
+            return []
+    except Exception:
+        # Try stale cache on failure
+        if cpath.exists():
+            with open(cpath) as f:
+                return json.load(f).get("results", [])
+        return []
+
+    results: list[dict] = []
+    for sec in raw:
+        # Handle both field-naming styles seen in TreasuryDirect responses
+        sec_term = sec.get("term") or sec.get("securityTerm", "")
+        if sec_term != term:
+            continue
+        auction_date = (sec.get("auctionDate") or "")[:10]
+        if not auction_date:
+            continue
+        try:
+            b2c = float(sec.get("bidToCoverRatio") or 0)
+            ind = float(sec.get("indirectBidderPercent") or
+                        sec.get("indirectBidderAccepted") or 0)
+            dlr = float(sec.get("primaryDealerPercent") or
+                        sec.get("primaryDealerAccepted") or 0)
+        except (TypeError, ValueError):
+            continue
+        if b2c <= 0:
+            continue  # skip rows with no bid data
+        results.append({"date": auction_date, "bid_to_cover": b2c,
+                         "indirect_pct": ind, "dealer_pct": dlr})
+
+    # Sort oldest-first and keep the most recent `count` entries
+    results.sort(key=lambda r: r["date"])
+    results = results[-count:]
+
+    with open(cpath, "w") as f:
+        json.dump({"results": results}, f)
+    return results

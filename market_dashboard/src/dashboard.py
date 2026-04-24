@@ -83,6 +83,9 @@ def _fmt_raw(ind: dict) -> str:
         return f"{raw:.2f}%"
     if unit == "bps":
         return f"{raw:.1f} bps"
+    if unit == "σ":
+        sign = "+" if raw > 0 else ""
+        return f"{sign}{raw:.2f}σ"
     if unit in ("0–3", "0–2"):
         return str(int(raw))
     if unit == "$/bbl":
@@ -151,7 +154,39 @@ def _load_thresholds() -> dict:
         return {}
 
 
-def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
+def _build_calendar_card(events: list) -> str:
+    if not events:
+        return ""
+    _TYPE_DOT = {"fomc": "#d29922", "auction": "#4d9de0", "economic": "#8b949e"}
+    rows = ""
+    for ev in events:
+        d = ev["date"]
+        try:
+            dt = datetime.strptime(d, "%Y-%m-%d")
+            day_label = dt.strftime("%b %d  %a")
+        except ValueError:
+            day_label = d
+        dot_col = _TYPE_DOT.get(ev.get("type", "economic"), "#8b949e")
+        dot = f'<span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:{dot_col};margin-right:6px;vertical-align:middle"></span>'
+        rows += (
+            f'<div style="display:flex;align-items:center;padding:3px 0;'
+            f'border-bottom:1px solid #21262d;font-size:.83rem">'
+            f'<span style="color:#6e7681;min-width:90px">{day_label}</span>'
+            f'<span>{dot}{ev["label"]}</span>'
+            f"</div>"
+        )
+    legend = (
+        '<div style="display:flex;gap:16px;margin-top:10px;font-size:.75rem;color:#6e7681">'
+        '<span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#d29922;margin-right:4px;vertical-align:middle"></span>FOMC</span>'
+        '<span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#4d9de0;margin-right:4px;vertical-align:middle"></span>Auction</span>'
+        '<span><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:#8b949e;margin-right:4px;vertical-align:middle"></span>Economic</span>'
+        "</div>"
+    )
+    return f'<div class="card"><h2>Upcoming Macro Events (14 days)</h2>{rows}{legend}</div>'
+
+
+def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
+                    calendar_events: list | None = None) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "dashboard.html"
 
@@ -366,6 +401,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   {errs}
 </details>"""
 
+    # ── Calendar card ───────────────────────────────────────────────────────
+    calendar_card = _build_calendar_card(calendar_events or [])
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -384,6 +422,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   {composite_card}
   {correlation_card}
   {trend_card}
+  {calendar_card}
   <div class="bucket-grid">{buckets_html}</div>
   {news_html}
   <div class="card detail-section">
