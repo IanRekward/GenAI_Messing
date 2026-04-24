@@ -21,6 +21,76 @@ ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 _BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
 _BAND_MIN = {"green": 0.0, "yellow": 30.0, "orange": 50.0, "red": 70.0}
 
+# Shock-type classification rules — (primary_bucket, secondary_bucket_or_None, label, description).
+# Evaluated in order; first match where the primary bucket is elevated (orange/red) wins.
+# "Broad Risk-Off" is checked first before this table (5+ elevated buckets).
+_SHOCK_RULES: list[tuple[str | None, str | None, str, str]] = [
+    ("credit_spreads",    "funding_liquidity", "Credit Crunch",
+     "Credit and funding stress co-moving — watch for liquidity withdrawal and spread contagion."),
+    ("rates_curve",       "financial_conditions", "Rate/Bond Shock",
+     "Bond market stress with financial conditions tightening — monetary transmission at risk."),
+    ("equity_volatility", "breadth_flow",      "Equity Crash",
+     "Equity volatility spiking with broad market breadth breakdown — de-risking underway."),
+    ("inflation",         "economic_momentum", "Stagflation Signal",
+     "Inflation pressure combined with weakening economic momentum — Fed in a bind."),
+    ("global_spillover",  "credit_spreads",    "Global Contagion",
+     "Cross-border stress spilling into domestic credit — dollar or EM credit under pressure."),
+    ("funding_liquidity", "credit_spreads",    "Funding Stress",
+     "Short-term funding markets seizing up alongside credit widening — potential liquidity squeeze."),
+    ("rates_curve",       None,                "Rate Shock",
+     "Bond market stress: yield curve or rate volatility elevated without broader credit stress yet."),
+    ("credit_spreads",    None,                "Credit Stress",
+     "Credit spreads widening — risk premium repricing, but funding markets still functioning."),
+    ("equity_volatility", None,                "Equity Volatility Spike",
+     "Equity vol elevated — market uncertainty without broad fundamental deterioration yet."),
+    ("inflation",         None,                "Inflation Shock",
+     "Inflation expectations or realised CPI running hot — Fed policy tightening risk elevated."),
+    ("global_spillover",  None,                "Dollar/Global Shock",
+     "Cross-border stress with dollar strength or EM credit under pressure."),
+    ("funding_liquidity", None,                "Funding Stress",
+     "Short-term funding markets showing early stress — watch repo and SOFR spreads."),
+    ("sentiment",         "breadth_flow",      "Sentiment Breakdown",
+     "Fear spiking and market breadth breaking down beneath the surface."),
+    ("economic_momentum", None,                "Macro Deterioration",
+     "Economic momentum fading — labour market or activity data pointing to slowdown."),
+]
+
+
+def identify_stress_source(scoring: dict) -> tuple[str, str] | None:
+    """
+    Return (label, description) for the dominant shock type, or None if composite is green.
+    Uses bucket band elevations to identify the most likely stress regime.
+    """
+    buckets = scoring.get("buckets", {})
+    elevated = {k for k, b in buckets.items() if b.get("band") in ("orange", "red")}
+
+    if not elevated:
+        return None
+
+    # Broad risk-off: 5+ buckets stressed simultaneously
+    if len(elevated) >= 5:
+        bucket_scores = sorted(
+            ((k, b["score"]) for k, b in buckets.items() if k in elevated),
+            key=lambda x: x[1], reverse=True,
+        )
+        top = ", ".join(k.replace("_", " ") for k, _ in bucket_scores[:3])
+        return (
+            "Broad Risk-Off Panic",
+            f"Cross-asset stress across {len(elevated)}/11 buckets (led by {top}) — "
+            "typical pre-crisis or forced-liquidation signature.",
+        )
+
+    # Rule table — first match wins
+    for primary, secondary, label, desc in _SHOCK_RULES:
+        if primary in elevated:
+            if secondary is None or secondary in elevated:
+                return label, desc
+
+    # Fallback: name the single most-stressed bucket
+    top_bucket = max(elevated, key=lambda k: buckets[k]["score"])
+    label = buckets[top_bucket].get("label", top_bucket.replace("_", " "))
+    return f"{label} Stress", f"{label} is the primary source of elevated composite stress."
+
 
 def _debounce_passes(cur_band: str, prev_band: str, composite: float, buffer: float) -> bool:
     """Return True if the band change is confirmed (composite is buffer pts inside new band)."""
@@ -63,6 +133,7 @@ def _log_alert(
     body: str,
     scoring: dict | None = None,
     alert_types: list[str] | None = None,
+    shock_type: str | None = None,
 ) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     entry: dict = {
@@ -77,6 +148,7 @@ def _log_alert(
         entry["composite_score"] = scoring["composite"]
         entry["composite_band"] = scoring["composite_band"]
         entry["alert_types"] = alert_types or []
+        entry["shock_type"] = shock_type
         entry["triggered_indicators"] = [
             f"{bk}.{ik}"
             for bk, bkt in scoring["buckets"].items()
@@ -371,8 +443,11 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
 
     if in_quiet and not is_urgent:
         # Store summary for morning delivery, log for post-mortem, skip send
-        title = f"Market Stress: {cur_band.upper()} ({composite:.0f}/100)"
-        _log_alert(title, "\n\n".join(messages), scoring=scoring, alert_types=alert_types)
+        quiet_source = identify_stress_source(scoring)
+        quiet_tag = f" [{quiet_source[0]}]" if quiet_source else ""
+        title = f"Market Stress{quiet_tag}: {cur_band.upper()} ({composite:.0f}/100)"
+        _log_alert(title, "\n\n".join(messages), scoring=scoring, alert_types=alert_types,
+                   shock_type=quiet_source[0] if quiet_source else None)
         new_state["suppressed_alerts"].append({
             "timestamp": datetime.now().isoformat(),
             "title": title,
@@ -381,8 +456,21 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         _save_state(new_state)
         return 0
 
+    # ── Shock classification (temporal regime + stress source) ────────────
+    from src.history import classify_shock_type
+    temporal = classify_shock_type(history, scoring) if history is not None else "insufficient"
+    source = identify_stress_source(scoring)
+    source_label = source[0] if source else None
+
+    shock_lines: list[str] = []
+    if temporal not in ("calm", "insufficient"):
+        shock_lines.append(f"Regime: {temporal.replace('_', ' ').title()}")
+    if source:
+        shock_lines.append(f"Source: {source[0]} — {source[1]}")
+    shock_prefix = "\n".join(shock_lines) + "\n\n" if shock_lines else ""
+
     # ── Build and send ────────────────────────────────────────────────────
-    body = suppressed_digest + "\n\n".join(messages)
+    body = suppressed_digest + shock_prefix + "\n\n".join(messages)
 
     # Append news context for triggered indicators
     triggered_keys: set[str] = set()
@@ -398,9 +486,11 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     except Exception:
         pass
 
-    title = f"Market Stress: {cur_band.upper()} ({composite:.0f}/100)"
+    shock_tag = f" [{source_label}]" if source_label else ""
+    title = f"Market Stress{shock_tag}: {cur_band.upper()} ({composite:.0f}/100)"
 
-    _log_alert(title, body, scoring=scoring, alert_types=alert_types)
+    _log_alert(title, body, scoring=scoring, alert_types=alert_types,
+               shock_type=f"{temporal}|{source_label}" if source_label else temporal)
 
     sent = 0
     if _send_pushover(title, body, env):

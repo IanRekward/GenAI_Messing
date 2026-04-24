@@ -31,6 +31,7 @@ each.
 - [ ] Brief 11 — Audit log for alerts
 - [ ] Brief 12 — Provenance stamp on each run
 - [ ] Brief 13 — History pruning/archival
+- [ ] **Paywalled news sources** — add WSJ, FT, Bloomberg headline feeds; investigate bypass options (RSS where available, archive links, scrapers with ToS review). Goal: richer news context on triggered indicators without manual effort. *(complexity: medium, legal/ToS review required first)*
 - [ ] **Brief 14** — Dashboard tooltips: plain-English explanations of every indicator, bucket, band, and composite score *(last on list)*
 
 ## Sonnet onboarding instructions
