@@ -1,73 +1,102 @@
 # Market Dashboard — To-Do / Project Plan
 
-## Current status (2026-04-23)
+## Current status (2026-04-24)
 
-Phases 1–5 complete. Live automation and mobile access complete. Architectural
-review for Phase 6+ complete and documented in [ROADMAP.md](ROADMAP.md).
+**Project is in production and substantially feature-complete.** Daily
+automation runs at 7:30 AM. 181/181 tests passing. 11 buckets, 26 indicators,
+two composite scores (10yr + 3yr), Pushover alerts, GitHub Pages publication.
 
-**IMMEDIATE ACTION REQUIRED — see [ROADMAP.md §CRITICAL PRE-WORK](ROADMAP.md).**
-`config/weights.yaml` silently reverted to the pre-recalibration 9-bucket
-version. Restore from `weights.yaml.bak` before running any further scheduled
-work.
+### Shipped feature set
 
-## Phase 6+ — pick up from here
+- **Core scoring:** 11 buckets, percentile + band scoring, `composite` + `composite_short`
+- **Signal layers:** rate-of-change momentum (Brief 3), shock-type classification,
+  regime-adjusted composite, cross-bucket correlation breakdown (Brief 5)
+- **Resilience:** retry/backoff on fetch (Brief 7), staleness detection (Brief 6),
+  audit log (Brief 11), provenance stamps (Brief 12), history pruning (Brief 13)
+- **Config robustness:** schema validation + data-driven registry (Brief 1),
+  pre-commit config hook, test suite (Brief 2)
+- **Alerts:** escalation, rapid-rise, correlation-sustained, staleness, weekly
+  digest, Haiku-generated interpretation
+- **Dashboard:** event overlay on trend chart (Brief 4A), escalation-scenarios
+  card, historical analog finder, per-band review prompts, economic calendar,
+  cross-bucket correlation card, AI narrative paragraph, tooltip CSS infrastructure,
+  news→trigger keyword matching (Brief 9)
 
-For detailed implementation briefs see [ROADMAP.md](ROADMAP.md). Recommended
-execution order with priority in parentheses. Check off as Sonnet completes
-each.
+See the bottom "Completed" block for the older-history milestone list.
 
-- [x] **Step 0** — Restore 10-bucket weights.yaml from .bak *(done 2026-04-23)*
-- [x] **Brief 2** — Minimum viable test suite *(done 2026-04-23 — 22 tests, 0.24s)*
-- [x] **Brief 1** — Config schema validation + data-driven registry *(done 2026-04-24 — 177 tests passing)*
-- [ ] **VIX term-structure evaluation** — investigate VIX9D (9-day) and VIX1D (1-day) relative to VIX (30-day) as a short-term volatility signal. Assess whether term-structure slope (VIX9D/VIX or VIX1D/VIX) adds signal beyond raw VIX in detecting fast shocks. Decide: add to equity_volatility bucket, rates_curve, or skip? Consider ticker availability on yfinance. *(med, design decision required before adding)*
-- [ ] **Brief 4A** — Historical events overlay on trend chart *(1 hour UX win)*
-- [x] **Brief 3** — Rate-of-change signal layer *(done 2026-04-24 — 181 tests passing)*
-- [ ] **Brief 6** — Data staleness alerts *(high, half day)*
-- [ ] **Brief 4B** — Indicator drill-down detail pages *(med-high, half day)*
-- [ ] **Brief 5** — Correlation-breakdown signal *(high, half day)*
-- [ ] Brief 7 — Retry + circuit-breaker in fetch layer
-- [ ] Brief 8 — Deescalation alerts + weekly digest
-- [ ] Brief 9 — News-to-trigger cross-reference
-- [ ] Brief 10 — Regime-aware weighting *(large)*
-- [ ] Brief 11 — Audit log for alerts
-- [ ] Brief 12 — Provenance stamp on each run
-- [ ] Brief 13 — History pruning/archival
-- [ ] **Paywalled news sources** — add WSJ, FT, Bloomberg headline feeds; investigate bypass options (RSS where available, archive links, scrapers with ToS review). Goal: richer news context on triggered indicators without manual effort. *(complexity: medium, legal/ToS review required first)*
-- [ ] **Backtest history visualization** — plan and build a view that replays the composite stress score through history alongside what the market actually did (e.g. SPX drawdown, forward returns). Should answer: did high stress scores precede market stress? What were the false positives? Leverage existing src/backtest.py + src/evaluation.py + src/backtest_report.py. Needs design pass before implementation — decide on time range, chart format, key metrics to surface (hit rate, lead time, false positive rate), and whether this lives on the main dashboard or a separate page. *(complexity: medium-large, design-first)*
-- [ ] **Brief 14** — Dashboard tooltips: plain-English explanations of every indicator, bucket, band, and composite score *(last on list)*
+---
 
-## Dashboard UX & readability improvements
+## Sonnet's next execution queue
 
-These are polish items that can be worked as a batch or individually — all are self-contained in `src/dashboard.py` / `config/`.
+Ordered top-down by value × (1/effort), respecting dependencies. Sonnet should
+execute in order. Design-first items marked 🅾️ — route through Opus before
+Sonnet starts.
 
-- [ ] **Review Prompts explainer** — Add a short header sentence to the REVIEW PROMPTS card explaining what it is (same pattern as the ESCALATION SCENARIOS card). E.g. "These questions help you stress-test your interpretation of the current reading."
-- [ ] **Side-by-side layout: Review Prompts + Escalation Scenarios** — Move the two cards to sit adjacent on the dashboard so thematically related "what to do next" content is grouped together.
-- [ ] **Cross-bucket correlation plain-English caption** — Under the correlation card title, add 1–2 sentences explaining what the number means: what "crisis synchronous" looks like vs. normal, and why elevated correlation matters (buckets moving together = fewer diversified buffers against a single shock).
-- [ ] **90-Day Composite Trend description** — Add a subtitle or caption sentence under the chart heading that explains what the viewer is looking at: the composite stress score over the past 90 days, what the bands mean, and that today's value is on the right.
-- [ ] **Macro calendar: model-linkage badge** — For each event in the Upcoming Macro Events card, show whether that event type drives a model indicator, and if so which one(s). E.g. "CPI release → cpi_yoy (Inflation Pressure bucket)". Events not covered by the model get a "not in model" note.
-- [ ] **Indicator and bucket weight display** — In every bucket section, show (a) the bucket's weight as a share of the composite (e.g. "13% of composite"), and (b) each indicator's weight within its bucket (e.g. "VIX — 65% of Equity Volatility"). Pull from weights.yaml so it's always accurate.
-- [ ] **Weight bar chart under each bucket** — Add a small horizontal stacked-bar or proportional bar chart visually representing the indicator weights within each bucket, so the relative emphasis is scannable without reading numbers. Keep it compact (thin bar, no axes).
-- [ ] **Move "new brief" highlight** — Relocate the highlighted new-entry/orientation card so it sits below the ESCALATION SCENARIOS and REVIEW PROMPTS cards rather than at the top of the page. The top of the page should lead with the composite score.
-- [ ] **Indicator tooltips (plain English)** — Add a tooltip to every indicator row in the indicator section. Each tooltip should explain in layman's terms: what the indicator measures, what a high/low reading means in plain English, and why it matters for detecting market stress. Source the copy from a config file (e.g. `config/indicator_descriptions.yaml`) so it can be updated without touching Python. Note: Brief 14 covers band/composite/bucket tooltips — this item covers per-indicator tooltips specifically on the indicator table rows.
-- [ ] **Indicator relative weights display** — In the indicator section rows, show each indicator's weight within its bucket alongside the raw value. E.g. "VIX  |  42.3  |  65% of bucket  |  8.5% of composite". The composite share = bucket_weight × indicator_weight. Pull directly from weights.yaml so it's always in sync with the model.
+### Phase A — Verify & clean (30–60 min)
 
-> **Implementation grouping note:** When scheduling these UX items, batch them to avoid touching the same HTML/config twice: (A) items 6 + 7 + 10 together — all touch indicator/bucket weight display; (B) items 9 + Brief 14 together — both add plain-English tooltip copy and share the same config-file approach.
+- [ ] **Verification sweep** — run `python run_dashboard.py --no-alerts --quiet` end-to-end. Open the generated `dashboard.html`. Confirm the shipped feature list above actually renders / fires correctly (event overlay on trend chart, correlation card, staleness handling, weekly digest, audit log writes to `data/alert_log.jsonl`, provenance columns in `data/history.csv`). If any gap is real, open a dedicated TODO under Phase C.
+- [ ] **Delete `config/weights.yaml.bak`** — Brief 1 shipped and pre-commit hook prevents drift. Git is the backup. Per ROADMAP §pre-feature refactor item 3.
+
+### Phase B — Dashboard UX (1–2 days of high-leverage polish)
+
+Grouped into batches so the same HTML / config file is only touched once per batch.
+
+- [ ] **UX Batch A — Layout & explainer captions** *(1–2 hrs, pure HTML)*
+  Single pass through `src/dashboard.py`. Consolidates 6 items:
+  1. Add explainer sentence to REVIEW PROMPTS card (mirror ESCALATION SCENARIOS format).
+  2. Side-by-side layout: REVIEW PROMPTS + ESCALATION SCENARIOS cards adjacent.
+  3. Cross-bucket correlation card: 1–2 sentence plain-English caption under the number.
+  4. 90-Day Composite Trend: add subtitle explaining what's shown + band meanings + "today is on the right".
+  5. Macro calendar: per-event "→ cpi_yoy (Inflation Pressure)" badge when the event drives a model indicator; "not in model" otherwise.
+  6. Move the "new brief" / orientation highlight below the two action cards — composite score leads the page.
+
+- [ ] **UX Batch B — Weight display & bar chart** *(3–4 hrs)*
+  All touches bucket/indicator rendering; single refactor pass. Pull all numbers from `config/weights.yaml` — never hardcode.
+  1. Bucket header shows "X% of composite".
+  2. Each indicator row shows "X% of bucket · Y% of composite" (composite share = bucket_weight × indicator_weight).
+  3. Small horizontal bar chart under each bucket title visualizing indicator weights (compact, no axes).
+
+- [ ] **Brief 4B — Indicator drill-down pages** *(half day)*
+  Per-indicator inline `<details>` block with 10yr chart + stats (min/max/median/percentile/current). See [ROADMAP.md §Brief 4B](ROADMAP.md). Pre-req for UX Batch C.
+
+- [ ] **UX Batch C — Full tooltip coverage** *(half day)*
+  Consolidates UX item 9 + Brief 14. Builds on Brief 4B + existing `config/tooltips.yaml`.
+  1. Plain-English tooltip on every indicator row: what it measures, what high/low means, why it matters.
+  2. Tooltips on composite, bucket labels, band labels, regime terms.
+  3. All copy lives in `config/tooltips.yaml`. Extend schema if needed.
+
+### Phase C — Remaining brief work
+
+- [ ] **Brief 8 (second half) — Deescalation alerts** *(1–2 hrs)*
+  Mirror of escalation alert: fire Pushover when composite band improves (red→orange, orange→yellow, yellow→green). Debounce using same buffer pattern as escalation. Update `data/alert_state.json` schema if needed. See [ROADMAP.md §Brief 8 sketch](ROADMAP.md).
+
+### Phase D — Design-first (route through Opus before Sonnet executes) 🅾️
+
+- [ ] 🅾️ **VIX term-structure evaluation** — design decision needed. Is VIX9D/VIX1D slope a valuable short-term vol signal beyond raw VIX? Where does it live — equity_volatility or rates_curve? yfinance ticker availability (^VIX9D appears to exist; ^VIX1D may not). Opus recommendation → Sonnet implements.
+
+- [ ] 🅾️ **Backtest history visualization** — design decision needed. Main-dashboard card or separate page? Metrics (hit rate, lead time, false-positive rate, SPX drawdown overlay)? Time range? Uses existing `src/backtest.py` + `src/evaluation.py` + `src/backtest_report.py`. Design pass → Sonnet implements.
+
+- [ ] 🅾️ **Brief 10 — Regime-aware weighting (LARGE)** *(multi-day)*
+  Two weight sets by VIX tercile (low/mid/high), precomputed during backtest, applied at score time. Touches scoring, backtest, recalibrate. Opus should design the API + migration (how do we handle the weight-set switch in the composite calculation, how does it interact with Brief 3 momentum, how does history.csv represent which regime was active) before Sonnet executes.
+
+- [ ] 🅾️ **Paywalled news sources** *(user scope call + ToS review)*
+  Which of WSJ / FT / Bloomberg does Ian actually want? What's the minimum-viable integration (RSS where allowed, archive links, nothing questionable)? Legal / ToS review required before any scraping. Not a Sonnet task until Ian picks the feeds.
+
+---
 
 ## Sonnet onboarding instructions
 
 When starting work on any Brief:
 
-1. **Always** read [ROADMAP.md §CRITICAL PRE-WORK](ROADMAP.md) first. If Step 0
-   hasn't been done and you see evidence of the 9-vs-10 bucket drift, do that
-   before your brief.
-2. Read the full brief in ROADMAP.md — each is self-contained with problem,
-   design decision, file list, edge cases, and success criteria.
-3. Check the "Dependencies" line of the brief. If it depends on a prior
-   brief, verify that brief's success criteria are met before starting.
-4. After completing a brief, run the test suite (Brief 2) if it exists, then
-   manually verify the success criteria listed in the brief.
-5. Update this checklist and commit with a message referencing the brief
-   number.
+1. Read [CLAUDE.md](CLAUDE.md) first — two-repo workflow, technical gotchas,
+   working agreement, locked scope decisions.
+2. `cd /c/Users/rekwa/ian_projects/_genai_tmp && git log --oneline -10` to catch up.
+3. Read the full brief in [ROADMAP.md](ROADMAP.md) if it references one.
+4. Run `python -m pytest tests/ -q` before making any edits. Must be 181+ green.
+5. Mark the item done here after the brief's success criteria verify. Commit
+   with a message referencing the brief or batch name.
+
+---
 
 ## Completed
 
@@ -82,23 +111,54 @@ When starting work on any Brief:
 - [x] Windows taskbar shortcut / launcher (`launch_dashboard.lnk`)
 - [x] Mobile access via GitHub Pages (`--publish` flag, auto-push to /docs)
 - [x] Windows Task Scheduler daily run at 7:30 AM
-- [x] Wake-on-RTC at 7:25 AM (5 min pre-run)
+- [x] Wake-on-RTC at 7:20 AM (5 min pre-run)
 - [x] 31-day heartbeat Pushover confirmations
 
 ### Alerts
 - [x] Contextual Haiku-generated alert interpretation
 - [x] Buy/hold suggestions in alert context (defensive alternatives)
+- [x] Rapid-rise alert (Brief 3)
+- [x] Correlation-sustained alert (Brief 5)
+- [x] Staleness alert (Brief 6)
+- [x] Weekly digest (Brief 8 — first half)
+- [x] Audit log to `data/alert_log.jsonl` (Brief 11)
+
+### Model additions
+- [x] Global Spillover bucket (10th bucket)
+- [x] Breadth_flow bucket (11th bucket — sector breadth + SPX 200d MA)
+- [x] Treasury auction stress indicator
+- [x] Shock-type classification (temporal + source)
+- [x] Regime-adjusted composite (partial implementation of Brief 10)
+- [x] Historical analog finder
+- [x] Escalation scenarios / pre-mortem card
+- [x] Per-band review prompts
+- [x] Economic calendar display
+- [x] AI daily narrative paragraph
+
+### Resilience & config
+- [x] **Step 0** — Restore 10-bucket weights.yaml *(2026-04-23)*
+- [x] **Brief 1** — Config schema validation + data-driven registry *(2026-04-24)*
+- [x] **Brief 2** — Minimum viable test suite *(2026-04-23)*
+- [x] **Brief 3** — Rate-of-change signal layer *(2026-04-24)*
+- [x] **Brief 4A** — Historical events overlay on trend chart
+- [x] **Brief 5** — Correlation-breakdown signal
+- [x] **Brief 6** — Data staleness alerts
+- [x] **Brief 7** — Retry + circuit-breaker in fetch layer
+- [x] **Brief 8 (first half)** — Weekly digest
+- [x] **Brief 9** — News-to-trigger cross-reference
+- [x] **Brief 11** — Audit log for alerts
+- [x] **Brief 12** — Provenance stamp on each run
+- [x] **Brief 13** — History pruning / archival to parquet
+- [x] Pre-commit hook for config validation
 
 ### Backtesting framework (see BACKTEST_DESIGN.md)
 - [x] **Phase 1** — Point-in-time backtest engine (`src/backtest.py`)
 - [x] **Phase 2** — Evaluation metrics (`src/evaluation.py`)
 - [x] **Phase 3** — Backtest report generator (`src/backtest_report.py`)
 - [x] **Phase 4** — Live performance tracking (rolling IC + degradation on dashboard)
-- [x] **Phase 5** — Recalibration pipeline (`src/recalibrate.py`) *(applied, but weights.yaml reverted — see Step 0)*
-
-### Model additions
-- [x] Global Spillover bucket (10th bucket: USD index, Euro HY OAS, EM Corp OAS, EEM vol) *(code complete, config reverted — see Step 0)*
+- [x] **Phase 5** — Recalibration pipeline (`src/recalibrate.py`)
 
 ### Design decisions / documentation
-- [x] Backtesting design spec — complete, see [BACKTEST_DESIGN.md](BACKTEST_DESIGN.md)
-- [x] Architectural review & Phase 6+ roadmap — complete, see [ROADMAP.md](ROADMAP.md)
+- [x] Backtesting design spec — [BACKTEST_DESIGN.md](BACKTEST_DESIGN.md)
+- [x] Architectural review & Phase 6+ roadmap — [ROADMAP.md](ROADMAP.md)
+- [x] Cross-model working agreement — [CLAUDE.md](CLAUDE.md)
