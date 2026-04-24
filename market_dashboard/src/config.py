@@ -22,7 +22,7 @@ class ConfigError(Exception):
 KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "vix", "sp500_1m_vol",
     "hy_oas", "ig_oas",
-    "yield_curve", "ten_year",
+    "yield_curve", "ten_year", "move_index",
     "nfci", "stlfsi",
     "breakeven_5y", "cpi_yoy",
     "sofr_spread",

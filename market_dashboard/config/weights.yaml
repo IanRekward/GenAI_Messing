@@ -44,14 +44,19 @@ buckets:
     indicators:
       yield_curve:
         label: "10Y–2Y Spread"
-        weight: 0.65
+        weight: 0.50
         invert: true        # more negative = more inverted = more stress
         unit: "%"
       ten_year:
         label: 10Y Treasury Yield
-        weight: 0.35
+        weight: 0.25
         invert: false
         unit: "%"
+      move_index:
+        label: "MOVE Index (Rate Vol)"
+        weight: 0.25
+        invert: false
+        unit: ""
 
   financial_conditions:
     label: Financial Conditions

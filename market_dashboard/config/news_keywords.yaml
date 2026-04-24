@@ -114,6 +114,13 @@ indicators:
     - market sentiment
     - risk appetite
     - retail investors
+  move_index:
+    - MOVE index
+    - Treasury volatility
+    - bond volatility
+    - rate volatility
+    - yield volatility
+    - swaption
   iran_trigger:
     - iran
     - geopolitical

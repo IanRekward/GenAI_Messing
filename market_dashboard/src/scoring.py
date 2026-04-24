@@ -71,6 +71,10 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
         s = fetch.fetch_yfinance_series("^TNX", env, years)
         return float(s.iloc[-1]), s
 
+    if key == "move_index":
+        s = fetch.fetch_yfinance_series("^MOVE", env, years)
+        return float(s.iloc[-1]), s
+
     if key == "nfci":
         s = fetch.fetch_fred_series("NFCI", env, years)
         return float(s.iloc[-1]), s

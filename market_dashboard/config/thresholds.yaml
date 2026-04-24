@@ -48,6 +48,12 @@ indicators:
     orange: 4.75
     red: 5.25
 
+  move_index:                 # ICE BofA MOVE index; bp of implied Treasury vol
+    direction: high
+    yellow: 100.0
+    orange: 135.0
+    red: 175.0
+
   # --- Financial Conditions ---
   nfci:                       # Chicago Fed NFCI; 0 = historical average; positive = tighter
     direction: high

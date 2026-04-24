@@ -9,7 +9,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.history import build_trend_svg, compute_composite_momentum, cross_bucket_correlation, correlation_regime
+from src.history import build_trend_svg, compute_composite_momentum, compute_bucket_momentum, cross_bucket_correlation, correlation_regime
 from src.indicator_detail import build_indicator_detail
 
 OUTPUT_DIR = Path("output")
@@ -221,6 +221,40 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
   {build_trend_svg(history, events)}
 </div>"""
 
+    # ── Staleness banner (todo 39) ───────────────────────────────────────────
+    stale_keys = set(scoring.get("stale_indicators", []))
+    staleness_banner = ""
+    if stale_keys:
+        stale_labels = [
+            ind["label"]
+            for bkt in scoring["buckets"].values()
+            for ik, ind in bkt["indicators"].items()
+            if ik in stale_keys
+        ]
+        n = len(stale_labels)
+        sev_color = "#ff4444" if n >= 3 else "#ffcc00"
+        sev_bg = "#2e0d0d" if n >= 3 else "#2e2800"
+        label_list = ", ".join(stale_labels[:6]) + (" +more" if n > 6 else "")
+        staleness_banner = (
+            f'<div style="background:{sev_bg};border:1px solid {sev_color};'
+            f'border-radius:6px;padding:10px 16px;margin-bottom:14px;font-size:.82rem">'
+            f'<span style="color:{sev_color};font-weight:700">&#9888; STALE DATA</span>'
+            f'<span style="color:#c9d1d9;margin-left:8px">'
+            f'{n} indicator{"s" if n != 1 else ""} may be behind schedule: {label_list}'
+            f"</span></div>"
+        )
+
+    # ── Bucket momentum (todo 37) ────────────────────────────────────────────
+    bucket_vel = compute_bucket_momentum(history)
+    # Top-3 accelerating: buckets with highest positive 7d velocity
+    top3_accel = set(
+        sorted(
+            [k for k, v in bucket_vel.items() if v is not None and v > 0],
+            key=lambda k: bucket_vel[k],
+            reverse=True,
+        )[:3]
+    )
+
     # ── Bucket grid ─────────────────────────────────────────────────────────
     thresholds = _load_thresholds()
     ind_tooltips = tooltips.get("indicators", {})
@@ -278,11 +312,26 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
                 f"</details>"
             )
         bkt_label_html = _tip(bucket["label"], bkt_tip) if bkt_tip else bucket["label"]
+        # Velocity display for this bucket
+        vel = bucket_vel.get(bkey)
+        vel_html = ""
+        if vel is not None:
+            arrow = "&#9650;" if vel > 0 else ("&#9660;" if vel < 0 else "&#8594;")
+            vel_color = "#ff6b6b" if vel > 0 else ("#4dbb6a" if vel < 0 else "#6e7681")
+            sign = "+" if vel > 0 else ""
+            vel_html = (
+                f'<div style="font-size:.72rem;color:{vel_color};margin-top:1px">'
+                f'{arrow} {sign}{vel:.1f} / 7d</div>'
+            )
+        # Top-3 accelerating badge
+        accel_badge = ""
+        if bkey in top3_accel:
+            accel_badge = '<span style="font-size:.62rem;color:#ff8800;margin-left:6px;font-weight:700">&#9650;FAST</span>'
         buckets_html += f"""
 <div class="bucket" style="border-color:{bc}">
   <div class="bkt-hdr">
-    <h2>{bkt_label_html}</h2>
-    <span class="bkt-score" style="color:{bc}">{bucket['score']:.0f}<span style="color:#6e7681;font-size:.8rem;font-weight:400">/100</span></span>
+    <h2>{bkt_label_html}{accel_badge}</h2>
+    <span class="bkt-score" style="color:{bc}">{bucket['score']:.0f}<span style="color:#6e7681;font-size:.8rem;font-weight:400">/100</span>{vel_html}</span>
   </div>
   <table><tbody>{rows}</tbody></table>
 </div>"""
@@ -331,6 +380,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     <h1>Market Stress Dashboard</h1>
     <span class="ts">Last refreshed: {ts}</span>
   </div>
+  {staleness_banner}
   {composite_card}
   {correlation_card}
   {trend_card}

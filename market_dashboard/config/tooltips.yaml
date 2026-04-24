@@ -53,6 +53,8 @@ indicators:
     tip: "10-Year minus 2-Year Treasury yield (%). Negative = inverted = recession warning. Has inverted before every U.S. recession since the 1970s. Currently most-watched signal."
   ten_year:
     tip: "10-Year U.S. Treasury yield (%). High rates compress equity valuations and increase debt-service burdens. Above 5%+ has historically preceded stress events."
+  move_index:
+    tip: "ICE BofA MOVE Index — implied volatility of U.S. Treasuries from options (basis points). Above 100 = elevated rate uncertainty. Above 175 = crisis level. Peaked at ~264 in COVID, ~182 during SVB (2023)."
   nfci:
     tip: "Chicago Fed National Financial Conditions Index. Zero = historical average. Positive = tighter-than-average conditions. Above 0.40 = materially tight. Hit 1.26 during COVID."
   stlfsi:

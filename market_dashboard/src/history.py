@@ -157,6 +157,38 @@ def compute_composite_momentum(history: pd.DataFrame) -> dict:
             "acceleration_7d": a7, "regime": regime}
 
 
+def compute_bucket_momentum(history: pd.DataFrame) -> dict:
+    """Return {bucket_key: velocity_7d} for every bucket_* column in history. None if < 8 days."""
+    if history.empty or len(history) < 2:
+        return {}
+    bucket_cols = [c for c in history.columns if c.startswith("bucket_")]
+    if not bucket_cols:
+        return {}
+
+    df = history[["timestamp"] + bucket_cols].copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["date"] = df["timestamp"].dt.date
+    df = df.sort_values("timestamp").groupby("date").last().reset_index()
+    df = df.sort_values("date").reset_index(drop=True)
+
+    latest = df.iloc[-1]
+    latest_date = pd.Timestamp(latest["date"])
+    target = latest_date - pd.Timedelta(days=7)
+    past_rows = df[pd.to_datetime(df["date"]) <= target]
+
+    result: dict = {}
+    for col in bucket_cols:
+        bkey = col[len("bucket_"):]
+        if past_rows.empty:
+            result[bkey] = None
+        else:
+            try:
+                result[bkey] = round(float(latest[col]) - float(past_rows.iloc[-1][col]), 2)
+            except (ValueError, KeyError):
+                result[bkey] = None
+    return result
+
+
 def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> float | None:
     """
     Mean absolute pairwise Spearman correlation across all bucket_* score columns
