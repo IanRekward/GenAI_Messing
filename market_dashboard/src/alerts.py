@@ -467,6 +467,10 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         shock_lines.append(f"Regime: {temporal.replace('_', ' ').title()}")
     if source:
         shock_lines.append(f"Source: {source[0]} — {source[1]}")
+    regime_adj = scoring.get("composite_regime_adj")
+    regime_adj_label = scoring.get("composite_regime_adj_label", "")
+    if regime_adj is not None and abs(regime_adj - composite) >= 3:
+        shock_lines.append(f"Regime-adj score: {regime_adj:.0f}/100 ({regime_adj_label})")
     shock_prefix = "\n".join(shock_lines) + "\n\n" if shock_lines else ""
 
     # ── Build and send ────────────────────────────────────────────────────

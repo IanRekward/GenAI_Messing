@@ -406,7 +406,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     mom_tip = tooltips.get("momentum", {}).get("tip", "")
     composite_score_html = _tip(f"{composite:.0f}", composite_tip)
     band_label_html = _tip(band, band_tip)
-    # ── Regime-aware (short-window) composite (todo 43) ─────────────────────
+    # ── Regime-aware composite (todo 43) ────────────────────────────────────
     composite_short = scoring.get("composite_short")
     composite_short_band = scoring.get("composite_short_band", "green")
     short_years = scoring.get("history_years_short", 3)
@@ -430,6 +430,26 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f"</div>"
         )
 
+    # Velocity-adjusted composite — show only when adjustment is material (≥3 pts)
+    regime_adj = scoring.get("composite_regime_adj")
+    regime_adj_label = scoring.get("composite_regime_adj_label", "")
+    regime_adj_html = ""
+    if regime_adj is not None and abs(regime_adj - composite) >= 3:
+        _band_fn = lambda s: "red" if s >= 70 else "orange" if s >= 50 else "yellow" if s >= 30 else "green"
+        adj_band = _band_fn(regime_adj)
+        adj_color = _color(adj_band)
+        adj_tip = tooltips.get("regime_adjusted", {}).get("tip", "")
+        inner_adj = f"{regime_adj:.0f}"
+        if adj_tip:
+            inner_adj = _tip(inner_adj, adj_tip)
+        regime_adj_html = (
+            f'<div class="score-sub" style="margin-top:3px">'
+            f'<span style="color:#6e7681">Regime-adj: </span>'
+            f'<span style="color:{adj_color};font-weight:600">{inner_adj}</span>'
+            f'<span style="color:#6e7681;font-size:.75rem"> ({regime_adj_label})</span>'
+            f"</div>"
+        )
+
     composite_card = f"""
 <div class="composite" style="background:{band_bg};border-left:6px solid {band_color}">
   <div>
@@ -441,6 +461,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     {mom_html}
     {shock_html}
     {regime_html}
+    {regime_adj_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
       <span class="tc"><b style="color:#ff8800">{scoring['orange_count']}</b> orange</span>

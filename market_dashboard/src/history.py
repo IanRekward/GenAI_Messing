@@ -227,6 +227,35 @@ def classify_shock_type(history: "pd.DataFrame", scoring: dict) -> str:
     return "calm"
 
 
+def compute_regime_adjusted_composite(
+    composite: float, shock_type: str, momentum: dict
+) -> tuple[float, str]:
+    """
+    Apply a regime-based adjustment to the composite score.
+
+    Returns (adjusted_composite, label_string).
+      fast_shock  → velocity premium  (+v7 * 0.3, capped at +10)
+      slow_burn   → persistence premium (+composite * 5%, capped at +5)
+      recovery    → recovery discount  (v7 * 0.2, capped at −8, v7 is negative)
+      calm / insufficient → no change
+    """
+    v7 = momentum.get("velocity_7d")
+
+    if shock_type == "fast_shock" and v7 is not None and v7 > 0:
+        adj = min(v7 * 0.3, 10.0)
+        return round(min(composite + adj, 100.0), 1), f"+{adj:.1f} velocity premium"
+
+    if shock_type == "recovery" and v7 is not None and v7 < 0:
+        adj = max(v7 * 0.2, -8.0)
+        return round(max(composite + adj, 0.0), 1), f"{adj:.1f} recovery discount"
+
+    if shock_type == "slow_burn":
+        adj = min(composite * 0.05, 5.0)
+        return round(min(composite + adj, 100.0), 1), f"+{adj:.1f} persistence premium"
+
+    return composite, ""
+
+
 def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> float | None:
     """
     Mean absolute pairwise Spearman correlation across all bucket_* score columns

@@ -35,7 +35,10 @@ from src.history import log_run, load_history, prune_history
 from src.alerts import send_alerts, send_heartbeat, send_weekly_digest, score_past_alerts
 from src.calendar import fetch_upcoming_events
 from src.narrative import generate_narrative
-from src.history import compute_composite_momentum, compute_bucket_momentum, classify_shock_type
+from src.history import (
+    compute_composite_momentum, compute_bucket_momentum,
+    classify_shock_type, compute_regime_adjusted_composite,
+)
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -153,6 +156,11 @@ def main():
     mom = compute_composite_momentum(history)
     bkt_vel = compute_bucket_momentum(history)
     shock_type = classify_shock_type(history, scoring)
+    regime_adj, regime_adj_label = compute_regime_adjusted_composite(
+        scoring["composite"], shock_type, mom
+    )
+    scoring["composite_regime_adj"] = regime_adj
+    scoring["composite_regime_adj_label"] = regime_adj_label
     history_summary = {
         "shock_type": shock_type,
         "velocity_7d": mom.get("velocity_7d"),
