@@ -51,8 +51,16 @@ is **edit-only**. The git repo lives at `c:\Users\rekwa\ian_projects\_genai_tmp\
 1. Edit files in the primary dir (where Read/Edit/Write tools operate).
 2. Copy changed files: `cp market_dashboard/<path> _genai_tmp/market_dashboard/<path>`
 3. Prefix every git command: `cd /c/Users/rekwa/ian_projects/_genai_tmp && git ...`
-4. Use a HEREDOC for commit messages. Always include the co-author trailer:
-   `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
+4. Use a HEREDOC for commit messages. Always include the co-author trailer
+   matching the running model — e.g.:
+   - `Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>`
+   - `Co-Authored-By: Claude Opus 4.7 <noreply@anthropic.com>`
+   `git log` becomes a cross-model record of who did what.
+5. Stage with specific paths (`git add market_dashboard/src/foo.py ...`). Never
+   `git add .` or `-A` — the repo contains other projects, and blanket adds
+   pull in unrelated work or stray artifacts.
+6. `warning: LF will be replaced by CRLF` on every commit is harmless Windows
+   line-ending noise. Do not "fix" it or touch `.gitattributes` without asking.
 
 The Bash tool cwd does NOT persist between calls — prefixing the `cd` is the
 only reliable approach. A `.git.bak` placeholder in the primary dir will cause
@@ -64,12 +72,18 @@ git commands there to fail loudly (good — it's a safety net, don't delete it).
 
 ## Before starting any work
 
-1. Run `python -m pytest tests/ -q` from the primary dir. All tests must pass
+1. `cd /c/Users/rekwa/ian_projects/_genai_tmp && git log --oneline -10` —
+   catch up on what the last session (possibly a different model) just landed.
+2. Run `python -m pytest tests/ -q` from the primary dir. All tests must pass
    before you write a single line. If they don't, fix it before continuing.
-2. Read [ROADMAP.md](ROADMAP.md) for the full brief before touching any Brief
+   Tests are fast (~1s, 181+ cases) — there's no excuse to skip.
+3. Read [ROADMAP.md](ROADMAP.md) for the full brief before touching any Brief
    task. Each brief is self-contained with problem, design decisions, file list,
    edge cases, and success criteria.
-3. Check the brief's "Dependencies" line. Verify prior briefs' criteria are met.
+4. Check the brief's "Dependencies" line. Verify prior briefs' criteria are met.
+5. Check [TODO.md](TODO.md) for a "mid-task handoff" note at the bottom. If the
+   previous session ended mid-brief, it'll be recorded there (see "Mid-task
+   handoffs" below).
 
 ---
 
@@ -80,7 +94,10 @@ git commands there to fail loudly (good — it's a safety net, don't delete it).
    automatically — if it fails, fix the config, don't skip the hook.
 3. Mark the item complete in [TODO.md](TODO.md).
 4. Commit with a message that references the brief or feature name.
-5. Push to `origin main`.
+5. Push to `origin main`. **Push is pre-authorized** for this project — the
+   whole point of the workflow is same-day publication to GitHub Pages via
+   the morning automation. Don't stall to confirm each push. (Force-push
+   still requires explicit user sign-off, as does any destructive git op.)
 
 ---
 
@@ -140,6 +157,76 @@ fails loudly. When adding an indicator:
 1. Add it to `config/weights.yaml` with a `source:` block.
 2. Add its key to `KNOWN_INDICATOR_KEYS` in `src/config.py`.
 3. If `type: computed`, register a handler in `COMPUTED_HANDLERS` in `src/scoring.py`.
+
+---
+
+## Technical gotchas — things that bit a past session
+
+Each of these cost a previous model at least one wasted iteration. Read once,
+save yourself the same mistake. Add to this list when something bites you too.
+
+- **Pre-commit hook validates the `_genai_tmp/` copy, not primary.** The hook
+  runs `cd "$(git rev-parse --show-toplevel)/market_dashboard"` before calling
+  `validate_config()`. If you edit `config/weights.yaml` in primary but forget
+  to `cp` it to `_genai_tmp/` before committing, the hook rejects using the
+  stale file. When committing config changes: **sync config files first**.
+- **Two composite scores exist.** `composite` uses 10-year percentiles,
+  `composite_short` uses 3-year (`HISTORY_YEARS_SHORT` env var, default 3).
+  Any composite-aware feature — alerts, dashboard cards, Pushover body,
+  narrative — must handle both. Search for `composite_short` before adding.
+- **`invert: true` flag flips score direction.** Indicators where LOWER raw =
+  MORE stress must set `invert: true` in `weights.yaml`. Current inverted
+  indicators: `yield_curve` (inverted curve = stress), `cnn_fear_greed` (fear
+  = low score = stress), `spx_200dma_distance` (below MA = stress). Easy to
+  forget when adding a new indicator.
+- **Alert dedupe state lives in `data/alert_state.json`.** Keys include
+  `composite_band`, `orange_indicators`, `red_indicators`, `rapid_rise_alerts`,
+  `corr_regime_streak`, `stale_indicators`, `weekly_alert_count`. When adding a
+  new alert type: (a) handle the first-run empty-state case, (b) decide when
+  the dedupe key resets. The `rapid_rise_alerts` pattern (reset on band change)
+  is the canonical template — copy it.
+- **Dry-run invocation for manual verification:**
+  `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
+  runs the full pipeline without burning paid APIs or sending Pushover. Use
+  this after any edit that changes scoring, thresholds, or HTML output.
+- **CNN Fear & Greed is scraped, not official.** `fetch_cnn_fear_greed()` can
+  fail silently on site changes. `_handler_cnn_fear_greed` falls back to FRED
+  UMCSENT. Don't assume freshness — check `data/fetch_cache/` staleness if
+  sentiment numbers look stale.
+
+---
+
+## Testing patterns
+
+- **Alert-test mock targets (`src/alerts.py`):** patch `_send_pushover`,
+  `_send_twilio`, `_in_quiet_hours`, `_log_alert`, `_load_state`, `_save_state`.
+  There is no `_dispatch` or `_should_send` — don't try to patch them.
+  See `tests/test_rapid_rise.py` for the canonical shape.
+- **History tests:** build synthetic DataFrames with `pd.date_range(...)` and
+  a scores list. See `tests/test_history.py` and `tests/test_shock_type.py`
+  for templates. No need to touch real `data/history.csv`.
+- **Fetch tests:** all HTTP is mocked. Tests pass offline. If a new test needs
+  network, that's a code smell — factor the logic so the network layer can be
+  mocked out.
+- **Config tests** (`tests/test_config.py`) are the canary for schema drift.
+  If you break `validate_config()`, these fail first.
+
+---
+
+## Mid-task handoffs
+
+Sessions can end mid-brief (context limit, interruption). When that happens,
+before your last message add a **`## Mid-task handoff`** section at the
+bottom of [TODO.md](TODO.md) with:
+
+1. Which brief / item you were on.
+2. What's done (file list + behavior shipped).
+3. What's next — the literal next step in concrete terms, not a vague
+   "finish the brief."
+4. Any gotchas you hit but didn't write up yet.
+
+Delete the section when the next session picks up and completes the work.
+This turns a truncated session from "lost state" into "warm handoff."
 
 ---
 
