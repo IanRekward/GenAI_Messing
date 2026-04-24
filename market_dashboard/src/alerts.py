@@ -34,15 +34,120 @@ def _save_state(state: dict) -> None:
         json.dump(state, f, indent=2)
 
 
-def _log_alert(title: str, body: str) -> None:
+def _log_alert(
+    title: str,
+    body: str,
+    scoring: dict | None = None,
+    alert_types: list[str] | None = None,
+) -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    entry = json.dumps({
+    entry: dict = {
         "timestamp": datetime.now().isoformat(),
         "title": title,
         "body": body,
-    })
+        "t7_composite": None,
+        "t14_composite": None,
+        "t30_composite": None,
+    }
+    if scoring is not None:
+        entry["composite_score"] = scoring["composite"]
+        entry["composite_band"] = scoring["composite_band"]
+        entry["alert_types"] = alert_types or []
+        entry["triggered_indicators"] = [
+            f"{bk}.{ik}"
+            for bk, bkt in scoring["buckets"].items()
+            for ik, ind in bkt["indicators"].items()
+            if ind.get("band") in ("red", "orange")
+        ]
     with open(ALERT_LOG, "a", encoding="utf-8") as f:
-        f.write(entry + "\n")
+        f.write(json.dumps(entry) + "\n")
+
+
+def score_past_alerts(history: "pd.DataFrame") -> None:
+    """Fill T+7/14/30 composite values for log entries whose windows have elapsed."""
+    import pandas as pd
+    if not ALERT_LOG.exists() or history is None or history.empty:
+        return
+
+    h = history.copy()
+    h["_ts"] = pd.to_datetime(h["timestamp"])
+    h = h.set_index("_ts").sort_index()
+
+    entries = []
+    updated = False
+    with open(ALERT_LOG, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                entries.append({"_raw": line})
+                continue
+
+            alert_ts = pd.Timestamp(entry.get("timestamp", ""))
+            for days in (7, 14, 30):
+                key = f"t{days}_composite"
+                if entry.get(key) is None:
+                    target = alert_ts + pd.Timedelta(days=days)
+                    if pd.Timestamp.now() >= target:
+                        future = h[h.index >= target]
+                        if not future.empty:
+                            entry[key] = round(float(future.iloc[0]["composite"]), 1)
+                            updated = True
+
+            entries.append(entry)
+
+    if updated:
+        with open(ALERT_LOG, "w", encoding="utf-8") as f:
+            for entry in entries:
+                if "_raw" in entry:
+                    f.write(entry["_raw"] + "\n")
+                else:
+                    f.write(json.dumps(entry) + "\n")
+
+
+def get_postmortem_stats(days: int = 60) -> dict:
+    """Return signal-quality stats for alerts fired in the past `days` days."""
+    import pandas as pd
+    if not ALERT_LOG.exists():
+        return {}
+
+    cutoff = pd.Timestamp.now() - pd.Timedelta(days=days)
+    total, scored = 0, []
+    with open(ALERT_LOG, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if "composite_score" not in entry:
+                continue  # legacy entry without composite data
+            try:
+                ts = pd.Timestamp(entry["timestamp"])
+            except Exception:
+                continue
+            if ts < cutoff:
+                continue
+            total += 1
+            if entry.get("t7_composite") is not None:
+                scored.append(entry)
+
+    if not scored:
+        return {"total_alerts": total, "scored_count": 0}
+
+    hit_rate = sum(1 for e in scored if e["t7_composite"] >= 50) / len(scored)
+    avg_change = sum(e["t7_composite"] - e["composite_score"] for e in scored) / len(scored)
+    return {
+        "total_alerts": total,
+        "scored_count": len(scored),
+        "hit_rate_7d_pct": round(hit_rate * 100, 1),
+        "avg_t7_change": round(avg_change, 1),
+    }
 
 
 def _send_pushover(title: str, message: str, env: dict) -> bool:
@@ -90,6 +195,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     from src.history import compute_composite_momentum, cross_bucket_correlation, correlation_regime
     prev = _load_state()
     messages: list[str] = []
+    alert_types: list[str] = []
 
     # 1a. Composite band escalation
     cur_band = scoring["composite_band"]
@@ -99,6 +205,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
             f"COMPOSITE ESCALATED: {prev_band.upper()} → {cur_band.upper()}\n"
             f"Score: {scoring['composite']:.1f}/100"
         )
+        alert_types.append("composite_escalation")
 
     # 1b. Composite band de-escalation
     if _BAND_ORDER.get(cur_band, 0) < _BAND_ORDER.get(prev_band, 0):
@@ -106,6 +213,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
             f"COMPOSITE IMPROVED: {prev_band.upper()} → {cur_band.upper()}\n"
             f"Score: {scoring['composite']:.1f}/100 — stress is easing."
         )
+        alert_types.append("composite_improvement")
 
     # 2. New red indicators
     cur_reds = [
@@ -118,6 +226,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     if new_reds:
         labels = [_indicator_label(scoring, r) for r in new_reds]
         messages.append(f"NEW RED TRIGGERS ({len(new_reds)}): {', '.join(labels)}")
+        alert_types.append("new_reds")
 
     # 3. Two or more new orange indicators
     cur_oranges = [
@@ -130,6 +239,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     if len(new_oranges) >= 2:
         labels = [_indicator_label(scoring, r) for r in new_oranges[:5]]
         messages.append(f"2+ NEW ORANGE TRIGGERS: {', '.join(labels)}")
+        alert_types.append("new_oranges")
 
     # 4. Rapid rise without band change (early warning)
     if history is not None and not history.empty:
@@ -144,6 +254,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
                     f"Watch for imminent band escalation."
                 )
                 prev.setdefault("rapid_rise_alerts", []).append(rise_key)
+                alert_types.append("rapid_rise")
         # Reset rapid_rise tracker on band change
         if cur_band != prev_band:
             prev["rapid_rise_alerts"] = []
@@ -163,6 +274,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
                 f"CROSS-BUCKET CORRELATION ELEVATED: {corr_val:.2f} (3 days sustained). "
                 f"Buckets moving in lockstep — typical pre-crisis or risk-off signature."
             )
+            alert_types.append("corr_sustained")
 
     # 5. Data staleness — first occurrence only per indicator
     stale_now = set(scoring.get("stale_indicators", []))
@@ -179,6 +291,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
             f"{' +more' if len(labels) > 5 else ''} — "
             f"last observation gap exceeds expected cadence. Check FRED/Yahoo."
         )
+        alert_types.append("staleness")
 
     # Accumulate weekly alert count
     weekly_alert_count = prev.get("weekly_alert_count", 0)
@@ -218,7 +331,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
 
     title = f"Market Stress: {cur_band.upper()} ({scoring['composite']:.0f}/100)"
 
-    _log_alert(title, body)
+    _log_alert(title, body, scoring=scoring, alert_types=alert_types)
 
     sent = 0
     if _send_pushover(title, body, env):
@@ -246,6 +359,10 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
     this_monday = today.isoformat()
     if state.get("weekly_digest_date") == this_monday:
         return False  # already sent today
+
+    # Fill in any elapsed T+7/14/30 windows before building stats
+    if history is not None:
+        score_past_alerts(history)
 
     weekly_alerts = state.get("weekly_alert_count", 0)
 
@@ -288,6 +405,18 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
                     if parts:
                         movers_str = f"\nBiggest movers: {', '.join(parts)}"
 
+    # Alert post-mortem hit-rate section
+    pm = get_postmortem_stats(days=60)
+    pm_str = ""
+    if pm.get("scored_count", 0) > 0:
+        sign = "+" if pm["avg_t7_change"] >= 0 else ""
+        pm_str = (
+            f"\nAlert quality (60d, T+7): "
+            f"{pm['hit_rate_7d_pct']:.0f}% stayed elevated, "
+            f"avg composite Δ {sign}{pm['avg_t7_change']:.1f} "
+            f"({pm['scored_count']}/{pm['total_alerts']} scored)"
+        )
+
     composite = scoring["composite"]
     band = scoring["composite_band"]
     title = f"Weekly Digest: {band.upper()} ({composite:.0f}/100)"
@@ -296,6 +425,7 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
         f"{velocity_str}"
         f"{movers_str}"
         f"\nAlerts this week: {weekly_alerts}"
+        f"{pm_str}"
         f"\nhttps://ianrekward.github.io/GenAI_Messing/"
     )
 

@@ -32,7 +32,7 @@ from src.news import get_news_brief
 from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
 from src.history import log_run, load_history, prune_history
-from src.alerts import send_alerts, send_heartbeat, send_weekly_digest
+from src.alerts import send_alerts, send_heartbeat, send_weekly_digest, score_past_alerts
 
 
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
@@ -125,6 +125,9 @@ def main():
         news = get_news_brief(env)
     elif not args.quiet:
         print("\n[4/5] News triage skipped (--no-news)")
+
+    # Score any past alerts whose T+7/14/30 windows have elapsed
+    score_past_alerts(history)
 
     # Alerts
     if not args.no_alerts:
