@@ -225,6 +225,21 @@ def _load_thresholds() -> dict:
         return {}
 
 
+def _load_ind_weights() -> dict[str, dict[str, float]]:
+    """Return {bkey: {ikey: float}} pulled live from config/weights.yaml."""
+    path = Path("config/weights.yaml")
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return {
+            bkey: {ikey: float(icfg["weight"]) for ikey, icfg in bcfg.get("indicators", {}).items()}
+            for bkey, bcfg in data.get("buckets", {}).items()
+        }
+    except Exception:
+        return {}
+
+
 _CALENDAR_INDICATOR_MAP: list[tuple[str, str | None, str | None]] = [
     ("CPI",            "cpi_yoy",                "Inflation"),
     ("PPI",            None,                     None),
@@ -600,13 +615,20 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     thresholds = _load_thresholds()
     ind_tooltips = tooltips.get("indicators", {})
     bucket_tooltips = tooltips.get("buckets", {})
+    ind_weights = _load_ind_weights()
     buckets_html = ""
     detail_blocks = ""
     for bkey, bucket in scoring["buckets"].items():
         bc = _color(bucket["band"])
         bkt_tip = bucket_tooltips.get(bkey, {}).get("tip", "")
+        bucket_weight = bucket["weight"]
+        bucket_pct = round(bucket_weight * 100)
+        bkt_iweights = ind_weights.get(bkey, {})
         rows = ""
+        bar_segments = ""
         for ikey, ind in bucket["indicators"].items():
+            iw = bkt_iweights.get(ikey, 0.0)
+            iw_comp = bucket_weight * iw * 100
             manual_tag = '<span class="manual-tag">(manual)</span>' if ind.get("manual") else ""
             pct = ind.get("percentile")
             pct_str = f"{pct:.0f}th" if pct is not None else "—"
@@ -626,6 +648,13 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
                 f'<div style="font-size:.72rem;color:#6e7681;padding-left:12px;line-height:1.3">'
                 f'{short_desc}</div>'
             ) if short_desc else ""
+            # Weight annotation under the label
+            weight_html = ""
+            if iw > 0:
+                weight_html = (
+                    f'<div style="font-size:.65rem;color:#484f58;padding-left:12px">'
+                    f'{iw*100:.0f}% of bucket · {iw_comp:.1f}% of composite</div>'
+                )
             # "as of" date from last series observation
             series_data = ind.get("_series")
             as_of_html = ""
@@ -636,10 +665,17 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
                 )
             rows += (
                 f"<tr>"
-                f"<td>{_dot(ind['band'])}{label_html}{manual_tag}{desc_html}</td>"
+                f"<td>{_dot(ind['band'])}{label_html}{manual_tag}{desc_html}{weight_html}</td>"
                 f"<td><div>{_fmt_raw(ind)}</div>{as_of_html}</td>"
                 f"<td>{pct_str} {_badge(ind['band'])}</td>"
                 f"</tr>"
+            )
+            # Bar chart segment: flex width proportional to indicator weight in bucket
+            seg_color = _color(ind["band"])
+            seg_tip = f'{ind["label"]}: {iw*100:.0f}% of bucket, {iw_comp:.1f}% of composite'.replace('"', '&quot;')
+            bar_segments += (
+                f'<div style="flex:{iw:.3f};background:{seg_color}55;border-radius:2px;'
+                f'border-top:2px solid {seg_color}" title="{seg_tip}"></div>'
             )
             # Build collapsible detail block
             thresh_cfg = thresholds.get(ikey)
@@ -668,12 +704,19 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         accel_badge = ""
         if bkey in top3_accel:
             accel_badge = '<span style="font-size:.62rem;color:#ff8800;margin-left:6px;font-weight:700">&#9650;FAST</span>'
+        bar_chart = (
+            f'<div style="display:flex;gap:2px;margin:6px 0 8px;height:5px">{bar_segments}</div>'
+        ) if bar_segments else ""
         buckets_html += f"""
 <div class="bucket" style="border-color:{bc}">
   <div class="bkt-hdr">
-    <h2>{bkt_label_html}{accel_badge}</h2>
+    <div>
+      <h2>{bkt_label_html}{accel_badge}</h2>
+      <div style="font-size:.7rem;color:#6e7681;margin-top:1px">{bucket_pct}% of composite</div>
+    </div>
     <span class="bkt-score" style="color:{bc}">{bucket['score']:.0f}<span style="color:#6e7681;font-size:.8rem;font-weight:400">/100</span>{vel_html}</span>
   </div>
+  {bar_chart}
   <table><tbody>{rows}</tbody></table>
 </div>"""
 
