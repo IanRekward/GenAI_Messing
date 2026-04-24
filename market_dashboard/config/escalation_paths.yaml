@@ -1,0 +1,109 @@
+# Forward-looking escalation scenarios per bucket.
+# Shown in the "ESCALATION SCENARIOS" card when composite >= 40
+# and the bucket is at orange or red.
+# Each entry has:
+#   scenario: 1–2 sentences describing the 60–90 day escalation path
+#   watch:    the 1–2 indicators that would confirm escalation
+#   historical: brief precedent (optional)
+
+buckets:
+  equity_volatility:
+    scenario: >
+      Sustained VIX above 28 historically forces systematic deleveraging by
+      volatility-targeting funds and CTAs, amplifying the initial move.
+      If realized vol follows implied vol higher, expect further mechanical
+      selling regardless of fundamentals.
+    watch: "VIX term structure (spot vs. 3m), SP500 realized vol trajectory"
+    historical: "March 2020: VIX > 28 → 85 within 10 trading days"
+
+  credit_spreads:
+    scenario: >
+      HY spread widening above 6% historically tightens bank lending standards
+      within 1–2 quarters, cutting off refinancing for leveraged borrowers.
+      Watch for rising HY default rates as a confirming signal; default cycles
+      are slow to start but hard to stop.
+    watch: "HY OAS trajectory, IG BBB cohort spreads, LBO refinancing failures"
+    historical: "2008: HY spreads > 6% → 22% peak; 2020: 4% → 11% in 3 weeks"
+
+  rates_curve:
+    scenario: >
+      Sustained inversion (2Y > 10Y) has preceded every U.S. recession since
+      the 1970s with a 6–18 month lag. The risk is that curve re-steepening
+      via a falling 2Y (front-end pricing rate cuts) signals the recession has
+      already started, not that it has been avoided.
+    watch: "Curve re-steepening speed, front-end pricing of Fed cuts"
+    historical: "2006–07: inverted 12 months → GFC; 2019: uninverted → COVID masked timing"
+
+  financial_conditions:
+    scenario: >
+      Tighter-than-normal financial conditions feed through to GDP with a
+      6–9 month lag. If NFCI/STLFSI remain elevated through Q2, expect
+      GDP revisions lower and a potential earnings recession in consumer
+      discretionary and small-cap.
+    watch: "Senior Loan Officer Survey tightening %, commercial credit growth"
+    historical: "2022: NFCI hit 0.6 → real GDP contraction Q1–Q2 2022"
+
+  inflation:
+    scenario: >
+      If 5Y breakeven rates remain above 2.8% while CPI stays elevated,
+      the Fed faces a credibility trap — cutting rates risks re-anchoring
+      inflation expectations higher; holding risks breaking the credit cycle.
+      Either path is market-negative.
+    watch: "5Y5Y forward breakeven, Fed fund futures terminal rate pricing"
+    historical: "1978–80: re-anchoring failure forced Volcker shock; 900bps tightening"
+
+  funding_liquidity:
+    scenario: >
+      Short-term funding stress above 15 bps (SOFR spread) can become
+      self-fulfilling if counterparties withdraw repo lines, forcing asset
+      sales at distressed prices. The transition from funding stress to
+      solvency stress is rapid — typically 5–10 trading days.
+    watch: "Overnight SOFR rate, FHLBank advances, money market fund flows"
+    historical: "Sept 2019: SOFR hit 5.25% overnight; 2008: repo freeze preceded Lehman"
+
+  commodities:
+    scenario: >
+      Oil above $100/bbl sustained for 90+ days has historically triggered
+      consumer spending contraction and Fed overtightening. Energy input
+      costs feed into core CPI with a 3–6 month lag, potentially keeping
+      inflation elevated even as growth slows — the stagflation path.
+    watch: "WTI trajectory, 12-month oil futures strip, gasoline rack prices"
+    historical: "1973, 1979, 1990, 2007–08: oil spikes preceded recessions"
+
+  economic_momentum:
+    scenario: >
+      A 4-week average of initial claims above 300K signals labor market
+      deterioration is underway. The Sahm Rule (3-month UR avg rising 0.5pp
+      above 12-month low) has a perfect recession-prediction record — if
+      triggered, recession is typically already 1–2 months old.
+    watch: "4-week MA claims trajectory, Sahm Rule indicator, payrolls revisions"
+    historical: "2008: claims crossed 300K → peaked 660K 6 months later"
+
+  sentiment:
+    scenario: >
+      Extreme fear readings are often contrarian short-term signals, but
+      if fear persists above 14 days at extreme levels alongside credit
+      deterioration, it typically indicates institutional risk reduction
+      rather than retail panic — a structurally different and more durable
+      risk-off.
+    watch: "CNN F&G trajectory, put/call ratio, AAII bull-bear spread"
+    historical: "2022: sustained fear with rising credit spreads → 10-month bear market"
+
+  global_spillover:
+    scenario: >
+      Dollar index above 122 historically chokes off EM sovereign debt
+      refinancing and triggers capital outflows from fragile EM economies.
+      EM stress tends to lead U.S. HY spread widening by 2–4 weeks,
+      making this a leading indicator for domestic credit deterioration.
+    watch: "EM FX reserves depletion rate, EM sovereign CDS, euro-area PMI"
+    historical: "1997 Asian crisis, 2015 EM selloff: EM stress preceded U.S. HY by ~3 weeks"
+
+  breadth_flow:
+    scenario: >
+      When more than 60% of S&P 500 sectors trade below their 200d MA,
+      the selloff is broad enough to cause forced rebalancing by asset
+      allocators, creating sustained selling pressure. SPX breaking decisively
+      below its 200d MA with breadth this weak has historically marked the
+      transition from correction to bear market.
+    watch: "% sectors below 200d MA trajectory, SPX distance from 200d MA"
+    historical: "2022 and 2020: >70% sectors below 200d MA → 8+ month drawdowns"

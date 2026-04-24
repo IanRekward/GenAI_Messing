@@ -253,6 +253,74 @@ def _build_calendar_card(events: list) -> str:
     return f'<div class="card"><h2>Upcoming Macro Events (14 days)</h2>{rows}{legend}</div>'
 
 
+def _load_escalation_paths() -> dict:
+    path = Path("config/escalation_paths.yaml")
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return (data or {}).get("buckets", {})
+    except Exception:
+        return {}
+
+
+def _build_escalation_card(scoring: dict) -> str:
+    """
+    Show forward-looking escalation scenarios for orange/red buckets.
+    Only shown when composite >= 40 and at least one bucket is orange/red.
+    """
+    if scoring.get("composite", 0) < 40:
+        return ""
+    paths = _load_escalation_paths()
+    if not paths:
+        return ""
+
+    blocks = ""
+    for bkey, bucket in scoring.get("buckets", {}).items():
+        if bucket.get("band") not in ("orange", "red"):
+            continue
+        path_cfg = paths.get(bkey)
+        if not path_cfg:
+            continue
+        bc = _color(bucket["band"])
+        scenario = str(path_cfg.get("scenario", "")).replace("\n", " ").strip()
+        watch = path_cfg.get("watch", "")
+        historical = path_cfg.get("historical", "")
+        watch_html = (
+            f'<div style="margin-top:4px;font-size:.78rem;color:#8b949e">'
+            f'<b>Watch:</b> {watch}</div>'
+        ) if watch else ""
+        hist_html = (
+            f'<div style="font-size:.75rem;color:#484f58;margin-top:2px">'
+            f'{historical}</div>'
+        ) if historical else ""
+        blocks += (
+            f'<details style="margin-bottom:8px">'
+            f'<summary style="cursor:pointer;font-weight:600;font-size:.85rem;'
+            f'color:{bc};list-style:none;display:flex;justify-content:space-between;'
+            f'align-items:center">'
+            f'<span>{bucket["label"]}</span>'
+            f'<span style="font-size:.7rem;color:#6e7681;font-weight:400">'
+            f'{bucket["band"].upper()} · click to expand</span>'
+            f'</summary>'
+            f'<div style="margin-top:8px;padding-left:4px">'
+            f'<div style="font-size:.83rem;line-height:1.55;color:#c9d1d9">{scenario}</div>'
+            f'{watch_html}{hist_html}'
+            f'</div>'
+            f'</details>'
+        )
+
+    if not blocks:
+        return ""
+    return (
+        f'<div class="card" style="border-left:3px solid #ff880044">'
+        f'<h2 style="margin-bottom:10px;font-size:.9rem;color:#ff8800">ESCALATION SCENARIOS</h2>'
+        f'<div style="font-size:.75rem;color:#6e7681;margin-bottom:8px">'
+        f'Pre-mortem: plausible 60–90 day paths if current stress persists or escalates</div>'
+        f'{blocks}</div>'
+    )
+
+
 def _build_analog_card(analogs: list) -> str:
     """Compact card showing top historical analog matches (only when composite >= 35)."""
     if not analogs:
@@ -554,6 +622,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     # ── Historical analogs (TOP-3 item 2) ───────────────────────────────────
     analog_card = _build_analog_card(find_analog(scoring))
 
+    # ── Escalation scenarios / pre-mortem (TOP-3 item 3) ────────────────────
+    escalation_card = _build_escalation_card(scoring)
+
     # ── Errors ──────────────────────────────────────────────────────────────
     errors_html = ""
     if scoring.get("errors"):
@@ -595,6 +666,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   {narrative_card}
   {composite_card}
   {review_card}
+  {escalation_card}
   {analog_card}
   {correlation_card}
   {trend_card}
