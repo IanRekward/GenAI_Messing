@@ -19,6 +19,30 @@ STATE_FILE = DATA_DIR / "alert_state.json"
 ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 
 _BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
+_BAND_MIN = {"green": 0.0, "yellow": 30.0, "orange": 50.0, "red": 70.0}
+
+
+def _debounce_passes(cur_band: str, prev_band: str, composite: float, buffer: float) -> bool:
+    """Return True if the band change is confirmed (composite is buffer pts inside new band)."""
+    cur_order = _BAND_ORDER.get(cur_band, 0)
+    prev_order = _BAND_ORDER.get(prev_band, 0)
+    if cur_order > prev_order:  # escalation: composite must clear the new band's floor + buffer
+        return composite >= _BAND_MIN.get(cur_band, 0.0) + buffer
+    else:  # de-escalation: composite must be below the old band's floor − buffer
+        return composite <= _BAND_MIN.get(prev_band, 100.0) - buffer
+
+
+def _in_quiet_hours(env: dict) -> bool:
+    """Return True if current local hour falls within quiet hours window."""
+    try:
+        start = int(env.get("QUIET_HOURS_START", 22))
+        end = int(env.get("QUIET_HOURS_END", 7))
+    except (ValueError, TypeError):
+        return False
+    hour = datetime.now().hour
+    if start >= end:  # window wraps midnight (e.g., 22→7)
+        return hour >= start or hour < end
+    return start <= hour < end  # window within same day (e.g., 1→6)
 
 
 def _load_state() -> dict:
@@ -197,23 +221,40 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     messages: list[str] = []
     alert_types: list[str] = []
 
-    # 1a. Composite band escalation
+    composite = scoring["composite"]
     cur_band = scoring["composite_band"]
     prev_band = prev.get("composite_band", "green")
-    if _BAND_ORDER.get(cur_band, 0) > _BAND_ORDER.get(prev_band, 0):
-        messages.append(
-            f"COMPOSITE ESCALATED: {prev_band.upper()} → {cur_band.upper()}\n"
-            f"Score: {scoring['composite']:.1f}/100"
-        )
-        alert_types.append("composite_escalation")
+    debounce_buffer = float(env.get("ALERT_DEBOUNCE_BUFFER", 5.0))
 
-    # 1b. Composite band de-escalation
+    # Bucket breadth for todo 35
+    n_stressed_buckets = sum(
+        1 for b in scoring["buckets"].values() if b["band"] in ("orange", "red")
+    )
+
+    # 1a. Composite band escalation (with debounce + breadth confirmation)
+    if _BAND_ORDER.get(cur_band, 0) > _BAND_ORDER.get(prev_band, 0):
+        if _debounce_passes(cur_band, prev_band, composite, debounce_buffer):
+            if n_stressed_buckets >= 2 or cur_band == "red":
+                messages.append(
+                    f"COMPOSITE ESCALATED: {prev_band.upper()} → {cur_band.upper()}\n"
+                    f"Score: {composite:.1f}/100  ({n_stressed_buckets}/10 buckets elevated)"
+                )
+            else:
+                messages.append(
+                    f"SINGLE-BUCKET STRESS: composite reached {cur_band.upper()} "
+                    f"({composite:.1f}/100) but only 1 bucket is elevated — "
+                    f"watch for confirmation"
+                )
+            alert_types.append("composite_escalation")
+
+    # 1b. Composite band de-escalation (with debounce)
     if _BAND_ORDER.get(cur_band, 0) < _BAND_ORDER.get(prev_band, 0):
-        messages.append(
-            f"COMPOSITE IMPROVED: {prev_band.upper()} → {cur_band.upper()}\n"
-            f"Score: {scoring['composite']:.1f}/100 — stress is easing."
-        )
-        alert_types.append("composite_improvement")
+        if _debounce_passes(cur_band, prev_band, composite, debounce_buffer):
+            messages.append(
+                f"COMPOSITE IMPROVED: {prev_band.upper()} → {cur_band.upper()}\n"
+                f"Score: {composite:.1f}/100 — stress is easing."
+            )
+            alert_types.append("composite_improvement")
 
     # 2. New red indicators
     cur_reds = [
@@ -307,13 +348,41 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         "corr_regime_streak": prev.get("corr_regime_streak", 0),
         "weekly_alert_count": weekly_alert_count,
         "weekly_digest_date": prev.get("weekly_digest_date", ""),
+        "suppressed_alerts": prev.get("suppressed_alerts", []),
     }
 
     if not messages:
         _save_state(new_state)
         return 0
 
-    body = "\n\n".join(messages)
+    # ── Quiet hours (todo 36) ─────────────────────────────────────────────
+    # Red band or new individual red indicators always override quiet hours.
+    is_urgent = cur_band == "red" or bool(new_reds)
+    in_quiet = _in_quiet_hours(env)
+
+    # Deliver any previously suppressed alerts (quiet period just ended)
+    suppressed = prev.get("suppressed_alerts", [])
+    suppressed_digest = ""
+    if suppressed and not in_quiet:
+        summary_lines = "\n".join(f"  • {s['title']} at {s['timestamp'][:16]}" for s in suppressed[-5:])
+        extra = f" (+{len(suppressed) - 5} earlier)" if len(suppressed) > 5 else ""
+        suppressed_digest = f"SUPPRESSED OVERNIGHT ({len(suppressed)} alert(s)):\n{summary_lines}{extra}\n\n"
+        new_state["suppressed_alerts"] = []
+
+    if in_quiet and not is_urgent:
+        # Store summary for morning delivery, log for post-mortem, skip send
+        title = f"Market Stress: {cur_band.upper()} ({composite:.0f}/100)"
+        _log_alert(title, "\n\n".join(messages), scoring=scoring, alert_types=alert_types)
+        new_state["suppressed_alerts"].append({
+            "timestamp": datetime.now().isoformat(),
+            "title": title,
+            "summary": messages[0][:80] if messages else "",
+        })
+        _save_state(new_state)
+        return 0
+
+    # ── Build and send ────────────────────────────────────────────────────
+    body = suppressed_digest + "\n\n".join(messages)
 
     # Append news context for triggered indicators
     triggered_keys: set[str] = set()
@@ -329,7 +398,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     except Exception:
         pass
 
-    title = f"Market Stress: {cur_band.upper()} ({scoring['composite']:.0f}/100)"
+    title = f"Market Stress: {cur_band.upper()} ({composite:.0f}/100)"
 
     _log_alert(title, body, scoring=scoring, alert_types=alert_types)
 
