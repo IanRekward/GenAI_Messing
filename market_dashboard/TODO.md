@@ -48,7 +48,8 @@ These are polish items that can be worked as a batch or individually — all are
 - [ ] **Indicator and bucket weight display** — In every bucket section, show (a) the bucket's weight as a share of the composite (e.g. "13% of composite"), and (b) each indicator's weight within its bucket (e.g. "VIX — 65% of Equity Volatility"). Pull from weights.yaml so it's always accurate.
 - [ ] **Weight bar chart under each bucket** — Add a small horizontal stacked-bar or proportional bar chart visually representing the indicator weights within each bucket, so the relative emphasis is scannable without reading numbers. Keep it compact (thin bar, no axes).
 - [ ] **Move "new brief" highlight** — Relocate the highlighted new-entry/orientation card so it sits below the ESCALATION SCENARIOS and REVIEW PROMPTS cards rather than at the top of the page. The top of the page should lead with the composite score.
-- [ ] **Item 9 (truncated)** — User's message was cut off mid-sentence at "9:". Revisit with user to capture the final item.
+- [ ] **Indicator tooltips (plain English)** — Add a tooltip to every indicator row in the indicator section. Each tooltip should explain in layman's terms: what the indicator measures, what a high/low reading means in plain English, and why it matters for detecting market stress. Source the copy from a config file (e.g. `config/indicator_descriptions.yaml`) so it can be updated without touching Python. Note: Brief 14 covers band/composite/bucket tooltips — this item covers per-indicator tooltips specifically on the indicator table rows.
+- [ ] **Indicator relative weights display** — In the indicator section rows, show each indicator's weight within its bucket alongside the raw value. E.g. "VIX  |  42.3  |  65% of bucket  |  8.5% of composite". The composite share = bucket_weight × indicator_weight. Pull directly from weights.yaml so it's always in sync with the model.
 
 ## Sonnet onboarding instructions
 
