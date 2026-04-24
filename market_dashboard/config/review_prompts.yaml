@@ -1,0 +1,42 @@
+# Per-band review prompts shown on the dashboard when composite reaches that level.
+# Wording is review-only — these are questions to consider, NOT recommendations.
+# Edit freely; the dashboard reads this file on every run.
+#
+# Levels: yellow (30–50), orange (50–70), red (70+)
+# Also supports: recovery (composite falling from elevated)
+
+bands:
+  yellow:
+    label: "Yellow-band check-in"
+    prompts:
+      - "Are any current positions oversized relative to your stated risk tolerance?"
+      - "How correlated is your portfolio to the specific buckets showing stress?"
+      - "Is your cash/dry-powder level where you'd want it if this escalates to orange?"
+      - "Have you recently reviewed your stop-loss or rebalancing triggers?"
+
+  orange:
+    label: "Orange-band review"
+    prompts:
+      - "What is your actual drawdown tolerance — tested, not theoretical?"
+      - "Do you have adequate dry powder to add on further weakness?"
+      - "Which 2–3 positions are most vulnerable to a credit or liquidity event?"
+      - "Are you experiencing urgency bias — feeling you must act NOW rather than when your criteria are met?"
+      - "What would cause you to de-risk further, and have you pre-committed to that threshold?"
+
+  red:
+    label: "Red-band pre-mortem"
+    prompts:
+      - "Have you stress-tested your portfolio against a 20–30% drawdown from here?"
+      - "Where does forced-sale risk exist — leverage, margin, illiquid positions?"
+      - "Which of your core theses still hold? Which are directly threatened by the signals firing here?"
+      - "If you do nothing for 30 days, what is the worst realistic outcome? Can you tolerate it?"
+      - "Are you confusing volatility tolerance with drawdown tolerance?"
+      - "Munger inversion: if this gets significantly worse, what would you most regret NOT doing today?"
+
+  recovery:
+    label: "Recovery — watch for re-escalation"
+    prompts:
+      - "Is the recovery broad (most buckets improving) or narrow (one or two buckets recovering while others remain stressed)?"
+      - "Have you rebuilt dry powder consumed during the stress period?"
+      - "What would cause this recovery to stall or reverse, and are those signals on your watchlist?"
+      - "Relief bias check: are you de-risking too quickly because the immediate pressure is off?"

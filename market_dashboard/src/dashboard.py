@@ -124,6 +124,70 @@ def _load_events() -> list:
         return []
 
 
+def _load_review_prompts() -> dict:
+    path = Path("config/review_prompts.yaml")
+    if not path.exists():
+        return {}
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+        return (data or {}).get("bands", {})
+    except Exception:
+        return {}
+
+
+def _build_review_card(band: str, shock_type: str) -> str:
+    """
+    Return a collapsible review-prompts card for the given composite band.
+    Shows the band-specific questions plus recovery questions when applicable.
+    """
+    prompts_cfg = _load_review_prompts()
+    keys_to_show: list[str] = []
+
+    if band in ("yellow", "orange", "red"):
+        keys_to_show.append(band)
+    if shock_type == "recovery" and "recovery" in prompts_cfg:
+        keys_to_show.append("recovery")
+
+    if not keys_to_show:
+        return ""
+
+    _HEADER_COLOR = {"yellow": "#ffcc00", "orange": "#ff8800",
+                     "red": "#ff4444", "recovery": "#22cc44"}
+
+    blocks = ""
+    for key in keys_to_show:
+        cfg = prompts_cfg.get(key, {})
+        qs = cfg.get("prompts", [])
+        label = cfg.get("label", key.title())
+        if not qs:
+            continue
+        hc = _HEADER_COLOR.get(key, "#6e7681")
+        items = "".join(
+            f'<li style="padding:4px 0;border-bottom:1px solid #21262d;font-size:.85rem">{q}</li>'
+            for q in qs
+        )
+        blocks += (
+            f'<details style="margin-bottom:8px">'
+            f'<summary style="cursor:pointer;font-weight:600;font-size:.88rem;color:{hc};'
+            f'list-style:none;display:flex;justify-content:space-between;align-items:center">'
+            f'<span>{label}</span>'
+            f'<span style="font-size:.72rem;color:#6e7681;font-weight:400">click to expand</span>'
+            f"</summary>"
+            f'<ul style="list-style:none;margin-top:8px;padding-left:4px">{items}</ul>'
+            f"</details>"
+        )
+
+    if not blocks:
+        return ""
+
+    return (
+        f'<div class="card" style="border-left:3px solid #30363d">'
+        f'<h2 style="margin-bottom:10px;font-size:.9rem;color:#6e7681">REVIEW PROMPTS</h2>'
+        f"{blocks}"
+        f"</div>"
+    )
+
+
 def _load_tooltips() -> dict:
     path = Path("config/tooltips.yaml")
     if not path.exists():
@@ -441,6 +505,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   <ul class="news-list">{"".join(li_parts)}</ul>
 </div>"""
 
+    # ── Review prompts (todo 46) ────────────────────────────────────────────
+    review_card = _build_review_card(band, shock_type)
+
     # ── Errors ──────────────────────────────────────────────────────────────
     errors_html = ""
     if scoring.get("errors"):
@@ -470,6 +537,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   </div>
   {staleness_banner}
   {composite_card}
+  {review_card}
   {correlation_card}
   {trend_card}
   {calendar_card}
