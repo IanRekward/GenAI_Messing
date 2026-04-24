@@ -51,6 +51,8 @@ These are polish items that can be worked as a batch or individually — all are
 - [ ] **Indicator tooltips (plain English)** — Add a tooltip to every indicator row in the indicator section. Each tooltip should explain in layman's terms: what the indicator measures, what a high/low reading means in plain English, and why it matters for detecting market stress. Source the copy from a config file (e.g. `config/indicator_descriptions.yaml`) so it can be updated without touching Python. Note: Brief 14 covers band/composite/bucket tooltips — this item covers per-indicator tooltips specifically on the indicator table rows.
 - [ ] **Indicator relative weights display** — In the indicator section rows, show each indicator's weight within its bucket alongside the raw value. E.g. "VIX  |  42.3  |  65% of bucket  |  8.5% of composite". The composite share = bucket_weight × indicator_weight. Pull directly from weights.yaml so it's always in sync with the model.
 
+> **Implementation grouping note:** When scheduling these UX items, batch them to avoid touching the same HTML/config twice: (A) items 6 + 7 + 10 together — all touch indicator/bucket weight display; (B) items 9 + Brief 14 together — both add plain-English tooltip copy and share the same config-file approach.
+
 ## Sonnet onboarding instructions
 
 When starting work on any Brief:
