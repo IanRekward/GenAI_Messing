@@ -36,6 +36,20 @@ each.
 - [ ] **Backtest history visualization** — plan and build a view that replays the composite stress score through history alongside what the market actually did (e.g. SPX drawdown, forward returns). Should answer: did high stress scores precede market stress? What were the false positives? Leverage existing src/backtest.py + src/evaluation.py + src/backtest_report.py. Needs design pass before implementation — decide on time range, chart format, key metrics to surface (hit rate, lead time, false positive rate), and whether this lives on the main dashboard or a separate page. *(complexity: medium-large, design-first)*
 - [ ] **Brief 14** — Dashboard tooltips: plain-English explanations of every indicator, bucket, band, and composite score *(last on list)*
 
+## Dashboard UX & readability improvements
+
+These are polish items that can be worked as a batch or individually — all are self-contained in `src/dashboard.py` / `config/`.
+
+- [ ] **Review Prompts explainer** — Add a short header sentence to the REVIEW PROMPTS card explaining what it is (same pattern as the ESCALATION SCENARIOS card). E.g. "These questions help you stress-test your interpretation of the current reading."
+- [ ] **Side-by-side layout: Review Prompts + Escalation Scenarios** — Move the two cards to sit adjacent on the dashboard so thematically related "what to do next" content is grouped together.
+- [ ] **Cross-bucket correlation plain-English caption** — Under the correlation card title, add 1–2 sentences explaining what the number means: what "crisis synchronous" looks like vs. normal, and why elevated correlation matters (buckets moving together = fewer diversified buffers against a single shock).
+- [ ] **90-Day Composite Trend description** — Add a subtitle or caption sentence under the chart heading that explains what the viewer is looking at: the composite stress score over the past 90 days, what the bands mean, and that today's value is on the right.
+- [ ] **Macro calendar: model-linkage badge** — For each event in the Upcoming Macro Events card, show whether that event type drives a model indicator, and if so which one(s). E.g. "CPI release → cpi_yoy (Inflation Pressure bucket)". Events not covered by the model get a "not in model" note.
+- [ ] **Indicator and bucket weight display** — In every bucket section, show (a) the bucket's weight as a share of the composite (e.g. "13% of composite"), and (b) each indicator's weight within its bucket (e.g. "VIX — 65% of Equity Volatility"). Pull from weights.yaml so it's always accurate.
+- [ ] **Weight bar chart under each bucket** — Add a small horizontal stacked-bar or proportional bar chart visually representing the indicator weights within each bucket, so the relative emphasis is scannable without reading numbers. Keep it compact (thin bar, no axes).
+- [ ] **Move "new brief" highlight** — Relocate the highlighted new-entry/orientation card so it sits below the ESCALATION SCENARIOS and REVIEW PROMPTS cards rather than at the top of the page. The top of the page should lead with the composite score.
+- [ ] **Item 9 (truncated)** — User's message was cut off mid-sentence at "9:". Revisit with user to capture the final item.
+
 ## Sonnet onboarding instructions
 
 When starting work on any Brief:
