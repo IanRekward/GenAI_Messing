@@ -21,7 +21,7 @@ each.
 - [x] **Brief 1** — Config schema validation + data-driven registry *(done 2026-04-24 — 177 tests passing)*
 - [ ] **VIX term-structure evaluation** — investigate VIX9D (9-day) and VIX1D (1-day) relative to VIX (30-day) as a short-term volatility signal. Assess whether term-structure slope (VIX9D/VIX or VIX1D/VIX) adds signal beyond raw VIX in detecting fast shocks. Decide: add to equity_volatility bucket, rates_curve, or skip? Consider ticker availability on yfinance. *(med, design decision required before adding)*
 - [ ] **Brief 4A** — Historical events overlay on trend chart *(1 hour UX win)*
-- [ ] **Brief 3** — Rate-of-change signal layer *(high, half day)*
+- [x] **Brief 3** — Rate-of-change signal layer *(done 2026-04-24 — 181 tests passing)*
 - [ ] **Brief 6** — Data staleness alerts *(high, half day)*
 - [ ] **Brief 4B** — Indicator drill-down detail pages *(med-high, half day)*
 - [ ] **Brief 5** — Correlation-breakdown signal *(high, half day)*
