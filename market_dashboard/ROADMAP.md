@@ -838,6 +838,220 @@ without touching Python code.
 
 ---
 
+## Brief 15 — Backtest signal-quality card + link to full report
+
+**Dependencies:** existing `src/evaluation.py` (uses `build_forward_drawdown`,
+`spearman_ic`), `src/alerts.py::get_postmortem_stats` (already shipped), and
+`data/history.csv` (at least ~60 rows to be meaningful). The full
+`output/backtest_report.html` must already exist on disk (generated via
+`python -m src.backtest_report`). Cached `^GSPC` series in `data/cache/`
+(populated every run via `spx_200dma_distance` indicator).
+
+**Problem:** The project has a comprehensive 112 KB statistical backtest
+report at `output/backtest_report.html` — nobody on the dashboard knows it
+exists because nothing links to it. The main dashboard also gives no signal of
+**recent** model quality: has this composite actually been right lately, or
+has it drifted? A user glancing at today's score at 7:30 AM has no calibration
+context.
+
+A second, quieter problem: TODO.md previously claimed "Phase 4 — Live
+performance tracking (rolling IC + degradation on dashboard)" shipped.
+A `grep` on `output/dashboard.html` shows zero backtest content. That phase
+did not actually land on the dashboard — only the offline report shipped. This
+brief closes the gap.
+
+**Design decision — opinionated scope calls:**
+
+1. **One card, not a page port.** The comprehensive report is for monthly
+   review; the main dashboard is for daily glance. Render a compact card plus
+   a prominent link to the full report. Do not try to cram tables, per-target
+   IC, or bootstrap CIs onto the main dashboard.
+2. **Two metrics only on the card** (plus a one-line verdict):
+   - **Rolling composite IC (252 trading days)** — Spearman correlation between
+     daily composite and 21-day forward SPX drawdown over the last year of
+     `history.csv`.
+   - **Recent alert hit rate (60 calendar days)** — reuse the existing
+     `get_postmortem_stats(days=60)` from `src/alerts.py` (currently only used
+     in the Monday digest — surface it daily).
+   The TODO had listed four candidate metrics (lead time, false-positive rate,
+   SPX drawdown overlay). **Dropped on purpose.** Lead time and FP rate need
+   event matching that belongs in the full report; a price overlay on the
+   90-day composite trend chart would visually fight the existing event
+   overlay at morning-glance cognitive load.
+3. **Absolute thresholds for the verdict**, no dynamic baseline:
+   - IC ≥ 0.15 → **Tracking** (green)
+   - 0.05 ≤ IC < 0.15 → **Weak signal** (yellow)
+   - IC < 0.05 → **Miscalibrated** (orange/red)
+   - insufficient data (< 60 history rows) → **Insufficient history** (neutral)
+   Thresholds are justifiable from the academic literature on financial
+   forecasting ICs (0.05–0.10 is industry-standard weak, 0.15+ is strong).
+4. **Reuse `build_forward_drawdown` and `spearman_ic` from evaluation.py**
+   verbatim. Do not write a parallel IC function — divergence with the backtest
+   report is the failure mode to avoid.
+5. **Target horizon is 21 trading days forward SPX drawdown** — that matches
+   the classic 1-month horizon used in the backtest report's headline table.
+6. **Sign convention.** `build_forward_drawdown` returns positive values in
+   [0, 1] where higher = worse drawdown. High composite should predict high
+   drawdown → Spearman IC is **positive** when the model works. No sign flip
+   needed; the verdict text reads naturally.
+
+**Files to change:**
+
+1. **`src/evaluation.py`** — add one new helper near the existing IC functions:
+   ```python
+   def rolling_composite_ic(
+       history: pd.DataFrame,
+       spx: pd.Series,
+       window_days: int = 252,
+       horizon_days: int = 21,
+   ) -> dict:
+       """
+       Compute Spearman IC of composite vs forward SPX drawdown over the most
+       recent window_days of history.csv.
+
+       Returns dict:
+         {
+           "ic": float | None,          # None if insufficient data
+           "n_obs": int,                # number of (composite, target) pairs used
+           "horizon_days": int,         # echo for display
+           "window_days": int,          # echo for display
+         }
+
+       Reuses build_forward_drawdown() and spearman_ic() — do not duplicate.
+       """
+   ```
+   Implementation:
+   - Convert `history["timestamp"]` → DatetimeIndex, dedupe to one row per day
+     (keep latest), set as index.
+   - Extract `composite` column → pd.Series.
+   - Reindex both `composite` and `spx` to a common business-day index
+     (`spx.reindex(composite.index, method="ffill")`) — the dashboard runs
+     daily but SPX has weekend gaps.
+   - Build target: `build_forward_drawdown(spx_aligned, horizon_days)`.
+   - Slice both to the most recent `window_days` rows.
+   - Drop rows where either is NaN (the last `horizon_days` of target will be
+     NaN because future isn't known — intended).
+   - If fewer than 30 aligned non-NaN pairs remain, return `{"ic": None, ...}`.
+   - Otherwise call `spearman_ic(composite_slice, target_slice)`.
+
+2. **`src/dashboard.py`** — two additions:
+
+   a. New card builder:
+   ```python
+   def _build_signal_quality_card(
+       history: "pd.DataFrame",
+       env: dict,
+       alert_log_stats: dict,
+   ) -> str:
+       """
+       Compact card with rolling composite IC + recent alert hit rate.
+       Returns "" if backtest_report.html does not exist or history too short.
+       """
+   ```
+   - Lazy-import `rolling_composite_ic` from `src.evaluation` and
+     `fetch_yfinance_series` from `src.fetch`. Wrap the whole thing in
+     try/except so a computation failure degrades to an empty string (the
+     card is optional; never break the dashboard).
+   - Fetch SPX (`fetch_yfinance_series("^GSPC", env, years=2)` — 2 years is
+     enough for a 252-day IC window; keeps the fetch cheap).
+   - Compute IC via `rolling_composite_ic(history, spx)`.
+   - Read `alert_log_stats = get_postmortem_stats(days=60)` (pass in — caller
+     already has it from alerts subsystem; see step 3 below).
+   - If `backtest_report.html` exists at `output/backtest_report.html`,
+     include a "View full backtest report →" link; the link target is
+     `backtest_report.html` (relative path — works locally and on GitHub Pages
+     if both files are copied to /docs).
+   - Layout: match the compact cross-bucket correlation card style (`.card`
+     with `display:flex`, two numeric panels side-by-side, verdict under them,
+     link at the bottom right). Use the existing `_BAND_COLOR` palette for the
+     verdict color.
+
+   b. Wire into `write_dashboard(...)`:
+   - Add `_build_signal_quality_card` call near the other cards. Place it
+     directly **below the cross-bucket correlation card** — they're the two
+     "model meta" cards and belong together.
+   - The function needs access to `env` and to the postmortem stats.
+     `write_dashboard` already receives `scoring` and `history`; add a keyword
+     arg `signal_quality_stats: dict | None = None` so the caller can pass in
+     the pre-computed postmortem dict (avoids re-reading alert_log.jsonl).
+   - If the card returns empty string, just omit it — do not reserve space.
+
+3. **`run_dashboard.py`** — wire the data:
+   - After the existing `score_past_alerts(history)` call, add:
+     ```python
+     from src.alerts import get_postmortem_stats
+     pm_stats = get_postmortem_stats(days=60)
+     ```
+   - In the `write_dashboard(...)` call, pass `signal_quality_stats=pm_stats`
+     and `env=env`. (write_dashboard currently doesn't take env — extend
+     signature with `env: dict | None = None`.)
+   - In the `--publish` path, copy `output/backtest_report.html` to
+     `_genai_tmp/docs/backtest_report.html` alongside `index.html` so the link
+     works on GitHub Pages. Do this only if the source file exists
+     (`backtest_report.html.exists()`) so the publish step never fails because
+     the report hasn't been generated.
+
+4. **`tests/test_rolling_ic.py`** (new) — two tests:
+   - `test_rolling_composite_ic_perfect_predictor`: build a synthetic history
+     where composite is a noise-free monotone function of realised forward
+     drawdown (e.g., composite[t] = 100 * drawdown[t+21]) → IC should be ≈ 1.0.
+   - `test_rolling_composite_ic_insufficient_data`: pass in a 10-row
+     history → expect `ic=None` and `n_obs < 30`.
+   - Do NOT test with real network calls. Build SPX via `pd.Series(np.cumsum(np.random.randn(400)) + 100, index=pd.date_range("2024-01-01", periods=400, freq="B"))`.
+
+**Edge cases:**
+
+- `history.csv` has fewer than 60 rows → card renders with verdict
+  "Insufficient history" and no IC number. Do not hide the card entirely;
+  its presence tells the user the metric exists and is waiting to mature.
+- SPX fetch fails (network dead, yfinance rate-limited) → card returns "";
+  never break the dashboard on network failure.
+- `output/backtest_report.html` missing → still render the card, just omit
+  the "View full report" link.
+- The last `horizon_days` of history have NaN targets by construction — the
+  function must drop them before computing IC. Otherwise the IC is computed
+  over garbage.
+- Multiple history rows per day (the dashboard can be re-run). Dedupe to one
+  row per date (keep latest) before aligning with SPX.
+- If SPX and history diverge by timezone (history is ISO timestamps, SPX is
+  trading-day dates) → normalize both to `.normalize()` (strip time component)
+  before joining.
+- `alert_log.jsonl` empty or missing → `get_postmortem_stats` already returns
+  `{}` safely; the card handles that ("No alerts scored yet").
+
+**Success criteria:**
+
+- `pytest tests/test_rolling_ic.py` — both tests green.
+- Full suite still 181+ passing (the existing alert tests must not regress).
+- `python run_dashboard.py --no-alerts --quiet` runs clean; generated
+  `output/dashboard.html` contains a new card titled "Model Calibration" (or
+  "Signal Quality" — Sonnet picks one and sticks with it) placed immediately
+  after the cross-bucket correlation card, with:
+  - A labelled IC number (e.g., "IC: 0.18").
+  - A labelled hit-rate line (e.g., "Recent alerts: 3/5 still elevated at T+7").
+  - A coloured verdict badge.
+  - A "View full backtest report →" link pointing to `backtest_report.html`
+    (only if that file exists).
+- Open the link; it loads the existing report in a new tab.
+- Verify the IC number is in the same ballpark as the 21-day horizon cell in
+  `backtest_report.html` (they won't match exactly — the card uses the last
+  252 rows only, the full report uses the whole history — but they should be
+  within ±0.1 of each other; if not, the alignment logic is wrong).
+- `--publish` copies both files to `/docs`.
+
+**Non-goals (explicitly out of scope for this brief):**
+
+- Rolling IC time-series chart. The card is a point estimate, not a trend.
+  If Ian wants a trend chart of IC over time, that's a follow-up brief.
+- Per-indicator IC display on the main dashboard. Already in the full report;
+  no need to duplicate.
+- Any change to `backtest_report.py` itself. The full report stays as-is.
+- Regenerating the backtest when the dashboard runs. The backtest is a
+  separate, manual cadence (quarterly at most); nothing here should trigger
+  it.
+
+---
+
 ## Recommended execution order
 
 1. **Step 0** — restore weights.yaml from .bak (15 min, do first).

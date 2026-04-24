@@ -62,7 +62,8 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 - [ ] 🅾️ **VIX term-structure evaluation** — design decision needed. Is VIX9D/VIX1D slope a valuable short-term vol signal beyond raw VIX? Where does it live — equity_volatility or rates_curve? yfinance ticker availability (^VIX9D appears to exist; ^VIX1D may not). Opus recommendation → Sonnet implements.
 
-- [ ] 🅾️ **Backtest history visualization** — design decision needed. Main-dashboard card or separate page? Metrics (hit rate, lead time, false-positive rate, SPX drawdown overlay)? Time range? Uses existing `src/backtest.py` + `src/evaluation.py` + `src/backtest_report.py`. Design pass → Sonnet implements.
+- [ ] **Brief 15 — Backtest signal-quality card + link** *(design complete — see [ROADMAP.md §Brief 15](ROADMAP.md))*
+  Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`. Dropped SPX overlay and lead-time / FP-rate metrics on purpose — those belong in the full report. Live rolling IC is the actual unshipped piece (claimed Phase 4 never landed on the dashboard). Ready for Sonnet — est. half a day.
 
 - [ ] 🅾️ **Brief 10 — Regime-aware weighting (LARGE)** *(multi-day)*
   Two weight sets by VIX tercile (low/mid/high), precomputed during backtest, applied at score time. Touches scoring, backtest, recalibrate. Opus should design the API + migration (how do we handle the weight-set switch in the composite calculation, how does it interact with Brief 3 momentum, how does history.csv represent which regime was active) before Sonnet executes.
@@ -161,37 +162,48 @@ requires an Opus design pass before Sonnet can execute.
 
 ---
 
-## Mid-task handoff — 2026-04-24, Sonnet → Opus
+## Mid-task handoff — 2026-04-24, Opus → Sonnet (Brief 15)
 
-**Context:** Sonnet completed all of Phase A, B, and C. Ian is now switching to
-Opus 4.7 for Phase D design decisions.
+**Context:** Opus completed the design pass for the backtest signal-quality
+card. Full brief is in [ROADMAP.md §Brief 15](ROADMAP.md).
 
-**Commits this session:**
-- `cfe6101` — UX Batch A (layout, action cards side-by-side, captions, calendar badges)
-- `da9ba03` — UX Batch B (weight % display, indicator bar charts)
-- `c8a65be` — Cleanup (regime_adjusted tooltip, TODO housekeeping)
+**Key scope decisions Opus locked in (do not re-open without surfacing):**
 
-**Start here (Opus):**
+- Main-dashboard card + link to existing `output/backtest_report.html`.
+  **Not** a full page port — the comprehensive report already exists.
+- Only TWO numeric metrics on the card: rolling composite IC (252d, 21d
+  forward SPX drawdown) and recent alert hit rate (60d from
+  `get_postmortem_stats`). Lead time, FP rate, and SPX overlay are out.
+- Reuse `build_forward_drawdown` and `spearman_ic` from `src/evaluation.py`
+  verbatim. No parallel IC implementations.
+- Verdict thresholds: IC ≥ 0.15 = Tracking, 0.05 ≤ IC < 0.15 = Weak,
+  IC < 0.05 = Miscalibrated, <60 history rows = Insufficient history.
+- Discovered in passing: TODO.md's "Phase 4 — Live performance tracking"
+  claim is wrong — no backtest content exists on the live dashboard today.
+  Brief 15 closes that gap.
 
-Phase D has 4 items, all requiring design decisions before Sonnet can execute.
-Pick whichever Ian wants to open first and produce a concrete implementation
-brief. Recommended priority order by value/complexity:
+**Start here (Sonnet):**
 
-1. **Backtest history visualization** — clearest value, bounded scope. Decide:
-   main-dashboard card or separate HTML page? What 3–4 metrics to show?
-   Write the brief for Sonnet to implement using the existing `src/backtest.py`
-   + `src/evaluation.py` + `src/backtest_report.py`.
+1. Read [ROADMAP.md §Brief 15](ROADMAP.md) in full — it lists every file
+   touch, the IC helper signature, test names, and edge cases.
+2. Run `python -m pytest tests/ -q` — must be 181+ green before starting.
+3. Implement in the order listed in the brief: (a) `rolling_composite_ic`
+   in `evaluation.py`, (b) test it, (c) `_build_signal_quality_card` in
+   `dashboard.py`, (d) wire through `run_dashboard.py`, (e) the
+   `--publish` docs copy.
+4. Verify the card's IC is within ±0.1 of the 21-day cell in
+   `output/backtest_report.html` (ballpark sanity check — they won't match
+   exactly since the card uses last 252 rows only).
+5. Commit with a message referencing Brief 15. Mark this TODO item done.
 
-2. **VIX term-structure** — small scope, clear question. Is ^VIX9D available
-   via yfinance and does the slope add signal beyond raw VIX? Confirm ticker
-   availability, decide bucket placement, write the indicator spec.
+**Flag and switch back to Opus if:**
 
-3. **Brief 10 (regime-aware weighting)** — large, multi-day. Design the API:
-   how do two VIX-tercile weight sets get selected at score time, how do they
-   interact with Brief 3 momentum, and what does `history.csv` record?
+- The rolling IC comes out wildly different (>0.2 away) from the full
+  backtest — that's an alignment bug and needs design attention, not a
+  shipping fix.
+- `get_postmortem_stats` turns out to have zero scored alerts in 60 days
+  (alert log too sparse). Decide: hide the hit-rate line or show "0/0" as
+  a non-signal. Default to hiding if ambiguous.
 
-4. **Paywalled news** — blocked on Ian's feed preference + ToS review. Don't
-   design until Ian picks the sources.
-
-**Delete this section** when Opus completes its design pass and hands off to
-Sonnet for implementation.
+**Delete this section** once Brief 15 ships and the card renders with real
+numbers in the generated dashboard.
