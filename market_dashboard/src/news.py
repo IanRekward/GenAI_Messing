@@ -4,6 +4,7 @@ Set ENABLE_NEWS_TRIAGE=false in .env to skip entirely.
 """
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import feedparser
@@ -32,23 +33,41 @@ _SYSTEM = (
 )
 
 
-def _pull_headlines(max_per_feed: int = 12) -> list[str]:
-    headlines: list[str] = []
-    for url in RSS_FEEDS:
+def _pull_headlines(max_per_feed: int = 12) -> list[dict]:
+    """Return [{title, url}] from all feeds."""
+    items: list[dict] = []
+    for feed_url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(url)
+            feed = feedparser.parse(feed_url)
             for entry in feed.entries[:max_per_feed]:
                 title = entry.get("title", "").strip()
+                link = entry.get("link", "").strip()
                 if title:
-                    headlines.append(title)
+                    items.append({"title": title, "url": link})
         except Exception:
             continue
-    return headlines
+    return items
 
 
 def _filter_relevant(headlines: list[str]) -> list[str]:
     relevant = [h for h in headlines if any(kw in h.lower() for kw in WATCHLIST)]
     return relevant if relevant else headlines[:20]
+
+
+def _best_match_url(bullet: str, items: list[dict]) -> str:
+    """Word-overlap heuristic: find the source item with the most title words in the bullet."""
+    words = {w.lower() for w in re.findall(r'\b\w{4,}\b', bullet)}
+    if not words:
+        return ""
+    best_score, best_url = 0.0, ""
+    for item in items:
+        title_words = {w.lower() for w in re.findall(r'\b\w{4,}\b', item["title"])}
+        if not title_words:
+            continue
+        score = len(words & title_words) / len(words)
+        if score > best_score:
+            best_score, best_url = score, item["url"]
+    return best_url if best_score >= 0.25 else ""
 
 
 def _load_news_keywords() -> dict:
@@ -84,7 +103,8 @@ def get_trigger_news_context(triggered_keys: set[str], env: dict) -> str:
     if not api_key or api_key.startswith("your_") or not triggered_keys:
         return ""
     try:
-        headlines = _pull_headlines()
+        items = _pull_headlines()
+        headlines = [i["title"] for i in items]
         relevant = filter_headlines_for_triggers(headlines, triggered_keys)
         if not relevant:
             relevant = _filter_relevant(headlines)[:15]
@@ -122,19 +142,21 @@ def get_trigger_news_context(triggered_keys: set[str], env: dict) -> str:
 
 
 def get_news_brief(env: dict) -> list[dict]:
-    """Return list of {text} dicts. Returns [] when triage is off or key is missing."""
+    """Return list of {text, url} dicts. Returns [] when triage is off or key is missing."""
     if env.get("ENABLE_NEWS_TRIAGE", "true").lower() != "true":
         return []
     api_key = env.get("ANTHROPIC_API_KEY", "")
     if not api_key or api_key.startswith("your_"):
         return []
 
-    headlines = _pull_headlines()
-    if not headlines:
+    items = _pull_headlines()
+    if not items:
         return []
 
-    relevant = _filter_relevant(headlines)
-    hl_text = "\n".join(f"- {h}" for h in relevant[:30])
+    all_titles = [i["title"] for i in items]
+    relevant_titles = _filter_relevant(all_titles)
+    relevant_items = [i for i in items if i["title"] in set(relevant_titles)]
+    hl_text = "\n".join(f"- {t}" for t in relevant_titles[:30])
 
     try:
         import anthropic
@@ -152,6 +174,8 @@ def get_news_brief(env: dict) -> list[dict]:
             for line in text.splitlines()
             if line.strip() and line.strip()[0] in "•-*"
         ]
-        return [{"text": b} for b in bullets[:6]] if bullets else [{"text": text}]
+        if bullets:
+            return [{"text": b, "url": _best_match_url(b, relevant_items)} for b in bullets[:6]]
+        return [{"text": text, "url": ""}]
     except Exception as exc:
-        return [{"text": f"News triage unavailable: {exc}"}]
+        return [{"text": f"News triage unavailable: {exc}", "url": ""}]

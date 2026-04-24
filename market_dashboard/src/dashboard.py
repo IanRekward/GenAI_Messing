@@ -37,7 +37,7 @@ h2{font-size:1rem;font-weight:600;margin-bottom:10px}
 .bkt-hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
 .bkt-score{font-size:1.3rem;font-weight:700}
 table{width:100%;border-collapse:collapse}
-td{padding:3px 0;vertical-align:middle}
+td{padding:1px 0;vertical-align:middle}
 td:nth-child(2){text-align:right;padding-right:8px;font-size:.82rem;color:#8b949e;width:26%}
 td:nth-child(3){text-align:right;width:34%}
 .dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:5px;vertical-align:middle}
@@ -242,10 +242,27 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
                 f"{inner_label}"
                 f"</a>"
             )
+            # Short description: first sentence of tooltip (up to first ". ")
+            short_desc = ""
+            if itip:
+                dot_idx = itip.find(". ")
+                short_desc = itip[:dot_idx] if 0 < dot_idx < 100 else (itip[:80] if len(itip) > 80 else itip)
+            desc_html = (
+                f'<div style="font-size:.72rem;color:#6e7681;padding-left:12px;line-height:1.3">'
+                f'{short_desc}</div>'
+            ) if short_desc else ""
+            # "as of" date from last series observation
+            series_data = ind.get("_series")
+            as_of_html = ""
+            if series_data and series_data.get("dates"):
+                as_of_html = (
+                    f'<div style="font-size:.68rem;color:#6e7681;margin-top:1px">'
+                    f'as of {series_data["dates"][-1]}</div>'
+                )
             rows += (
                 f"<tr>"
-                f"<td>{_dot(ind['band'])}{label_html}{manual_tag}</td>"
-                f"<td>{_fmt_raw(ind)}</td>"
+                f"<td>{_dot(ind['band'])}{label_html}{manual_tag}{desc_html}</td>"
+                f"<td><div>{_fmt_raw(ind)}</div>{as_of_html}</td>"
                 f"<td>{pct_str} {_badge(ind['band'])}</td>"
                 f"</tr>"
             )
@@ -273,11 +290,21 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame") -> Path:
     # ── News section ────────────────────────────────────────────────────────
     news_html = ""
     if news:
-        items = "\n".join(f"<li>{item['text']}</li>" for item in news)
+        li_parts = []
+        for item in news:
+            text = item["text"]
+            url = item.get("url", "")
+            if url:
+                li_parts.append(
+                    f'<li><a href="{url}" target="_blank" rel="noopener"'
+                    f' style="color:inherit">{text}</a></li>'
+                )
+            else:
+                li_parts.append(f"<li>{text}</li>")
         news_html = f"""
 <div class="card">
   <h2>Overnight News Brief</h2>
-  <ul class="news-list">{items}</ul>
+  <ul class="news-list">{"".join(li_parts)}</ul>
 </div>"""
 
     # ── Errors ──────────────────────────────────────────────────────────────
