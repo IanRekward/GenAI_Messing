@@ -14,6 +14,7 @@ from src.history import (
     cross_bucket_correlation, correlation_regime, classify_shock_type,
 )
 from src.indicator_detail import build_indicator_detail
+from src.analogs import find_analog
 
 OUTPUT_DIR = Path("output")
 
@@ -250,6 +251,47 @@ def _build_calendar_card(events: list) -> str:
         "</div>"
     )
     return f'<div class="card"><h2>Upcoming Macro Events (14 days)</h2>{rows}{legend}</div>'
+
+
+def _build_analog_card(analogs: list) -> str:
+    """Compact card showing top historical analog matches (only when composite >= 35)."""
+    if not analogs:
+        return ""
+    rows = ""
+    for i, a in enumerate(analogs):
+        pct = int(a["similarity"] * 100)
+        bar_w = max(4, pct)
+        label_color = "#c9d1d9" if i == 0 else "#8b949e"
+        tags_html = " ".join(
+            f'<span style="background:#21262d;color:#8b949e;padding:1px 5px;'
+            f'border-radius:3px;font-size:.68rem">{t}</span>'
+            for t in a["tags"]
+        )
+        rows += (
+            f'<div style="padding:6px 0;border-bottom:1px solid #21262d">'
+            f'<div style="display:flex;justify-content:space-between;align-items:baseline">'
+            f'<span style="font-weight:600;color:{label_color}">{a["name"]}</span>'
+            f'<span style="font-size:.75rem;color:#6e7681">{a["date_range"]}</span>'
+            f'</div>'
+            f'<div style="display:flex;align-items:center;gap:8px;margin-top:3px">'
+            f'<div style="flex:1;height:4px;background:#21262d;border-radius:2px">'
+            f'<div style="width:{bar_w}%;height:4px;background:#4d9de0;border-radius:2px"></div>'
+            f'</div>'
+            f'<span style="font-size:.75rem;color:#4d9de0;min-width:32px;text-align:right">'
+            f'{pct}%</span>'
+            f'</div>'
+            f'<div style="margin-top:3px">{tags_html}</div>'
+            f'</div>'
+        )
+    note = (
+        '<div style="margin-top:8px;font-size:.72rem;color:#484f58">'
+        'Pattern similarity based on bucket score profile — not a forecast</div>'
+    )
+    return (
+        f'<div class="card" style="border-left:3px solid #30363d">'
+        f'<h2 style="margin-bottom:6px;font-size:.9rem;color:#6e7681">HISTORICAL ANALOGS</h2>'
+        f'{rows}{note}</div>'
+    )
 
 
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
@@ -509,6 +551,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     # ── Review prompts (todo 46) ────────────────────────────────────────────
     review_card = _build_review_card(band, shock_type)
 
+    # ── Historical analogs (TOP-3 item 2) ───────────────────────────────────
+    analog_card = _build_analog_card(find_analog(scoring))
+
     # ── Errors ──────────────────────────────────────────────────────────────
     errors_html = ""
     if scoring.get("errors"):
@@ -550,6 +595,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   {narrative_card}
   {composite_card}
   {review_card}
+  {analog_card}
   {correlation_card}
   {trend_card}
   {calendar_card}
