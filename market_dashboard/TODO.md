@@ -97,16 +97,6 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 ---
 
-## Automation troubleshooting — 2026-04-24
-
-**Issue:** 7:30 AM Pushover alert + dashboard run did not fire.  
-**Diagnosis:**
-- Market Stress Dashboard task exists but never ran (LastRunTime empty).
-- RTC wake timer shows 0 sources — system did NOT wake at 7:20 AM.
-- Market Dashboard Wake task status unknown (requires admin to verify).
-- **Next step:** Run `powercfg /waketimers` with admin privilege to confirm RTC is enabled. If disabled, re-enable with `powercfg /devicequery wake_armed` and reconfigure wake timers. Check Event Viewer for System/Power-Troubleshooter if wake command was issued but failed.
-
----
 
 ## Sonnet onboarding instructions
 
