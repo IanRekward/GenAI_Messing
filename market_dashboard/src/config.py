@@ -57,6 +57,7 @@ def validate_config(weights: dict, thresholds: dict,
     _validate_no_duplicate_keys(weights)
     _validate_threshold_keys(weights, thresholds)
     _validate_sources(weights, computed_handlers or frozenset())
+    _validate_regime_weights(weights)
 
 
 def _validate_bucket_count(weights: dict) -> None:
@@ -156,6 +157,41 @@ def _validate_sources(weights: dict, computed_handlers: frozenset) -> None:
                 raise ConfigError(
                     f"Indicator '{ikey}' has unknown transform '{transform}'. "
                     f"Must be one of: {sorted(_VALID_TRANSFORMS)}."
+                )
+
+
+def _validate_regime_weights(weights: dict) -> None:
+    rw = weights.get("regime_weights")
+    if rw is None:
+        return  # optional block — absence is fine
+
+    _KNOWN_CLASSIFIER_TYPES = {"vix_tercile"}
+    clf = rw.get("classifier", {})
+    clf_type = clf.get("type")
+    if clf_type not in _KNOWN_CLASSIFIER_TYPES:
+        raise ConfigError(
+            f"regime_weights.classifier.type '{clf_type}' is unknown. "
+            f"Must be one of: {sorted(_KNOWN_CLASSIFIER_TYPES)}."
+        )
+
+    bucket_keys = set(weights.get("buckets", {}).keys())
+    multipliers = rw.get("multipliers", {})
+    for regime in ("low", "mid", "high"):
+        if regime not in multipliers:
+            raise ConfigError(
+                f"regime_weights.multipliers is missing regime '{regime}'. "
+                f"All three regimes (low, mid, high) must be present."
+            )
+        for bkey, val in multipliers[regime].items():
+            if bkey not in bucket_keys:
+                raise ConfigError(
+                    f"regime_weights.multipliers.{regime}.{bkey} references "
+                    f"a bucket that does not exist in weights.yaml."
+                )
+            if not (0.3 <= float(val) <= 2.0):
+                raise ConfigError(
+                    f"regime_weights.multipliers.{regime}.{bkey} = {val} is "
+                    f"outside the allowed range [0.3, 2.0]."
                 )
 
 

@@ -65,8 +65,8 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Dashboard self-diagnostics** *(shipped)*
   JS `automation-banner` div injected with ISO timestamp on `<body data-run-ts="...">`. If >30 hours since last run, injects red "AUTOMATION OFFLINE — X hours ago" banner. No-op when automation is healthy.
 
-- [ ] **Brief 15 data alignment checks** *(added to Brief 15 implementation)*
-  Brief 15's rolling IC card is only valid if backtest and live dashboard are synchronized. Add: (a) timestamp validation — show "backtest: 2026-04-24 07:35, composite: 2026-04-24 07:30" and warn if >2 hours apart; (b) sample count display — show "IC: 0.12 (252 obs)" so small-sample noise is visible; (c) freshness indicator — show "last backtest: 2026-04-24" and warn if >2 days stale. Wired into `_build_signal_quality_card()`.
+- [x] **Brief 15 data alignment checks** *(shipped — commit e6ac3fa)*
+  Signal quality card now shows backtest and composite timestamps side-by-side. Warns (yellow) if >2h apart or backtest CSV >2 days stale.
 
 - [x] **Data quality monitoring / bucket health** *(shipped)*
   `_build_bucket_health_card()` in `dashboard.py`: collapsible "DATA QUALITY (N issues)" section. Detects (a) indicators with `percentile=None` (failed fetches falling back to 50.0) and (b) bucket scores unchanged for ≥3 consecutive runs (possible stale source). Rendered between staleness banner and composite card.
@@ -91,8 +91,11 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Brief 10B — Backtest + recalibrate regime extension** *(shipped — commit 7a9108e)*
   Backtest writes `regime` column per date (point-in-time VIX tercile). evaluation.py gains per_regime_bucket_ic(). recalibrate --regime prints proposed regime_weights: YAML block to stdout (no file writes). 2 new tests, 192/192 passing.
 
-- [ ] **Brief 10C — Apply regime weights at score time** *(design complete — see [ROADMAP.md §Brief 10C](ROADMAP.md))*
-  Depends on 10A + 10B. Wire `regime_weights:` into `compute_composite()`. Always compute both `composite` and `composite_naive` so dashboard shows side-by-side. Default `enabled: false` — Ian flips after a few days of side-by-side observation. Validation backtest + IC comparison required before flipping. Three new tests. Est. half a day.
+- [x] **Brief 10C — Apply regime weights at score time** *(shipped — commit pending)*
+  regime_weights: block in weights.yaml (Option A conservative multipliers, enabled=false). _apply_regime_weights() in scoring.py: computes both composite_naive and composite_regime_weighted every run. Dashboard shows "Regime preview: XX (disabled)" side-by-side with composite. Flip enabled: true after review. 3 new tests, 195/195 passing.
+
+- [ ] **Regime-weights review checkpoint** *(due 2026-05-30)*
+  Run `python -m src.recalibrate --regime` and check history.csv for regime distribution and composite vs composite_naive divergence. Decision criteria: (a) at least one high-regime episode where composite_regime > composite_naive and divergence made sense, (b) IC table still shows rates_curve and inflation positive in high regime, (c) no frequent regime flapping. If criteria met, flip `regime_weights.enabled: true` in config/weights.yaml and tell Sonnet to commit.
 
 ### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 

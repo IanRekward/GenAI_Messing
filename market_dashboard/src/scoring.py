@@ -243,6 +243,52 @@ def _band_from_score(score: float) -> str:
     return "green"
 
 
+def _apply_regime_weights(
+    bucket_results: dict,
+    rw_cfg: dict,
+    current_regime: str | None,
+) -> dict:
+    """
+    Apply regime multipliers to bucket weights and return a regime-weighted composite.
+
+    Returns dict with keys:
+      composite_regime_weighted, applied (bool), multipliers_used (dict), error (str|None).
+    When rw_cfg is absent, regime is None, or enabled=False, returns naive composite
+    with applied=False.
+    """
+    naive = sum(b["score"] * b["weight"] for b in bucket_results.values())
+    total_w = sum(b["weight"] for b in bucket_results.values())
+    naive = round(naive / total_w, 1) if total_w > 0 else 50.0
+
+    if not rw_cfg or not current_regime:
+        return {"composite_regime_weighted": naive, "applied": False,
+                "multipliers_used": {}, "error": None}
+
+    try:
+        mults = rw_cfg.get("multipliers", {}).get(current_regime, {})
+        adj_weights: dict[str, float] = {
+            bk: bd["weight"] * float(mults.get(bk, 1.0))
+            for bk, bd in bucket_results.items()
+        }
+        total_adj = sum(adj_weights.values())
+        if total_adj <= 0:
+            return {"composite_regime_weighted": naive, "applied": False,
+                    "multipliers_used": {}, "error": None}
+
+        rw_composite = round(
+            sum(bucket_results[bk]["score"] * (adj_weights[bk] / total_adj)
+                for bk in bucket_results),
+            1,
+        )
+        mults_used = {bk: round(float(mults.get(bk, 1.0)), 3) for bk in bucket_results}
+        applied = bool(rw_cfg.get("enabled", False))
+        return {"composite_regime_weighted": rw_composite, "applied": applied,
+                "multipliers_used": mults_used, "error": None}
+    except Exception as exc:
+        return {"composite_regime_weighted": naive, "applied": False,
+                "multipliers_used": {}, "error": str(exc)}
+
+
 def _load_prev_regime() -> str | None:
     """Read the previous VIX regime from alert_state.json for hysteresis."""
     import json
@@ -395,8 +441,25 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         except Exception as exc:
             errors.append(f"vix_regime: {exc}")
 
+    # Brief 10C — regime-weighted composite
+    composite_naive = composite
+    rw_result = _apply_regime_weights(
+        bucket_results, weights.get("regime_weights", {}), regime_info.get("regime")
+    )
+    composite_regime_weighted = rw_result["composite_regime_weighted"]
+    regime_weights_applied = rw_result["applied"]
+    regime_multipliers_used = rw_result["multipliers_used"]
+    if regime_weights_applied:
+        composite = composite_regime_weighted
+    if rw_result.get("error"):
+        errors.append(f"regime_weights: {rw_result['error']}")
+
     result = {
         "composite": round(composite, 1),
+        "composite_naive": round(composite_naive, 1),
+        "composite_regime_weighted": round(composite_regime_weighted, 1),
+        "regime_weights_applied": regime_weights_applied,
+        "regime_multipliers_used": regime_multipliers_used,
         "composite_band": _band_from_score(composite),
         "composite_short": round(composite_short, 1),
         "composite_short_band": _band_from_score(composite_short),

@@ -723,6 +723,39 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f"</div>"
         )
 
+    # Brief 10C — regime-weighted vs naive side-by-side
+    composite_naive = scoring.get("composite_naive")
+    composite_regime_weighted = scoring.get("composite_regime_weighted")
+    regime_weights_applied = scoring.get("regime_weights_applied", False)
+    regime_sidebyside_html = ""
+    if composite_naive is not None and composite_regime_weighted is not None:
+        delta = composite_regime_weighted - composite_naive
+        delta_str = ""
+        if abs(delta) >= 0.5:
+            delta_color = "#ff6b6b" if delta > 0 else "#4dbb6a"
+            delta_str = f'<span style="color:{delta_color}"> {delta:+.1f}</span>'
+        if regime_weights_applied:
+            # enabled=true: composite is regime-weighted; show naive as reference
+            naive_color = _color(_band_from_score(composite_naive))
+            regime_sidebyside_html = (
+                f'<div class="score-sub" style="margin-top:3px">'
+                f'<span style="color:#6e7681">Naive baseline: </span>'
+                f'<span style="color:{naive_color}">{composite_naive:.0f}</span>'
+                f'{delta_str}'
+                f'</div>'
+            )
+        else:
+            # enabled=false: composite is naive; show regime-weighted as preview
+            rw_color = _color(_band_from_score(composite_regime_weighted))
+            regime_sidebyside_html = (
+                f'<div class="score-sub" style="margin-top:3px">'
+                f'<span style="color:#6e7681">Regime preview: </span>'
+                f'<span style="color:{rw_color}">{composite_regime_weighted:.0f}</span>'
+                f'{delta_str}'
+                f'<span style="color:#484f58;font-size:.72rem"> (disabled)</span>'
+                f'</div>'
+            )
+
     # Velocity-adjusted composite — show only when adjustment is material (≥3 pts)
     regime_adj = scoring.get("composite_regime_adj")
     regime_adj_label = scoring.get("composite_regime_adj_label", "")
@@ -755,6 +788,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     {shock_html}
     {regime_html}
     {vix_regime_html}
+    {regime_sidebyside_html}
     {regime_adj_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
