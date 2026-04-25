@@ -15,6 +15,7 @@ from src.history import (
 )
 from src.indicator_detail import build_indicator_detail
 from src.analogs import find_analog
+from src.scoring import _band_from_score
 
 OUTPUT_DIR = Path("output")
 
