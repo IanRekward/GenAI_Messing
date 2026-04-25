@@ -22,6 +22,12 @@ indicators:
     orange: 24.0
     red: 32.0
 
+  vix_term_structure:
+    direction: high
+    yellow: 0.95
+    orange: 1.00
+    red: 1.05
+
   # --- Credit Spreads ---
   hy_oas:                     # ICE BofA HY OAS, in %
     direction: high

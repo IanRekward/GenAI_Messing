@@ -59,6 +59,8 @@ indicators:
     tip: "CBOE Volatility Index — market's 30-day expected S&P 500 vol from options. Below 15 = calm. 15–25 = normal. 25–35 = elevated. Above 35 = panic. 2008 peak: ~89."
   sp500_1m_vol:
     tip: "Trailing 1-month realized volatility of the S&P 500 (annualized %). Captures actual, not implied, volatility. Spikes confirm options-implied fear is real."
+  vix_term_structure:
+    tip: "VIX/VIX3M ratio — compares 30-day to 3-month implied vol. Below 1.0 = normal contango (calm). Above 1.0 = backwardation (near-term fear exceeds medium-term). Crossed 1.05 during COVID Mar 2020, GFC, and 2022 Fed shock."
   hy_oas:
     tip: "ICE BofA High Yield Option-Adjusted Spread over Treasuries (%). Above 5% = stressed. Above 7.5% = crisis. Peaked at ~20% in March 2020 and ~22% in 2008."
   ig_oas:

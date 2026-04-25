@@ -61,6 +61,20 @@ def _handler_spx_200dma_distance(key: str, cfg: dict, env: dict, manual: dict, y
     return _compute_spx_200dma_distance(env, years)
 
 
+def _handler_vix_term_structure(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    import yfinance as yf
+    vix = yf.download("^VIX", period=f"{years}y", progress=False, auto_adjust=True)
+    vix3m = yf.download("^VIX3M", period=f"{years}y", progress=False, auto_adjust=True)
+
+    close_vix = vix["Close"].squeeze()
+    close_vix3m = vix3m["Close"].squeeze()
+
+    combined = pd.concat([close_vix.rename("vix"), close_vix3m.rename("vix3m")], axis=1)
+    combined = combined.ffill().dropna()
+    ratio = combined["vix"] / combined["vix3m"]
+    return float(ratio.iloc[-1]), ratio
+
+
 # Registry of computed handlers — keyed by handler name in weights.yaml source.handler.
 # config.py validates against this at startup.
 COMPUTED_HANDLERS: dict = {
@@ -69,6 +83,7 @@ COMPUTED_HANDLERS: dict = {
     "treasury_auction_stress": _handler_treasury_auction_stress,
     "sector_breadth":          _handler_sector_breadth,
     "spx_200dma_distance":     _handler_spx_200dma_distance,
+    "vix_term_structure":      _handler_vix_term_structure,
 }
 
 _TRANSFORMS = {

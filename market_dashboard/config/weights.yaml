@@ -19,15 +19,23 @@ buckets:
     indicators:
       vix:
         label: VIX
-        weight: 0.65
+        weight: 0.50
         source:
           type: yfinance
           ticker: "^VIX"
         invert: false
         unit: ""
+      vix_term_structure:
+        label: "VIX Term Structure"
+        weight: 0.25
+        source:
+          type: computed
+          handler: vix_term_structure
+        invert: false
+        unit: "ratio"
       sp500_1m_vol:
         label: "S&P 500 1M Realized Vol"
-        weight: 0.35
+        weight: 0.25
         source:
           type: yfinance
           ticker: "^GSPC"

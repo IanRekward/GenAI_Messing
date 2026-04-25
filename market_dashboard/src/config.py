@@ -20,7 +20,7 @@ class ConfigError(Exception):
 # Canonical set of indicator keys that _fetch_indicator() handles.
 # Update this when adding a new indicator to scoring.py.
 KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
-    "vix", "sp500_1m_vol",
+    "vix", "sp500_1m_vol", "vix_term_structure",
     "hy_oas", "ig_oas",
     "yield_curve", "ten_year", "move_index",
     "nfci", "stlfsi",
