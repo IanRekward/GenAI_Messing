@@ -82,14 +82,14 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Brief 15 — Backtest signal-quality card + link** *(shipped)*
   Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`.
 
-- [ ] **Brief 16 — VIX term-structure indicator** *(design complete — see [ROADMAP.md §Brief 16](ROADMAP.md))*
-  Opus design pass done (2026-04-25). Scope locked: VIX/VIX3M ratio (industry-standard term-structure signal), `equity_volatility` bucket, `computed` handler. Bucket re-weighted (vix 0.50, term_structure 0.25, realized_vol 0.25). Threshold bands 0.95/1.00/1.05 on the raw ratio. Single new test in `tests/test_vix_term_structure.py`. Ready for Sonnet — est. 1–2 hours.
+- [x] **Brief 16 — VIX term-structure indicator** *(shipped — commit e032f70)*
+  VIX/VIX3M ratio in equity_volatility bucket. Reweighted: vix→0.50, vix_term_structure→0.25, sp500_1m_vol→0.25. Thresholds: yellow=0.95, orange=1.00, red=1.05. 4 new tests, 187/187 passing.
 
-- [ ] **Brief 10A — Regime classification telemetry** *(design complete — see [ROADMAP.md §Brief 10A](ROADMAP.md))*
-  Read-only telemetry: classify VIX into low/mid/high terciles (smoothed 5d, hysteretic 1.0 buffer), display badge, log to history. **No scoring change.** Lets Ian observe regime behaviour for weeks before flipping the switch in 10C. Three new tests. Est. half a day.
+- [x] **Brief 10A — Regime classification telemetry** *(shipped — commit 9541963)*
+  classify_vix_regime() in history.py; badge in composite card (low=green, mid=yellow, high=orange); regime column in history.csv; regime_previous persisted via alert_state.json. Composite unchanged. 3 new tests, 190/190 passing.
 
-- [ ] **Brief 10B — Backtest + recalibrate regime extension** *(design complete — see [ROADMAP.md §Brief 10B](ROADMAP.md))*
-  Depends on 10A. Add `regime` column to backtest, per-regime per-bucket IC analysis in `evaluation.py`, new `recalibrate --regime` mode that proposes a `regime_weights:` multiplier block to stdout (no auto-apply). Two new tests. Est. half a day.
+- [x] **Brief 10B — Backtest + recalibrate regime extension** *(shipped — commit 7a9108e)*
+  Backtest writes `regime` column per date (point-in-time VIX tercile). evaluation.py gains per_regime_bucket_ic(). recalibrate --regime prints proposed regime_weights: YAML block to stdout (no file writes). 2 new tests, 192/192 passing.
 
 - [ ] **Brief 10C — Apply regime weights at score time** *(design complete — see [ROADMAP.md §Brief 10C](ROADMAP.md))*
   Depends on 10A + 10B. Wire `regime_weights:` into `compute_composite()`. Always compute both `composite` and `composite_naive` so dashboard shows side-by-side. Default `enabled: false` — Ian flips after a few days of side-by-side observation. Validation backtest + IC comparison required before flipping. Three new tests. Est. half a day.

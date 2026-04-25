@@ -564,6 +564,54 @@ def _build_signal_quality_card(
             f'View full backtest report →</a></div>'
         )
 
+    # Data alignment checks
+    BT_CSV = OUTPUT_DIR / "backtest_full.csv"
+    alignment_html = ""
+    try:
+        now = datetime.now()
+        # Backtest freshness — mod time of the CSV
+        if BT_CSV.exists():
+            import os as _os
+            bt_mtime = datetime.fromtimestamp(_os.path.getmtime(BT_CSV))
+            bt_str = bt_mtime.strftime("%Y-%m-%d %H:%M")
+            bt_age_h = (now - bt_mtime).total_seconds() / 3600
+        else:
+            bt_str = "not found"
+            bt_age_h = float("inf")
+
+        # Live composite timestamp
+        comp_ts_str = history["timestamp"].max() if not history.empty else None
+        comp_str = pd.to_datetime(comp_ts_str).strftime("%Y-%m-%d %H:%M") if comp_ts_str else "unknown"
+
+        # Gap between backtest and live composite
+        gap_warn = ""
+        if comp_ts_str and BT_CSV.exists():
+            comp_dt = pd.to_datetime(comp_ts_str)
+            gap_h = abs((bt_mtime - comp_dt.to_pydatetime()).total_seconds()) / 3600
+            if gap_h > 2:
+                gap_warn = (
+                    f'<span style="color:#ffcc00;margin-left:8px">&#9888; '
+                    f'{gap_h:.0f}h apart — re-run backtest to resync</span>'
+                )
+
+        stale_warn = ""
+        if bt_age_h > 48:
+            stale_warn = (
+                f'<span style="color:#ffcc00;margin-left:8px">&#9888; '
+                f'backtest is {bt_age_h/24:.0f}d old — consider re-running</span>'
+            )
+
+        alignment_html = (
+            f'<div style="margin-top:10px;font-size:.72rem;color:#6e7681;line-height:1.7">'
+            f'<span style="color:#8b949e">backtest:</span> {bt_str}'
+            f'<span style="color:#484f58;margin:0 6px">·</span>'
+            f'<span style="color:#8b949e">composite:</span> {comp_str}'
+            f'{gap_warn}{stale_warn}'
+            f'</div>'
+        )
+    except Exception:
+        pass
+
     return (
         f'<div class="card" style="padding:14px 18px">'
         f'<h2 style="margin-bottom:10px">Model Calibration</h2>'
@@ -571,6 +619,7 @@ def _build_signal_quality_card(
         f'{ic_panel}{hr_panel}'
         f'</div>'
         f'{verdict_badge}'
+        f'{alignment_html}'
         f'{report_link}'
         f'</div>'
     )
