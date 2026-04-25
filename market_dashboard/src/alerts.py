@@ -448,6 +448,7 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         "weekly_alert_count": weekly_alert_count,
         "weekly_digest_date": prev.get("weekly_digest_date", ""),
         "suppressed_alerts": prev.get("suppressed_alerts", []),
+        "regime_previous": scoring.get("regime"),
     }
 
     if not messages:

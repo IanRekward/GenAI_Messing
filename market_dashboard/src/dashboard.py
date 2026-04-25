@@ -646,6 +646,34 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f"</div>"
         )
 
+    # VIX regime badge (Brief 10A — read-only telemetry)
+    _regime_colors = {"low": "#22cc44", "mid": "#ffcc00", "high": "#ff8800"}
+    vix_regime = scoring.get("regime")
+    vix_regime_html = ""
+    if vix_regime is not None:
+        rc = _regime_colors.get(vix_regime, "#6e7681")
+        vix_5dma = scoring.get("regime_vix_5dma")
+        thresholds = scoring.get("regime_thresholds", {})
+        detail = ""
+        if vix_5dma is not None and thresholds:
+            detail = (
+                f" (smoothed VIX {vix_5dma}"
+                f" — boundaries {thresholds.get('low_max')} / {thresholds.get('high_min')})"
+            )
+        elif vix_5dma is not None:
+            detail = f" (smoothed VIX {vix_5dma})"
+        vix_regime_tip = tooltips.get("vix_regime", {}).get("tip", "")
+        badge_inner = f'<span style="color:{rc};font-weight:600">{vix_regime.upper()}</span>'
+        if vix_regime_tip:
+            badge_inner = _tip(badge_inner, vix_regime_tip)
+        vix_regime_html = (
+            f'<div class="score-sub" style="margin-top:3px">'
+            f'<span style="color:#6e7681">VIX regime: </span>'
+            f'{badge_inner}'
+            f'<span style="color:#6e7681;font-size:.75rem">{detail}</span>'
+            f"</div>"
+        )
+
     # Velocity-adjusted composite — show only when adjustment is material (≥3 pts)
     regime_adj = scoring.get("composite_regime_adj")
     regime_adj_label = scoring.get("composite_regime_adj_label", "")
@@ -677,6 +705,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     {mom_html}
     {shock_html}
     {regime_html}
+    {vix_regime_html}
     {regime_adj_html}
     <div class="tc-row">
       <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>

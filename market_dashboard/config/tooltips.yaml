@@ -24,6 +24,9 @@ regime_window:
 regime_adjusted:
   tip: "Composite score adjusted for current velocity and shock type. A fast shock in orange territory pushes this higher; a recovery trend pulls it lower. Shows where the model thinks stress is heading, not just where it is."
 
+vix_regime:
+  tip: "Current VIX regime, classified by trailing 10-year tercile. Low = bottom third of historical VIX (calm). Mid = middle third. High = top third (elevated). Smoothed (5d MA) and hysteretic (1.0 VIX buffer) so it doesn't flap at boundaries. Brief 10C will use this to weight buckets differently per regime."
+
 shock_type:
   fast_shock: "Composite rose ≥8 pts in 7 days, or ≥4 pts with 3+ buckets accelerating simultaneously. Fast shocks (2020 COVID, 2022 rate shock) demand prompt attention; they rarely revert quickly."
   slow_burn: "Composite is elevated (≥40) but moving slowly — lingering stress without acute escalation. Classic in late-cycle credit deterioration and pre-recession periods. Can persist for months."

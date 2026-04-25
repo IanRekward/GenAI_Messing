@@ -4,6 +4,7 @@ Composite scoring: orchestrates data fetching, indicator calculations, and bucke
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -242,6 +243,19 @@ def _band_from_score(score: float) -> str:
     return "green"
 
 
+def _load_prev_regime() -> str | None:
+    """Read the previous VIX regime from alert_state.json for hysteresis."""
+    import json
+    state_file = Path("data") / "alert_state.json"
+    try:
+        if state_file.exists():
+            with open(state_file) as f:
+                return json.load(f).get("regime_previous")
+    except Exception:
+        pass
+    return None
+
+
 def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     """
     Fetch all data, score every indicator, aggregate into buckets and composite.
@@ -251,6 +265,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     bucket_results: dict = {}
     errors: list[str] = []
     stale_indicators: list[str] = []
+    _vix_series_for_regime: pd.Series | None = None
 
     short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
     short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
@@ -294,6 +309,9 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                 weighted_sum_short += score * iweight
                 weight_used += iweight
                 continue
+
+            if bkey == "equity_volatility" and ikey == "vix" and series is not None:
+                _vix_series_for_regime = series
 
             # Success path (live or stale-cache fallback)
             if not stale_cache_msg:
@@ -367,7 +385,17 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         else 50.0
     )
 
-    return {
+    # VIX regime classification (Brief 10A — read-only, no scoring change)
+    from src.history import classify_vix_regime
+    regime_info: dict = {}
+    if _vix_series_for_regime is not None:
+        try:
+            prev_regime = _load_prev_regime()
+            regime_info = classify_vix_regime(_vix_series_for_regime, prev_regime)
+        except Exception as exc:
+            errors.append(f"vix_regime: {exc}")
+
+    result = {
         "composite": round(composite, 1),
         "composite_band": _band_from_score(composite),
         "composite_short": round(composite_short, 1),
@@ -381,3 +409,5 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         "errors": errors,
         "stale_indicators": stale_indicators,
     }
+    result.update(regime_info)
+    return result

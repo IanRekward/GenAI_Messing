@@ -49,6 +49,7 @@ def log_run(scoring: dict) -> None:
         "yellow_count": scoring["yellow_count"],
         "weights_hash": _weights_hash(),
         "code_sha": _code_sha(),
+        "regime": scoring.get("regime"),
     }
     for bkey, bucket in scoring["buckets"].items():
         row[f"bucket_{bkey}"] = bucket["score"]
@@ -254,6 +255,69 @@ def compute_regime_adjusted_composite(
         return round(min(composite + adj, 100.0), 1), f"+{adj:.1f} persistence premium"
 
     return composite, ""
+
+
+_REGIME_HYSTERESIS = 1.0  # VIX points required to cross a boundary
+
+
+def classify_vix_regime(vix_series: pd.Series, prev_regime: str | None = None) -> dict:
+    """
+    Classify current VIX into low / mid / high tercile regime.
+
+    Uses a 5-day smoothed VIX and hysteresis (±1.0 VIX pts at each boundary)
+    to prevent flapping. Boundaries are the 33rd / 67th percentile of the
+    trailing 10-year VIX series passed in.
+
+    Returns dict with: regime, regime_vix_5dma, regime_thresholds, regime_changed,
+    and regime_short_history=True when < 252 trading days of data.
+    """
+    vix_series = vix_series.dropna()
+
+    smoothed_series = vix_series.rolling(5).mean().dropna()
+    current_smoothed = float(smoothed_series.iloc[-1]) if len(smoothed_series) >= 1 else None
+
+    if len(vix_series) < 252:
+        return {
+            "regime": "mid",
+            "regime_vix_5dma": round(current_smoothed, 1) if current_smoothed is not None else None,
+            "regime_thresholds": {},
+            "regime_changed": False,
+            "regime_short_history": True,
+        }
+
+    low_max = float(np.percentile(vix_series, 33))
+    high_min = float(np.percentile(vix_series, 67))
+
+    # Raw classification without hysteresis
+    if current_smoothed <= low_max:
+        raw_regime = "low"
+    elif current_smoothed >= high_min:
+        raw_regime = "high"
+    else:
+        raw_regime = "mid"
+
+    # Apply hysteresis: only cross a boundary if exceeded by the buffer
+    if prev_regime is None:
+        regime = raw_regime
+    else:
+        regime = prev_regime
+        buf = _REGIME_HYSTERESIS
+        if prev_regime == "low" and current_smoothed > low_max + buf:
+            regime = "mid"
+        elif prev_regime == "mid" and current_smoothed < low_max - buf:
+            regime = "low"
+        elif prev_regime == "mid" and current_smoothed > high_min + buf:
+            regime = "high"
+        elif prev_regime == "high" and current_smoothed < high_min - buf:
+            regime = "mid"
+
+    return {
+        "regime": regime,
+        "regime_vix_5dma": round(current_smoothed, 1),
+        "regime_thresholds": {"low_max": round(low_max, 1), "high_min": round(high_min, 1)},
+        "regime_changed": regime != prev_regime if prev_regime is not None else False,
+        "regime_short_history": False,
+    }
 
 
 def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> float | None:
