@@ -58,12 +58,31 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Brief 8 (second half) — Deescalation alerts** — already shipped
   Section 1b in `send_alerts()` fires `composite_improvement` alert with same debounce buffer when band order drops. Tested in `tests/test_alert_controls.py` (de-escalation tests at lines 68–72).
 
-### Phase D — Design-first (route through Opus before Sonnet executes) 🅾️
+### Phase D — System resilience hardening (high-priority, Sonnet execution)
+
+**Before adding new features, harden the existing system against silent failures and data drift.**
+
+- [ ] **Dashboard self-diagnostics** *(1–2 hours)*
+  Add "Last updated: 2026-04-24 07:31 UTC" timestamp to the top of the dashboard. Add a red banner warning if the dashboard hasn't updated in >30 hours (indicates automation failure). Timestamp is written at the end of `run_dashboard.py`, read from `data/run_metadata.json` or `history.csv` timestamp. Sonnet executes; no design needed.
+
+- [ ] **Brief 15 data alignment checks** *(added to Brief 15 implementation)*
+  Brief 15's rolling IC card is only valid if backtest and live dashboard are synchronized. Add: (a) timestamp validation — show "backtest: 2026-04-24 07:35, composite: 2026-04-24 07:30" and warn if >2 hours apart; (b) sample count display — show "IC: 0.12 (252 obs)" so small-sample noise is visible; (c) freshness indicator — show "last backtest: 2026-04-24" and warn if >2 days stale. Wired into `_build_signal_quality_card()`.
+
+- [ ] **Data quality monitoring / bucket health** *(2–3 hours)*
+  Brief 6 detects staleness (no new data). Expand to detect _broken_ data: if any indicator has been NaN/zero for ≥3 days, flag it in a "bucket health" diagnostic (e.g., "Inflation bucket: no valid data for 3 days — falling back to 3-day-old value"). Add to dashboard as a small collapsible section or footer note. Touches `src/indicators.py`, dashboard.py, `data/history.csv` validation.
+
+- [ ] **Alert channel redundancy** *(1 hour)*
+  Pushover can fail silently (network, app muted, account issue). Add an email fallback: if `_send_pushover()` returns `False`, queue an email to rekward01@gmail.com with the same alert body. Use `smtplib` (Pushover API key exists; email can use a transactional service or app password). Alternatively, log "alert would have fired" to dashboard so Ian can inspect manually.
+
+- [ ] **Mobile / responsive design check** *(30 min assessment)*
+  Run the dashboard on a 4" phone screen (dev tools emulation). Verify flex bar charts, tooltip positioning, card layout don't overflow or become unreadable. Document any breakpoints needed (e.g., "hide indicator weights on screens <768px"). Optionally implement if gaps are found; otherwise add a note to CLAUDE.md about tested breakpoints.
+
+### Phase E — Design-first items (route through Opus before Sonnet executes) 🅾️
 
 - [ ] 🅾️ **VIX term-structure evaluation** — design decision needed. Is VIX9D/VIX1D slope a valuable short-term vol signal beyond raw VIX? Where does it live — equity_volatility or rates_curve? yfinance ticker availability (^VIX9D appears to exist; ^VIX1D may not). Opus recommendation → Sonnet implements.
 
-- [ ] **Brief 15 — Backtest signal-quality card + link** *(design complete — see [ROADMAP.md §Brief 15](ROADMAP.md))*
-  Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`. Dropped SPX overlay and lead-time / FP-rate metrics on purpose — those belong in the full report. Live rolling IC is the actual unshipped piece (claimed Phase 4 never landed on the dashboard). Ready for Sonnet — est. half a day.
+- [ ] **Brief 15 — Backtest signal-quality card + link** *(design complete — see [ROADMAP.md §Brief 15](ROADMAP.md), data alignment checks added to Phase D)*
+  Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`. Dropped SPX overlay and lead-time / FP-rate metrics on purpose — those belong in the full report. Live rolling IC is the actual unshipped piece (claimed Phase 4 never landed on the dashboard). Ready for Sonnet — est. half a day. **Note:** Brief 15 implementation should include the Phase D data alignment checks (timestamp validation, sample count, freshness indicator).
 
 - [ ] 🅾️ **Brief 10 — Regime-aware weighting (LARGE)** *(multi-day)*
   Two weight sets by VIX tercile (low/mid/high), precomputed during backtest, applied at score time. Touches scoring, backtest, recalibrate. Opus should design the API + migration (how do we handle the weight-set switch in the composite calculation, how does it interact with Brief 3 momentum, how does history.csv represent which regime was active) before Sonnet executes.
@@ -171,53 +190,15 @@ When starting work on any Brief:
 ## Status as of 2026-04-24 (post-Sonnet 4.6 execution pass)
 
 Phases A, B, and C are fully complete. All items either shipped or confirmed
-already-shipped during this session. Only Phase D remains, and each item there
-requires an Opus design pass before Sonnet can execute.
+already-shipped during this session. **Phase D (resilience hardening) is now the
+priority before new features.** Phase D items are Sonnet-executable (no design pass needed).
+Phase E (VIX term structure, Brief 15, Brief 10, news sources) remains design-first
+and requires Opus passes before Sonnet executes.
 
 ---
 
-## Mid-task handoff — 2026-04-24, Opus → Sonnet (Brief 15)
+## Execution priorities — 2026-04-25
 
-**Context:** Opus completed the design pass for the backtest signal-quality
-card. Full brief is in [ROADMAP.md §Brief 15](ROADMAP.md).
-
-**Key scope decisions Opus locked in (do not re-open without surfacing):**
-
-- Main-dashboard card + link to existing `output/backtest_report.html`.
-  **Not** a full page port — the comprehensive report already exists.
-- Only TWO numeric metrics on the card: rolling composite IC (252d, 21d
-  forward SPX drawdown) and recent alert hit rate (60d from
-  `get_postmortem_stats`). Lead time, FP rate, and SPX overlay are out.
-- Reuse `build_forward_drawdown` and `spearman_ic` from `src/evaluation.py`
-  verbatim. No parallel IC implementations.
-- Verdict thresholds: IC ≥ 0.15 = Tracking, 0.05 ≤ IC < 0.15 = Weak,
-  IC < 0.05 = Miscalibrated, <60 history rows = Insufficient history.
-- Discovered in passing: TODO.md's "Phase 4 — Live performance tracking"
-  claim is wrong — no backtest content exists on the live dashboard today.
-  Brief 15 closes that gap.
-
-**Start here (Sonnet):**
-
-1. Read [ROADMAP.md §Brief 15](ROADMAP.md) in full — it lists every file
-   touch, the IC helper signature, test names, and edge cases.
-2. Run `python -m pytest tests/ -q` — must be 181+ green before starting.
-3. Implement in the order listed in the brief: (a) `rolling_composite_ic`
-   in `evaluation.py`, (b) test it, (c) `_build_signal_quality_card` in
-   `dashboard.py`, (d) wire through `run_dashboard.py`, (e) the
-   `--publish` docs copy.
-4. Verify the card's IC is within ±0.1 of the 21-day cell in
-   `output/backtest_report.html` (ballpark sanity check — they won't match
-   exactly since the card uses last 252 rows only).
-5. Commit with a message referencing Brief 15. Mark this TODO item done.
-
-**Flag and switch back to Opus if:**
-
-- The rolling IC comes out wildly different (>0.2 away) from the full
-  backtest — that's an alignment bug and needs design attention, not a
-  shipping fix.
-- `get_postmortem_stats` turns out to have zero scored alerts in 60 days
-  (alert log too sparse). Decide: hide the hit-rate line or show "0/0" as
-  a non-signal. Default to hiding if ambiguous.
-
-**Delete this section** once Brief 15 ships and the card renders with real
-numbers in the generated dashboard.
+**Next up for Sonnet:** Phase D resilience hardening (5 items, ~8 hours total).
+After Phase D ships, Sonnet can execute Brief 15 with data alignment checks built in.
+Then Phase E design-first items await Opus review.
