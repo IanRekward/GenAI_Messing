@@ -1551,3 +1551,201 @@ naive baseline.
   for the data we have. Revisit only after a year of operation.
 - Per-bucket regime classifiers (e.g., classify credit regime separately
   from equity regime). Single classifier keeps the model interpretable.
+
+---
+
+## Brief 17 — Stale data + data quality auto-remediation
+
+**Authored by:** Sonnet 4.6 (2026-04-25) as a setup brief for Opus review.
+**Status:** DESIGN LOCKED by Opus before Sonnet executes. See "Design decisions"
+section — all decisions are pre-resolved. Sonnet can proceed straight to
+implementation.
+
+**Dependencies:** Brief 7 (retry/backoff in fetch layer — already shipped).
+
+---
+
+### Problem
+
+The dashboard's DATA QUALITY card (`_build_bucket_health_card`) and the staleness
+banner detect problems but offer no fix:
+
+1. **`percentile: None` indicators** — these failed to fetch this run and fell
+   back to a score of 50.0 (neutral). They are invisible failures: the composite
+   looks reasonable but one or more inputs are fabricated.
+2. **Stale indicators** — `check_series_staleness()` flags indicators whose most
+   recent observation is older than the configured cadence threshold. The cache
+   file exists and was used, but its data is outdated.
+
+Both cases silently degrade signal quality with no recovery attempt. The system
+should try once more before giving up.
+
+---
+
+### How the current fetch/scoring pipeline works (context for Opus)
+
+- `run_dashboard.py` calls `score_all(env)` from `src/scoring.py`.
+- `score_all()` iterates indicators, calls the appropriate fetch function, runs
+  `compute_percentile`, and builds the scoring dict.
+- Failed fetches fall back to `50.0` with `"percentile": None` in the result.
+- `stale_indicators: list[str]` is populated in the result by
+  `check_series_staleness()` in `src/fetch.py`.
+- The fetch functions in `src/fetch.py` read from a file cache under
+  `data/fetch_cache/`. Cache age is checked against `CACHE_HOURS` from `env`.
+- There is no persistent circuit breaker. Brief 7's retries are inline
+  (`_retry_get` calls `requests.get` up to 3× with backoff within a single
+  fetch call). If all 3 retries fail, the exception propagates and scoring
+  falls back to 50.0.
+
+---
+
+### Design decisions (locked by Opus — Sonnet executes these exactly)
+
+**D1 — Trigger conditions.** Remediate any indicator where:
+- `scoring["stale_indicators"]` contains the key, OR
+- the indicator's result has `"percentile": None` (confirmed failed fetch)
+
+Run at most one remediation attempt per indicator per run. Don't remediate
+indicators that returned valid data (even if the data is old by calendar
+standards — staleness alerts handle that separately).
+
+**D2 — Pipeline placement.** Remediation runs between the first `score_all()`
+call and `write_dashboard()`, in `run_dashboard.py`. If any targeted indicators
+were successfully refreshed, call `score_all()` a second time (full re-score —
+don't try to patch individual indicator results). The second call uses the
+freshened cache and produces a clean scoring dict. The HTML shows the updated
+scores.
+
+Maximum two full `score_all()` passes per run. Never loop.
+
+**D3 — Force-fetch mechanism.** Pass a new env key `_remediation_keys: set[str]`
+into `score_all()` and down to the individual fetch functions. When a fetch
+function sees its indicator key in `_remediation_keys`, it skips the cache-age
+check (treats `CACHE_HOURS` as 0 for that key only) and attempts a live fetch.
+If the live fetch succeeds, it writes the fresh result to cache as normal. If it
+fails, it raises as normal and scoring falls back to 50.0 again — no infinite
+retry.
+
+Implementation path: `score_all()` passes `_remediation_keys` through `env` to
+each fetch call. The individual fetch functions (`fetch_fred_series`,
+`fetch_yfinance_series`, `fetch_treasury_auction_results`) check
+`env.get("_remediation_keys", set())` before the cache-age guard and skip the
+guard when their key is present.
+
+**D4 — Logging.** For each remediation attempt, append one JSON line to
+`data/alert_log.jsonl`:
+
+```json
+{"ts": "2026-04-25T07:31:14", "event_type": "remediation_attempt",
+ "indicator": "vix", "outcome": "success|failed",
+ "reason": "percentile_none|stale"}
+```
+
+Use the same append helper already used by the alert audit log. Write the log
+entry whether the remediation succeeds or fails.
+
+**D5 — No UI changes.** The dashboard is a static HTML artifact rendered once
+per run. The DATA QUALITY card will naturally reflect the outcome: if remediation
+succeeded, the indicator will no longer appear in the card. No "REFRESH STALE"
+button, no server-side endpoint.
+
+**D6 — Non-goals for this brief.** Do not remediate `computed` indicators (type
+`computed` in weights.yaml — their inputs are derived from other fetches, not
+directly refreshable). Do not modify the staleness banner or DATA QUALITY card
+HTML — they already surface the information correctly post-remediation.
+
+---
+
+### Files to change
+
+1. **`run_dashboard.py`** — add remediation block between `score_all()` and
+   `write_dashboard()`:
+   ```python
+   # Identify candidates
+   stale_keys = set(scoring.get("stale_indicators", []))
+   failed_keys = {
+       ikey
+       for bdata in scoring["buckets"].values()
+       for ikey, ind in bdata["indicators"].items()
+       if ind.get("percentile") is None
+   }
+   remediation_keys = stale_keys | failed_keys
+   
+   if remediation_keys:
+       _run_remediation(scoring, remediation_keys, env)
+       env_remediate = {**env, "_remediation_keys": remediation_keys}
+       scoring = score_all(env_remediate)
+       # Log outcome per key (success = no longer in stale/failed after re-score)
+   ```
+   Extract the logging into a small helper `_run_remediation(scoring, keys, env)`
+   in the same file (not worth a new module).
+
+2. **`src/fetch.py`** — in `fetch_fred_series`, `fetch_yfinance_series`, and
+   `fetch_treasury_auction_results`: add a remediation bypass before the cache-age
+   guard. Pattern:
+   ```python
+   remediation_keys = env.get("_remediation_keys", set())
+   if series_key in remediation_keys:
+       cache_max_age = 0  # force live fetch
+   else:
+       cache_max_age = float(env.get("CACHE_HOURS", 12)) * 3600
+   ```
+   For `fetch_cnn_fear_greed`: same pattern but the key is `cnn_fear_greed`.
+
+3. **`src/scoring.py`** — `score_all()` already passes `env` through to fetch
+   functions. No structural changes needed — `_remediation_keys` travels in
+   `env` transparently.
+
+4. **`data/alert_log.jsonl`** — written at runtime, no code change.
+
+---
+
+### Edge cases
+
+- **`computed` indicators** (e.g., `sofr_spread`, `treasury_auction_stress`):
+  their fetch is a derived calculation, not a direct network call. Exclude them
+  from `remediation_keys` by checking `weights.yaml` `source.type == "computed"`.
+  These indicators will still show in the DATA QUALITY card if they're `None`.
+
+- **Second pass re-introduces a different failure:** If the remediation fetch
+  succeeds for key A but key B fails on the second pass (transient error), that's
+  acceptable — we tried once and moved on. The DATA QUALITY card will still show B.
+
+- **CNN Fear & Greed:** The `fetch_cnn_fear_greed` function has its own fallback
+  to FRED UMCSENT. If it's `None` after the first pass, remediation should force-
+  retry the CNN scrape first; if that still fails, the FRED fallback will kick in
+  automatically. No special handling needed — the force-retry is sufficient.
+
+- **All-indicators-None edge case:** If every indicator failed (network outage),
+  remediation will attempt all of them. The second `score_all()` call will also
+  fail for all and return the same 50.0 defaults. This is correct behaviour.
+  Don't add a "minimum successful remediations" guard — it adds complexity with
+  no benefit.
+
+- **`--no-cache` flag:** This flag already sets `CACHE_HOURS=0` in `env`, which
+  forces all fetches live. When `--no-cache` is set, `remediation_keys` will be
+  empty (nothing will be stale or None from a fresh run) so the remediation block
+  is a no-op. No interaction issue.
+
+---
+
+### Success criteria
+
+- Dry run (`--no-cache --no-alerts --quiet`) completes in under 2× normal time
+  (the second `score_all()` pass adds latency only when stale/failed indicators
+  are present; on a clean run it should not trigger).
+- When a manual test injects a stale indicator (edit cache mtime or delete a
+  cache file), the remediation block fires, a log entry appears in
+  `data/alert_log.jsonl` with `event_type: "remediation_attempt"`, and the
+  indicator no longer shows as stale in the output HTML.
+- When the live fetch fails during remediation (mock network failure in test),
+  the run completes and the indicator appears in the DATA QUALITY card — no
+  crash, no infinite retry.
+- `pytest tests/ -q` passes with 3 new tests covering:
+  1. Remediation triggers when `percentile: None` indicators are present.
+  2. Remediation triggers when `stale_indicators` is non-empty.
+  3. Remediation does not trigger on a clean scoring result.
+- `computed`-type indicators are excluded from `remediation_keys`.
+- The second `score_all()` call is skipped entirely when `remediation_keys`
+  is empty (confirmed by asserting `score_all` mock call count = 1 on a clean
+  run).

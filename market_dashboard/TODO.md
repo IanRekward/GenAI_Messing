@@ -122,19 +122,12 @@ items 2/3/7 cluster naturally as a "naming + plain-English layer" batch; items 4
 are small ordering/link fixes; item 6 is a content-authoring brief. Sonnet should
 preserve Ian's numbering when committing so the trail back to this list is clear.
 
-- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17, design-first 🅾️)*
-  Today the staleness banner and "DATA QUALITY" card surface problems but offer
-  no fix. Add a remediation step: when an indicator is stale or has fallen back
-  to 50.0, attempt one fresh fetch (cache-bypass), and if the source returns
-  valid newer data, write it through and re-score that indicator inline.
-  - Log every remediation attempt (success or fail) to `data/alert_log.jsonl`.
-  - Skip remediation if Brief 7's circuit breaker has already retried this run
-    (don't double-retry persistently failing sources).
-  - Decide: inline retry during run vs. a "REFRESH STALE" button on the
-    rendered HTML that triggers a re-run. Recommend **inline** — simpler,
-    keeps the dashboard a static artifact, no server needed.
-  - Opus design pass before Sonnet executes (interaction with circuit breaker
-    + cache layer needs scoping).
+- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17 in ROADMAP.md — design locked, ready for Sonnet)*
+  Full brief in ROADMAP.md. All design decisions resolved by Opus.
+  Summary: after `score_all()`, collect indicators with `percentile: None` or
+  in `stale_indicators`; pass `_remediation_keys` through `env`; call
+  `score_all()` a second time (once max). Log each attempt to
+  `data/alert_log.jsonl`. Skip `computed`-type indicators. 3 new tests.
 
 - [ ] **G2 — Name "Weighted Average" section + plain-English explainer**
   Identify the section Ian is referring to (likely the composite card showing
