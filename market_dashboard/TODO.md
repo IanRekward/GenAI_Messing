@@ -71,6 +71,20 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [ ] 🅾️ **Paywalled news sources** *(user scope call + ToS review)*
   Which of WSJ / FT / Bloomberg does Ian actually want? What's the minimum-viable integration (RSS where allowed, archive links, nothing questionable)? Legal / ToS review required before any scraping. Not a Sonnet task until Ian picks the feeds.
 
+- [ ] **Portfolio integration** *(design scope call)*
+  System to connect directly to Fidelity Brokerage API OR read in CSV of position holdings so the model can make personalized recommendations. Scope needed: authentication method, data sync frequency, position fields required (symbol, quantity, cost basis?), how recommendations flow back to user. Not a Sonnet task until Ian specifies scope.
+
+---
+
+## Automation troubleshooting — 2026-04-24
+
+**Issue:** 7:30 AM Pushover alert + dashboard run did not fire.  
+**Diagnosis:**
+- Market Stress Dashboard task exists but never ran (LastRunTime empty).
+- RTC wake timer shows 0 sources — system did NOT wake at 7:20 AM.
+- Market Dashboard Wake task status unknown (requires admin to verify).
+- **Next step:** Run `powercfg /waketimers` with admin privilege to confirm RTC is enabled. If disabled, re-enable with `powercfg /devicequery wake_armed` and reconfigure wake timers. Check Event Viewer for System/Power-Troubleshooter if wake command was issued but failed.
+
 ---
 
 ## Sonnet onboarding instructions
