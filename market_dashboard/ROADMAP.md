@@ -693,10 +693,11 @@ When an alert fires, filter the morning's news headlines for keywords related
 to the triggering indicator. Pass the filtered subset into the Haiku context
 prompt. Requires a keyword→indicator map in config.
 
-### Brief 10 — Regime-aware weighting
-Run two sets of bucket weights based on VIX tercile (low/mid/high).
-Precomputed during backtest. At score time, pick the weight set matching
-current VIX regime. Big lift — touches scoring, backtest, recalibrate.
+### Brief 10 — Regime-aware weighting (split into 10A / 10B / 10C)
+Original sketch: run different bucket weights based on VIX tercile. Opus
+expanded the design 2026-04-25 — the work is split into three sequential
+briefs to checkpoint cleanly. See **Brief 10A**, **Brief 10B**, **Brief 10C**
+at the bottom of this file.
 
 ### Brief 11 — Audit log for alerts
 Persist every alert (title + body + Haiku response + timestamp) to
@@ -1067,3 +1068,486 @@ brief closes the gap.
 
 Rough budget: 3 days of Sonnet work for Briefs 1–5. Budget another 2 days if
 you want through Brief 8.
+
+---
+
+## Brief 16 — VIX term-structure indicator
+
+**Dependencies:** None. yfinance ticker `^VIX3M` is live (verified 2026-04-25,
+returns ~15 years of history). Existing `equity_volatility` bucket has room.
+
+**Problem:** The existing `equity_volatility` bucket measures the *level* of
+expected vol (VIX) and the *recent realised* vol (sp500_1m_vol). Neither tells
+you whether the market expects current vol to **persist or revert**. The VIX
+term structure — specifically VIX (30-day) vs VIX3M (90-day) — answers that.
+
+When VIX > VIX3M (backwardated curve), the market is pricing immediate stress
+that's expected to fade in 90 days. Backwardation has preceded most major
+equity events (Aug 2015 China devaluation, Feb 2018 Volmageddon, March 2020
+COVID, Sept 2022 rate shock). When VIX < VIX3M (contango — the normal state),
+front-month vol is below longer-dated, meaning markets expect calm.
+
+This signal is orthogonal to raw VIX level. Two days both with VIX = 25:
+- Contango (VIX/VIX3M = 0.92): market pricing reversion, mean-reverting trade
+- Backwardation (VIX/VIX3M = 1.10): panic now, expect persistence
+
+**Design decisions — opinionated and locked:**
+
+1. **Use the VIX/VIX3M ratio**, not VIX9D/VIX. The 30-day vs 90-day pair is the
+   industry standard (used in academic literature on VIX ETP rolls, e.g.
+   VXX/VXZ). VIX9D/VIX is noisier and less studied. Ratio (not difference) so
+   the signal is scale-invariant — works the same whether VIX = 12 or 50.
+2. **Lives in `equity_volatility`**, not `rates_curve`. It's a direct
+   measurement of equity option-implied vol; rates_curve already has MOVE
+   (the rates analogue).
+3. **Type: `computed`** with handler `vix_term_structure`. Two yfinance fetches
+   (^VIX, ^VIX3M), aligned and divided. Pattern matches existing handlers like
+   `_handler_sofr_spread`.
+4. **`invert: false`** — higher ratio = more stress (backwardation). Percentile
+   ranking handles the fact that contango is the historical norm.
+5. **Bucket weight redistribution:**
+   - **Old:** vix 0.65, sp500_1m_vol 0.35
+   - **New:** vix 0.50, vix_term_structure 0.25, sp500_1m_vol 0.25
+   - Rationale: VIX stays dominant (it's the level signal), term structure gets
+     meaningful but not dominant weight, realized vol slightly de-weighted but
+     still material as a "actual vs implied" cross-check.
+6. **Bucket weight in composite stays at 0.13.** Do not re-tune cross-bucket
+   weights — that's recalibrate.py's job.
+7. **Threshold bands** (raw VIX/VIX3M ratio):
+   - `direction: high`
+   - yellow: 0.95 (flat curve — front-month catching up to longer-dated)
+   - orange: 1.00 (mild backwardation — first warning)
+   - red: 1.05 (sustained backwardation — historically rare, ~top 5% of days)
+8. **No overlap with shock-type classification.** Shock-type uses composite
+   velocity. Term structure is a per-indicator level signal. They're
+   complementary, not redundant.
+
+**Files to change:**
+
+1. **`config/weights.yaml`** — `equity_volatility` block:
+   ```yaml
+   equity_volatility:
+     label: Equity Volatility
+     weight: 0.13
+     indicators:
+       vix:
+         label: VIX
+         weight: 0.50
+         source: { type: yfinance, ticker: "^VIX" }
+         invert: false
+         unit: ""
+       vix_term_structure:
+         label: "VIX Term Structure (30d/90d)"
+         weight: 0.25
+         source:
+           type: computed
+           handler: vix_term_structure
+         invert: false
+         unit: "ratio"
+       sp500_1m_vol:
+         label: "S&P 500 1M Realized Vol"
+         weight: 0.25
+         source:
+           type: yfinance
+           ticker: "^GSPC"
+           transform: realized_vol_series
+         invert: false
+         unit: "%"
+   ```
+   Verify weights still sum to 1.0 within the bucket and the cross-bucket sum
+   is unchanged.
+
+2. **`src/scoring.py`** — add handler near `_handler_sofr_spread`:
+   ```python
+   def _handler_vix_term_structure(key, cfg, env, manual, years):
+       vix = fetch.fetch_yfinance_series("^VIX", env, years)
+       vix3m = fetch.fetch_yfinance_series("^VIX3M", env, years)
+       combined = pd.concat([vix.rename("vix"), vix3m.rename("vix3m")], axis=1)
+       combined = combined.dropna()
+       ratio = combined["vix"] / combined["vix3m"]
+       return float(ratio.iloc[-1]), ratio
+   ```
+   Register in `COMPUTED_HANDLERS`.
+
+3. **`src/config.py`** — add `"vix_term_structure"` to `KNOWN_INDICATOR_KEYS`.
+
+4. **`config/thresholds.yaml`** — add:
+   ```yaml
+   vix_term_structure:
+     direction: high
+     yellow: 0.95
+     orange: 1.00
+     red: 1.05
+   ```
+
+5. **`config/tooltips.yaml`** — add under `indicators:`:
+   ```yaml
+   vix_term_structure:
+     tip: "VIX (30-day) divided by VIX3M (90-day). Below ~0.95 = contango (calm — front-month vol cheaper than longer-dated). Above 1.0 = backwardated (front-month panic). Above 1.05 has preceded most major equity events (2015, 2018, 2020, 2022)."
+   ```
+
+6. **`tests/test_vix_term_structure.py`** — one focused test:
+   - Mock fetch_yfinance_series to return synthetic VIX and VIX3M.
+   - Call `_handler_vix_term_structure` and assert ratio matches expectation.
+   - Build VIX = [15, 20, 25] and VIX3M = [20, 20, 20] → ratio = [0.75, 1.0, 1.25].
+   - Assert returned series matches and last value = 1.25.
+
+**Edge cases:**
+- ^VIX3M fetch fails → handler raises, scoring catches, indicator gets fallback
+  score 50.0 (existing pattern).
+- VIX3M series has weekend gaps that VIX doesn't (or vice versa) → `dropna()`
+  after concat handles it. Don't `ffill` — that would invent ratio data.
+- Very early in VIX3M history (pre-2008) → series will be shorter; percentile
+  computation still works on whatever's available.
+
+**Success criteria:**
+- `pytest tests/` passes (184/184 with new test).
+- `python run_dashboard.py --no-cache --no-news --no-alerts --quiet` succeeds.
+- Dashboard renders the new indicator under equity_volatility with raw value
+  ~0.85–1.10 (depends on day) and a band assignment.
+- Weights summary on the bucket header shows the new split (vix 50%, term
+  structure 25%, realized vol 25%).
+- Tooltip renders on hover.
+
+**Non-goals:**
+- VIX9D, VXN, VVIX. Considered and rejected — single clean addition is
+  better than three competing additions on a morning-glance dashboard.
+- A separate "term structure inversion" alert. The existing band system
+  (red threshold 1.05) already triggers if it's sustained; no new alert
+  type needed.
+
+---
+
+## Brief 10A — Regime classification telemetry (read-only)
+
+**Dependencies:** None. Uses existing VIX series from
+`config/weights.yaml::equity_volatility.vix`.
+
+**Problem:** Brief 10's full design (regime-aware weighting) is a 3+ day lift
+that touches scoring, backtest, recalibrate, and the dashboard. Shipping it
+all at once is too big a checkpoint. Brief 10A introduces *only* the regime
+classification — visible on the dashboard and logged to history — without
+changing how scoring computes the composite. This lets Ian see how the regime
+moves over a few weeks of operation before flipping the switch on weight
+adjustment in Brief 10C.
+
+**Design decisions — locked:**
+
+1. **Three regimes**: `low`, `mid`, `high`. Boundaries computed dynamically
+   from the trailing 10-year VIX distribution (33rd and 67th percentiles).
+   Roughly: low ≤ ~14, mid 14–22, high > ~22 (will drift with the window).
+2. **Smoothed input + hysteresis** to prevent flapping at boundaries:
+   - Classifier input: 5-day moving average of VIX (`vix.rolling(5).mean()`).
+   - Hysteresis: regime *change* requires the smoothed VIX to cross the
+     boundary by ≥ 1.0 VIX point. Computed by maintaining the previous
+     regime in `data/alert_state.json` and only transitioning when the new
+     reading clears the threshold by the buffer.
+3. **Live computation**, not from history. The 10-year tercile boundaries are
+   computed at every run from the same VIX series the equity_volatility
+   bucket uses. No new fetch.
+4. **Add to scoring dict**:
+   ```python
+   {
+     "regime": "mid",                    # "low" | "mid" | "high"
+     "regime_vix_5dma": 18.4,
+     "regime_thresholds": {"low_max": 13.6, "high_min": 21.8},
+     "regime_changed": False,            # True if today != yesterday
+   }
+   ```
+5. **History column**: add `regime` (string) to `log_run()` in
+   `src/history.py`. Existing rows backfill NaN.
+6. **Dashboard display**: small badge in the existing composite card,
+   immediately under the `composite_short` line. Format:
+   `VIX regime: MID (smoothed VIX 18.4 — boundaries 13.6 / 21.8)`.
+   Use existing `_BAND_COLOR`-style palette: low=green, mid=yellow,
+   high=orange. (Not red — high VIX regime alone isn't an alert.)
+7. **No alert** on regime change in 10A. That's a follow-up if 10C ships.
+
+**Files to change:**
+
+1. **`src/history.py`** — new function `classify_vix_regime(vix_series)` that
+   returns the dict above. Pure function — easy to test.
+2. **`src/scoring.py`** — call `classify_vix_regime()` after the VIX fetch in
+   the equity_volatility bucket loop; merge result into the returned scoring
+   dict. Hysteresis state read from `data/alert_state.json` key
+   `regime_previous`.
+3. **`src/alerts.py`** — extend `_load_state` / `_save_state` to round-trip
+   `regime_previous`. No alert dispatch logic changes.
+4. **`src/history.py::log_run()`** — add `"regime": scoring.get("regime")`
+   to the row dict.
+5. **`src/dashboard.py`** — render the regime badge in the composite card
+   block (near the `composite_short` rendering at lines ~470–490). Reuse
+   the `_tip` helper if a tooltip is desired.
+6. **`config/tooltips.yaml`** — add:
+   ```yaml
+   regime:
+     tip: "Current VIX regime, classified by trailing 10-year tercile. Low = bottom third of historical VIX (calm). Mid = middle third. High = top third (elevated). Smoothed (5d MA) and hysteretic (1.0 VIX buffer) so it doesn't flap at boundaries. Brief 10C uses this to weight buckets differently per regime."
+   ```
+7. **`tests/test_regime_classification.py`** — three tests:
+   - `test_regime_classification_low_mid_high`: synthetic VIX series, assert
+     correct boundaries and regime assignment.
+   - `test_regime_hysteresis`: smoothed VIX hovers at the mid/high boundary,
+     assert no flip until it clears by 1.0.
+   - `test_regime_handles_short_history`: VIX series < 1 year, assert
+     fallback to "mid" with a warning flag in the dict.
+
+**Edge cases:**
+- VIX series < 252 trading days (~1yr) → fall back to `regime="mid"`,
+  set `regime_thresholds={}`, log a warning. The hysteresis state reset.
+- VIX fetch failure → no regime computed, scoring dict gets
+  `"regime": None`. Dashboard shows "VIX regime: unavailable".
+- First run ever (no `regime_previous` in state) → just set the initial
+  regime, no hysteresis check on first observation.
+- alert_state.json missing → existing `_load_state` returns `{}`, regime
+  init proceeds normally.
+
+**Success criteria:**
+- `pytest tests/` passes (with three new tests added → 187/187 if Brief 16
+  shipped first).
+- Dry run `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
+  succeeds and writes a `regime` column to history.csv.
+- Generated dashboard.html shows the regime badge under composite_short.
+- Composite score is **unchanged** vs the prior run (Brief 10A is read-only).
+- Run twice in a row with the same VIX value — `regime_changed` is False on
+  the second run.
+
+**Non-goals:**
+- Changing how composite is computed. That's Brief 10C.
+- Backtest extension. That's Brief 10B.
+- An alert on regime change. Add only if 10C ships and Ian asks for it.
+
+---
+
+## Brief 10B — Backtest + recalibrate regime extension
+
+**Dependencies:** Brief 10A shipped (regime classifier exists in
+`src/history.py::classify_vix_regime`).
+
+**Problem:** Before flipping on regime-aware weighting at score time
+(Brief 10C), we need empirical evidence that bucket IC actually differs across
+regimes. Brief 10B extends the backtest engine to compute per-regime per-bucket
+IC, and adds a recalibrate mode that proposes a `regime_weights:` block for
+weights.yaml.
+
+**Design decisions — locked:**
+
+1. **Backtest output gets a new column**: `regime` (low/mid/high) for each
+   day. Computed using point-in-time VIX terciles (NO lookahead — at date T,
+   use only VIX from `[T-10yr, T]`).
+2. **New per-regime IC table** in `src/evaluation.py`:
+   ```python
+   def per_regime_bucket_ic(
+       backtest_df: pd.DataFrame,
+       spx: pd.Series,
+       horizon_days: int = 21,
+   ) -> pd.DataFrame:
+       """Returns DataFrame indexed by bucket, columns = (low, mid, high)."""
+   ```
+   Uses existing `spearman_ic` + `build_forward_drawdown`.
+3. **New recalibrate mode**: `python -m src.recalibrate --regime`.
+   Reads `output/backtest_full.csv`, computes per-regime per-bucket IC, and
+   proposes a `regime_weights:` block printed to stdout. Does NOT write to
+   weights.yaml automatically (that's a manual review step — Ian inspects,
+   accepts, edits, then pastes in).
+4. **Multipliers, not absolute weights.** The proposed block uses multipliers
+   relative to the current base weight, so accepting it doesn't override
+   human-curated base weights:
+   ```yaml
+   regime_weights:
+     enabled: false              # Brief 10B leaves this off — only telemetry
+     classifier:
+       type: vix_tercile
+       smoothing_days: 5
+       hysteresis_vix: 1.0
+     multipliers:
+       low:
+         equity_volatility: 0.7   # de-emphasize equity vol in calm regime
+         sentiment: 1.4           # sentiment matters more in calm
+         credit_spreads: 0.8
+         ...
+       mid:                       # all 1.0 by default — neutral regime
+         equity_volatility: 1.0
+         ...
+       high:
+         equity_volatility: 1.2
+         credit_spreads: 1.3
+         funding_liquidity: 1.5   # funding stress dominates in crisis
+         ...
+   ```
+5. **Multiplier ceiling/floor**: clip suggested multipliers to [0.3, 2.0].
+   Anything outside that range is "we don't have enough data" not "this
+   bucket is 5x more important".
+6. **Multiplier proposal heuristic**: for each (regime, bucket), the
+   recalibrator proposes:
+   ```
+   multiplier = clip(per_regime_ic[bucket] / mean_regime_ic, 0.3, 2.0)
+   ```
+   i.e., buckets that predict better in this regime get up-weighted
+   proportional to their IC dominance. Clamped, with a bias toward 1.0 if
+   sample size is small (< 50 days in regime).
+7. **No live composite change** in Brief 10B. The output is purely a proposal
+   block in stdout for Ian to review. Brief 10C wires it into compute_composite.
+
+**Files to change:**
+
+1. **`src/backtest.py`** — in `run_backtest()`, after computing the row's
+   composite, call `classify_vix_regime(vix.loc[:date])` (point-in-time)
+   and store as `row["regime"]`. Existing row dict gains one column.
+2. **`src/evaluation.py`** — add `per_regime_bucket_ic()` function as above.
+3. **`src/recalibrate.py`** — add `--regime` flag and a new function
+   `propose_regime_weights(backtest_df, spx)` that prints the YAML block.
+   Reuse the existing argparse setup; new flag is mutually exclusive with
+   `--apply` (regime mode is preview-only).
+4. **`tests/test_per_regime_ic.py`** — two tests:
+   - `test_per_regime_ic_returns_correct_shape`: synthetic backtest_df with
+     a `regime` column; assert returned DataFrame is `(buckets, 3)`.
+   - `test_per_regime_ic_handles_empty_regime`: one regime has 0 rows;
+     assert that regime's column is all NaN, no crash.
+
+**Edge cases:**
+- A regime with < 30 days of backtest data → IC computed but flagged
+  unreliable; multiplier biased toward 1.0 (use weighted average with prior).
+- `output/backtest_full.csv` missing → recalibrate --regime exits with a
+  clear "Run backtest first" message.
+- Sample-size weighting: when only ~50 days are in a regime, the proposed
+  multiplier should be `0.5 * proposed + 0.5 * 1.0` (Bayesian shrinkage
+  toward neutral). Below 30 days → multiplier forced to 1.0.
+
+**Success criteria:**
+- `pytest tests/` passes (with two new tests).
+- `python -m src.backtest` succeeds and writes `regime` column to
+  `output/backtest_full.csv`.
+- `python -m src.recalibrate --regime` prints a parseable YAML block to
+  stdout (verifiable by piping to `python -c "import sys, yaml; yaml.safe_load(sys.stdin)"`).
+- The proposed multipliers are reasonable (no extreme values; sentiment
+  multiplier in low regime > 1.0; credit_spreads multiplier in high regime
+  > 1.0 — these are basic sanity checks against finance intuition).
+- weights.yaml is **not modified** by --regime mode.
+
+**Non-goals:**
+- Auto-applying multipliers. That's a deliberate human-in-the-loop step.
+- Re-running the full backtest with regime weights to validate. That's the
+  validation step in Brief 10C.
+
+---
+
+## Brief 10C — Apply regime weights at score time
+
+**Dependencies:** Brief 10A (classifier) AND Brief 10B (regime weights block
+in weights.yaml). Ian must have reviewed and pasted the proposed
+`regime_weights:` block from `recalibrate --regime` into weights.yaml.
+
+**Problem:** With a classifier and a vetted multiplier table, flip the switch
+to make `compute_composite()` actually apply per-regime weights. Render a
+side-by-side comparison so Ian can see the regime-adjusted score next to the
+naive baseline.
+
+**Design decisions — locked:**
+
+1. **Apply only to `composite`**, not `composite_short`. composite_short
+   stays on base weights as the "naive" reference. This avoids conflating
+   two adjustments (regime weighting + 3yr window) and gives Ian a clean
+   anchor.
+2. **Multipliers applied to bucket weights**, not indicator weights:
+   ```python
+   if regime_cfg["enabled"] and regime in regime_cfg["multipliers"]:
+       multipliers = regime_cfg["multipliers"][regime]
+       for bkey in bucket_results:
+           m = multipliers.get(bkey, 1.0)        # missing bucket → 1.0
+           bucket_results[bkey]["weight"] *= m
+       # Renormalize so total weight still sums to ~1
+       total = sum(b["weight"] for b in bucket_results.values())
+       for b in bucket_results.values():
+           b["weight"] = b["weight"] / total
+   ```
+3. **Renormalisation**: after multipliers, total bucket weight is renormalized
+   to 1.0 so the composite stays in [0, 100]. Without renormalisation, a
+   regime with mostly >1.0 multipliers would push composite scores upward.
+4. **Default `enabled: false`**. Ian must explicitly flip the switch in
+   weights.yaml. First flip should be after a side-by-side telemetry day:
+   - Ship 10C with the dashboard *displaying* both scores (regime + naive)
+     even when `enabled: false`, by computing both internally.
+   - After a few days observation, Ian flips `enabled: true`. The visible
+     change is which one labels as "Composite" vs "naive baseline".
+5. **Add to scoring dict**:
+   ```python
+   "composite_naive": 47.3,            # always computed (base weights)
+   "composite_regime_weighted": 51.8,  # always computed when regime config exists
+   "composite": 51.8,                  # = regime_weighted if enabled, else naive
+   "regime_weights_applied": True,
+   "regime_multipliers_used": {"equity_volatility": 1.2, ...},
+   ```
+6. **Dashboard**: under the existing composite, add a small subline:
+   ```
+   Composite (regime-weighted, MID): 51.8
+   Naive baseline (equal regimes):    47.3   ▲+4.5
+   ```
+   When `enabled: false`, swap which is labelled which (naive is primary,
+   regime-weighted shown as "preview").
+7. **History column**: log both `composite` and `composite_naive` so the
+   delta is queryable in backtests.
+8. **Validation backtest**: re-run backtest with `regime_weights.enabled:
+   true` vs `false`; compare ICs. Document delta in a markdown note in
+   `output/`. If regime IC < naive IC, do NOT flip enabled (revert to false
+   and surface the result to Ian).
+
+**Files to change:**
+
+1. **`src/scoring.py::compute_composite()`** — implement the multiplier
+   application + renormalisation. Read `regime_weights:` block from
+   `weights.yaml` (extend `load_weights` if needed). Always compute both
+   composite_naive and composite_regime_weighted; pick which one is the
+   primary based on `enabled` flag.
+2. **`src/config.py`** — extend `validate_config()` to validate the new
+   `regime_weights:` block: classifier type known, all listed buckets exist
+   in `weights["buckets"]`, multipliers in [0.3, 2.0], all 3 regimes present
+   with at least an empty dict.
+3. **`src/dashboard.py`** — add the side-by-side display under the composite
+   card. Reuse the `regime_html`/`regime_adj_html` patterns at lines ~470–510.
+4. **`src/history.py::log_run()`** — add `composite_naive` column.
+5. **`config/weights.yaml`** — add a stub `regime_weights:` block with
+   `enabled: false` and the multiplier table from Brief 10B's output.
+6. **`tests/test_regime_weights_application.py`** — three tests:
+   - `test_regime_disabled_returns_naive`: enabled=false → composite ==
+     composite_naive.
+   - `test_regime_enabled_applies_multipliers`: enabled=true with simple
+     2x multiplier on one bucket; assert composite shifts in the expected
+     direction.
+   - `test_regime_renormalisation_preserves_range`: all multipliers = 2.0;
+     assert composite still in [0, 100] (renormalisation works).
+7. **Validation note**: after implementation, generate
+   `output/regime_validation.md` containing the IC comparison table
+   (regime-weighted vs naive, full + per-regime).
+
+**Edge cases:**
+- `regime_weights:` block missing entirely → behaves as if enabled=false,
+  composite == composite_naive, no error. Just warn once at startup.
+- `regime` is None (Brief 10A's failure mode) → fall back to base weights
+  for this run, log a warning, both composites equal.
+- Multiplier for a bucket is missing in current regime → use 1.0 (already
+  in the design above).
+- Hysteresis edge: if regime just changed, composite will jump. That's
+  expected and visible — the regime tag changes color in the dashboard.
+  No special handling. Brief 3 momentum will reflect the jump as a velocity
+  spike one day; that's accurate signal, not noise.
+
+**Success criteria:**
+- `pytest tests/` passes (with three new tests, ~190 total).
+- Dry run with `enabled: false` produces composite == composite_naive
+  (regression check — nothing about live scoring should change yet).
+- Dry run with `enabled: true` produces composite ≠ composite_naive in any
+  regime where multipliers ≠ 1.0.
+- Dashboard renders both scores side-by-side with the delta.
+- `output/regime_validation.md` is generated after a backtest pass and shows
+  whether regime-weighted IC > naive IC.
+- weights_hash in history.csv changes only when weights.yaml changes (not on
+  every regime transition — the hash is of the file, not the applied
+  weights). This preserves provenance semantics.
+
+**Non-goals:**
+- Optimization sweep over multiplier values. The multipliers come from
+  Brief 10B's recalibrate proposal and human review.
+- Adding more regimes (4 quartiles, 5 quintiles, etc.). Three is enough
+  for the data we have. Revisit only after a year of operation.
+- Per-bucket regime classifiers (e.g., classify credit regime separately
+  from equity regime). Single classifier keeps the model interpretable.
