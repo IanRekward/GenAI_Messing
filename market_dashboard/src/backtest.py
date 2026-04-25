@@ -27,6 +27,7 @@ import yaml
 
 from src import indicators as ind
 from src import fetch as _live_fetch
+from src.history import classify_vix_regime
 
 # ---------------------------------------------------------------------------
 # Backtest-specific cache
@@ -394,6 +395,18 @@ def run_backtest(
 
         composite = round(bucket_wsum / bucket_wused, 1) if bucket_wused > 0 else np.nan
         row["composite"] = composite
+
+        # Point-in-time VIX regime (no hysteresis across dates — independent classification)
+        vix_full = derived.get("vix_price", pd.Series(dtype=float))
+        if len(vix_full) > 0:
+            try:
+                vix_pit = vix_full.loc[window_start:date].dropna()
+                row["regime"] = classify_vix_regime(vix_pit)["regime"]
+            except Exception:
+                row["regime"] = None
+        else:
+            row["regime"] = None
+
         records.append(row)
 
     df = pd.DataFrame(records).set_index("date")

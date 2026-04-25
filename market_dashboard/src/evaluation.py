@@ -177,6 +177,48 @@ def rolling_composite_ic(
             "horizon_days": horizon_days, "window_days": window_days}
 
 
+def per_regime_bucket_ic(
+    backtest_df: pd.DataFrame,
+    spx: pd.Series,
+    horizon_days: int = 21,
+) -> pd.DataFrame:
+    """
+    Spearman IC of each bucket score vs forward SPX drawdown, broken out by VIX regime.
+
+    Returns DataFrame indexed by bucket name, columns = ['low', 'mid', 'high'].
+    NaN where a regime has fewer than 10 aligned data points.
+    Requires backtest_df to have a 'regime' column (added by Brief 10B backtest run).
+    """
+    spx_norm = spx.copy()
+    spx_norm.index = pd.to_datetime(spx_norm.index).normalize()
+    spx_aligned = spx_norm.reindex(backtest_df.index, method="ffill")
+    target = build_forward_drawdown(spx_aligned.dropna(), horizon_days)
+    target = target.reindex(backtest_df.index)
+
+    bucket_cols = [c for c in backtest_df.columns if c.startswith("bucket_")]
+    regimes = ["low", "mid", "high"]
+    results: dict[str, dict] = {}
+
+    for bcol in bucket_cols:
+        bkey = bcol.replace("bucket_", "", 1)
+        row: dict = {}
+        for regime in regimes:
+            mask = backtest_df.get("regime", pd.Series(dtype=object)) == regime
+            if not mask.any():
+                row[regime] = np.nan
+                continue
+            sig = backtest_df.loc[mask, bcol].dropna()
+            tgt = target.reindex(sig.index).dropna()
+            common = sig.index.intersection(tgt.index)
+            if len(common) < 10:
+                row[regime] = np.nan
+            else:
+                row[regime] = spearman_ic(sig.loc[common], tgt.loc[common])
+        results[bkey] = row
+
+    return pd.DataFrame(results).T[regimes]
+
+
 def ew_ic(signal: pd.Series, target: pd.Series, halflife_days: int = 5 * 252) -> float:
     """
     Exponentially-weighted IC with the given half-life (in days).

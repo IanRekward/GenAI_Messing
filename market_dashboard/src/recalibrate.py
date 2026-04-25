@@ -247,9 +247,106 @@ def run_recalibration(
     return df_summary
 
 
+_MULT_CLIP_LOW  = 0.3
+_MULT_CLIP_HIGH = 2.0
+_REGIME_MIN_DAYS    = 30   # below this, force multiplier to 1.0 (insufficient data)
+_REGIME_SHRINK_DAYS = 50   # below this, shrink toward 1.0 (Bayesian-style)
+
+
+def propose_regime_weights(
+    full_csv: str = "output/backtest_full.csv",
+    weights_path: str = "config/weights.yaml",
+) -> None:
+    """
+    Compute per-regime per-bucket IC from the backtest CSV and print a
+    proposed regime_weights: YAML block to stdout.
+
+    Does NOT write to weights.yaml — that's a manual review step.
+    Requires the backtest CSV to have a 'regime' column (Brief 10B backtest run).
+    """
+    from src.evaluation import per_regime_bucket_ic
+    from src.backtest import _bt_yf
+    import os
+    from dotenv import load_dotenv
+
+    if not Path(full_csv).exists():
+        print(
+            f"ERROR: {full_csv} not found. Run backtest first:\n  python -m src.backtest",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    df = pd.read_csv(full_csv, index_col=0, parse_dates=True)
+    if "regime" not in df.columns:
+        print(
+            "ERROR: backtest CSV has no 'regime' column.\n"
+            "Re-run: python -m src.backtest  (requires Brief 10B upgrade)",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    load_dotenv()
+    env = dict(os.environ)
+    spx = _bt_yf("^GSPC", env)
+
+    print("Computing per-regime bucket IC...")
+    ic_df = per_regime_bucket_ic(df, spx, horizon_days=21)
+
+    print("\nPer-regime per-bucket Spearman IC:\n")
+    print(ic_df.to_string())
+
+    regime_counts = df["regime"].value_counts()
+
+    multipliers: dict[str, dict[str, float]] = {}
+    for regime in ["low", "mid", "high"]:
+        multipliers[regime] = {}
+        n_days = int(regime_counts.get(regime, 0))
+        for bucket in ic_df.index:
+            ic_val = ic_df.loc[bucket, regime]
+            if np.isnan(ic_val) or n_days < _REGIME_MIN_DAYS:
+                multipliers[regime][bucket] = 1.0
+                continue
+            mean_ic = ic_df.loc[bucket].dropna().mean()
+            if np.isnan(mean_ic) or abs(mean_ic) < 1e-6:
+                multipliers[regime][bucket] = 1.0
+                continue
+            raw_mult = float(np.clip(ic_val / mean_ic, _MULT_CLIP_LOW, _MULT_CLIP_HIGH))
+            if n_days < _REGIME_SHRINK_DAYS:
+                w = n_days / _REGIME_SHRINK_DAYS
+                raw_mult = w * raw_mult + (1.0 - w) * 1.0
+            multipliers[regime][bucket] = round(raw_mult, 2)
+
+    block = {
+        "regime_weights": {
+            "enabled": False,
+            "classifier": {
+                "type": "vix_tercile",
+                "smoothing_days": 5,
+                "hysteresis_vix": 1.0,
+            },
+            "multipliers": {
+                r: {k: float(v) for k, v in multipliers[r].items()}
+                for r in ["low", "mid", "high"]
+            },
+        }
+    }
+
+    print("\n\n# === Proposed regime_weights block (paste into config/weights.yaml) ===")
+    print("# Review carefully before accepting. Set enabled: true in Brief 10C after review.")
+    print("# Re-run `python -m src.recalibrate --regime` to regenerate.\n")
+    print(yaml.dump(block, default_flow_style=False, sort_keys=False))
+    print("# weights.yaml was NOT modified.")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Recalibrate indicator weights from backtest IC")
-    parser.add_argument("--apply", action="store_true",
-                        help="Write updated weights to config/weights.yaml")
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--apply", action="store_true",
+                       help="Write updated weights to config/weights.yaml")
+    group.add_argument("--regime", action="store_true",
+                       help="Propose regime_weights: block (preview only, no file writes)")
     args = parser.parse_args()
-    run_recalibration(apply=args.apply)
+    if args.regime:
+        propose_regime_weights()
+    else:
+        run_recalibration(apply=args.apply)
