@@ -174,12 +174,13 @@ def main():
         "regime": mom.get("regime", "insufficient"),
         "bucket_velocities": bkt_vel,
     }
-    narrative = generate_narrative(scoring, history_summary, env)
+    narrative, narrative_layman = generate_narrative(scoring, history_summary, env)
 
     # Write dashboard
     output_path = write_dashboard(scoring, news, history,
                                   calendar_events=calendar_events,
                                   narrative=narrative,
+                                  narrative_layman=narrative_layman,
                                   env=env,
                                   signal_quality_stats=pm_stats)
 

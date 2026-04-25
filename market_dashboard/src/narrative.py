@@ -13,7 +13,7 @@ CACHE_DIR = DATA_DIR / "cache"
 _CACHE_FILE = CACHE_DIR / "narrative.json"
 _CACHE_HOURS = 4.0  # regenerate at most every 4 hours
 _MODEL = "claude-haiku-4-5-20251001"
-_MAX_TOKENS = 180
+_MAX_TOKENS = 400
 
 
 def _cache_valid() -> bool:
@@ -23,15 +23,15 @@ def _cache_valid() -> bool:
     )
 
 
-def _read_cache() -> str:
-    with open(_CACHE_FILE) as f:
-        return json.load(f).get("narrative", "")
+def _read_cache() -> tuple[str, str]:
+    data = json.load(open(_CACHE_FILE))
+    return data.get("narrative", ""), data.get("narrative_layman", "")
 
 
-def _write_cache(text: str) -> None:
+def _write_cache(expert: str, layman: str) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(_CACHE_FILE, "w") as f:
-        json.dump({"narrative": text}, f)
+        json.dump({"narrative": expert, "narrative_layman": layman}, f)
 
 
 def _build_context(scoring: dict, history_summary: dict) -> str:
@@ -75,28 +75,29 @@ def _build_context(scoring: dict, history_summary: dict) -> str:
 
 _SYSTEM = (
     "You are a concise market risk analyst. "
-    "Write exactly 2–4 sentences of plain-English commentary about the current "
-    "market stress state provided as JSON. "
-    "Cover: what the composite level means, what is driving it, the momentum direction. "
-    "Highlight only what is notable or unusual. "
-    "Do NOT give investment advice or recommendations. "
-    "Tone: informational, precise, neutral. No bullet points or headers."
+    "Given market stress data as JSON, write two short summaries and respond ONLY with valid JSON "
+    "matching this schema exactly: {\"expert\": \"...\", \"layman\": \"...\"}. "
+    "expert: 2–4 sentences for a finance professional. Cover composite level, key drivers, momentum direction. "
+    "Highlight only what is notable or unusual. Tone: precise, neutral, no recommendations. "
+    "layman: 2–4 sentences for someone with no finance background. "
+    "Explain what the score means in everyday terms, which areas of the market are under stress, "
+    "and what (if anything) a cautious non-expert should be aware of — not what to do. "
+    "No jargon, no acronyms. No investment advice in either version."
 )
 
 
-def generate_narrative(scoring: dict, history_summary: dict, env: dict) -> str:
+def generate_narrative(scoring: dict, history_summary: dict, env: dict) -> tuple[str, str]:
     """
-    Generate (or return cached) a 2–4 sentence narrative for the current state.
-    Returns "" on any error (missing API key, network failure, etc.).
+    Generate (or return cached) expert + layman narrative pair for the current state.
+    Returns ("", "") on any error (missing API key, network failure, etc.).
     """
-    # Respect --no-cache flag by checking env
     cache_hours_env = float(env.get("CACHE_HOURS", 12))
     if cache_hours_env > 0 and _cache_valid():
         return _read_cache()
 
     api_key = env.get("ANTHROPIC_API_KEY", "")
     if not api_key or api_key.startswith("your_"):
-        return ""
+        return ("", "")
 
     try:
         import anthropic
@@ -108,8 +109,14 @@ def generate_narrative(scoring: dict, history_summary: dict, env: dict) -> str:
             system=_SYSTEM,
             messages=[{"role": "user", "content": ctx}],
         )
-        text = msg.content[0].text.strip()
-        _write_cache(text)
-        return text
+        raw = msg.content[0].text.strip()
+        try:
+            parsed = json.loads(raw)
+            expert = parsed.get("expert", raw)
+            layman = parsed.get("layman", "")
+        except (json.JSONDecodeError, AttributeError):
+            expert, layman = raw, ""
+        _write_cache(expert, layman)
+        return (expert, layman)
     except Exception:
-        return ""
+        return ("", "")

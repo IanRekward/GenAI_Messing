@@ -49,6 +49,8 @@ td:nth-child(3){text-align:right;width:34%}
 .badge{display:inline-block;padding:1px 5px;border-radius:3px;font-size:.7rem;font-weight:700;text-transform:uppercase;margin-left:4px}
 .news-list{list-style:none} .news-list li{padding:4px 0;border-bottom:1px solid #21262d;font-size:.88rem}
 .news-list li:last-child{border-bottom:none}
+.news-list li a{color:#4d9de0;text-decoration:underline}
+.narr-toggle{background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:4px;padding:3px 8px;font-size:.72rem;cursor:pointer}
 .err{background:#1c1010;border:1px solid #3d1f1f;border-radius:6px;padding:10px 14px;margin-top:12px;font-size:.8rem;color:#a06060}
 .err summary{cursor:pointer;font-weight:600}
 .footer{margin-top:28px;font-size:.75rem;color:#484f58;text-align:center}
@@ -629,6 +631,7 @@ def _build_signal_quality_card(
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
                     calendar_events: list | None = None,
                     narrative: str = "",
+                    narrative_layman: str = "",
                     env: dict | None = None,
                     signal_quality_stats: dict | None = None) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -1000,8 +1003,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             url = item.get("url", "")
             if url:
                 li_parts.append(
-                    f'<li><a href="{url}" target="_blank" rel="noopener"'
-                    f' style="color:inherit">{text}</a></li>'
+                    f'<li><a href="{url}" target="_blank" rel="noopener">{text}</a></li>'
                 )
             else:
                 li_parts.append(f"<li>{text}</li>")
@@ -1046,9 +1048,25 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     # ── Narrative card (todo 1) ──────────────────────────────────────────────
     narrative_card = ""
     if narrative:
+        toggle_btn = ""
+        layman_div = ""
+        if narrative_layman:
+            toggle_btn = (
+                '<button class="narr-toggle" id="narr-toggle" '
+                'onclick="toggleNarrative()">Plain English &#9662;</button>'
+            )
+            layman_div = (
+                f'<div id="narr-layman" style="display:none;font-size:.88rem;'
+                f'line-height:1.6;color:#c9d1d9;margin-top:8px">{narrative_layman}</div>'
+            )
         narrative_card = (
-            f'<div class="card" style="border-left:3px solid #4d9de0;font-size:.88rem;'
-            f'line-height:1.6;color:#c9d1d9">{narrative}'
+            f'<div class="card" style="border-left:3px solid #4d9de0">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">'
+            f'<h2 style="margin-bottom:0;font-size:.9rem;color:#6e7681">AI NARRATIVE SUMMARY</h2>'
+            f'{toggle_btn}'
+            f'</div>'
+            f'<div id="narr-expert" style="font-size:.88rem;line-height:1.6;color:#c9d1d9">{narrative}</div>'
+            f'{layman_div}'
             f'<div style="margin-top:6px;font-size:.72rem;color:#484f58">'
             f'AI-generated summary (Claude) · not financial advice</div></div>'
         )
@@ -1075,16 +1093,29 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   </div>
   {staleness_banner}
   {bucket_health_card}
+  <div style="font-size:.72rem;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Composite Stress Score &mdash; Weighted Average of 11 Buckets</div>
   {composite_card}
+  <details class="card" style="margin-top:-10px;margin-bottom:14px;font-size:.82rem;line-height:1.6">
+    <summary style="cursor:pointer;font-size:.8rem;color:#6e7681;list-style:none;display:flex;align-items:center;gap:6px">
+      <span style="font-size:.65rem">&#9654;</span> What does this score mean?
+    </summary>
+    <div style="margin-top:10px;color:#c9d1d9">
+      <p style="margin-bottom:8px"><strong>The number is a market "fever reading" from 0 to 100.</strong> It shows how stressed U.S. financial markets are <em>right now</em> compared to every day in the past 10 years. A score of 60 means today looks more stressed than 60% of all days on record.</p>
+      <p style="margin-bottom:8px"><strong>The colour bands:</strong> <span style="color:#22cc44">Green (&lt;30)</span> — calm, below-average stress. <span style="color:#ffcc00">Yellow (30–50)</span> — elevated but not alarming, worth watching. <span style="color:#ff8800">Orange (50–70)</span> — significant strain in multiple areas, pay attention. <span style="color:#ff4444">Red (≥70)</span> — high stress, comparable to serious historical episodes like 2008 or 2020.</p>
+      <p style="margin-bottom:8px"><strong>How it's built:</strong> 26 individual market indicators are grouped into 11 signal categories (buckets). Each indicator is scored relative to its own history, then the buckets are weighted and averaged into the composite. Buckets that have historically been better predictors of market stress carry more weight.</p>
+      <p><strong>How to use it:</strong> This is an early-warning gauge, not a trading signal. A rising score means stress is building somewhere — the buckets below show exactly where. Use it to direct your attention, not to make buy/sell decisions.</p>
+    </div>
+  </details>
   {action_row}
   {narrative_card}
-  {analog_card}
+  {news_html}
   {correlation_card}
   {signal_quality_card}
   {trend_card}
   {calendar_card}
+  <div style="font-size:.72rem;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Signal Buckets &mdash; 11 Categories</div>
   <div class="bucket-grid">{buckets_html}</div>
-  {news_html}
+  {analog_card}
   <div class="card detail-section">
     <h2 style="margin-bottom:10px">Indicator Details</h2>
     {detail_blocks}
@@ -1093,6 +1124,21 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   <div class="footer">Not financial advice &nbsp;·&nbsp; Data: FRED, Yahoo Finance &nbsp;·&nbsp; Scores are percentile ranks vs {scoring.get('history_years', 10)}-year history</div>
 </div>
 <script>
+function toggleNarrative() {{
+  var expert = document.getElementById('narr-expert');
+  var layman = document.getElementById('narr-layman');
+  var btn = document.getElementById('narr-toggle');
+  if (!expert || !layman || !btn) return;
+  if (layman.style.display === 'none') {{
+    expert.style.display = 'none';
+    layman.style.display = '';
+    btn.textContent = 'Expert ▾';
+  }} else {{
+    expert.style.display = '';
+    layman.style.display = 'none';
+    btn.textContent = 'Plain English ▾';
+  }}
+}}
 (function() {{
   var ts = document.body.getAttribute('data-run-ts');
   if (!ts) return;
