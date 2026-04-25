@@ -115,6 +115,75 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [ ] **Portfolio integration** *(user scope call required)*
   Fidelity API or CSV of position holdings for personalized recommendations. Ian needs to decide: (a) Fidelity API vs CSV input, (b) fields needed (symbol, quantity, cost basis?), (c) position-level alerts vs high-level commentary. Not an Opus or Sonnet task until Ian answers these.
 
+### Phase G — User-requested UX additions (2026-04-25)
+
+Ian's batch from 2026-04-25 review. Item 1 is its own brief (real behavior change);
+items 2/3/7 cluster naturally as a "naming + plain-English layer" batch; items 4/5
+are small ordering/link fixes; item 6 is a content-authoring brief. Sonnet should
+preserve Ian's numbering when committing so the trail back to this list is clear.
+
+- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17, design-first 🅾️)*
+  Today the staleness banner and "DATA QUALITY" card surface problems but offer
+  no fix. Add a remediation step: when an indicator is stale or has fallen back
+  to 50.0, attempt one fresh fetch (cache-bypass), and if the source returns
+  valid newer data, write it through and re-score that indicator inline.
+  - Log every remediation attempt (success or fail) to `data/alert_log.jsonl`.
+  - Skip remediation if Brief 7's circuit breaker has already retried this run
+    (don't double-retry persistently failing sources).
+  - Decide: inline retry during run vs. a "REFRESH STALE" button on the
+    rendered HTML that triggers a re-run. Recommend **inline** — simpler,
+    keeps the dashboard a static artifact, no server needed.
+  - Opus design pass before Sonnet executes (interaction with circuit breaker
+    + cache layer needs scoping).
+
+- [ ] **G2 — Name "Weighted Average" section + plain-English explainer**
+  Identify the section Ian is referring to (likely the composite card showing
+  the 0–100 score, or the per-bucket weighted contribution row).
+  - Give it an explicit heading (e.g. "COMPOSITE — WEIGHTED AVERAGE OF 11 BUCKETS").
+  - Add a "What does this mean?" `<details>` block: what 0–100 represents,
+    how to read the current band, what to do (or not do) with the number.
+    Calibrate to Ian's stated use — "help me think, never tell me what to do."
+
+- [ ] **G3 — Plain-English toggle on the AI narrative / summary**
+  Identify the section (likely the Haiku-generated narrative paragraph).
+  - Give it an explicit heading.
+  - Add a toggle that flips between current text and a simpler layman version
+    ("what is happening, why it matters, what a non-pro should do with it").
+  - Source of layman text: ask Haiku for **both registers in one call** so
+    they stay paired and we pay one round-trip. Cache to disk like other
+    Haiku output.
+
+- [ ] **G4 — Reorder: swap Overnight News Brief ↔ Historical Analogies**
+  In `dashboard.py`, swap render order of these two sections. Verify with
+  `python run_dashboard.py --no-cache --no-alerts --quiet` that section order
+  is correct and layout doesn't break.
+
+- [ ] **G5 — Restore clickable links in Overnight News Brief**
+  Ian recalls headlines were clickable previously. Verify in `dashboard.py`
+  / `news.py` whether headlines are wrapped in `<a href>`. If not clickable:
+  (a) confirm the RSS feed exposes URLs, (b) thread URL through to rendered
+  HTML. If clickable but not visibly so: add styling (underline + hover).
+
+- [ ] **G6 — Indicator Detail enrichment: advanced + layman interpretations** *(Brief 18)*
+  In `src/indicator_detail.py`, each indicator's `<details>` block currently
+  shows chart + stats. Add two prose sub-sections per indicator:
+  (a) **Advanced** — what it measures, what regimes it discriminates, known
+      failure modes / lead-lag relationships.
+  (b) **Plain-English** — what is this number, why it matters, how to think
+      about it relative to the composite.
+  Plus a "How this fits the model" line — bucket, weight, co-moving indicators.
+  - Source: hand-authored YAML at `config/indicator_explainers.yaml`
+    (deterministic, reviewable, no API spend per run). Schema:
+    `<key>: { advanced: "...", layman: "...", model_role: "..." }`.
+  - Validate at startup: every indicator in `weights.yaml` has an entry
+    (or warn with a placeholder).
+
+- [ ] **G7 — Name the buckets section**
+  The container section housing Equity Volatility, Credit Spreads, Rates &
+  Yield Curve, etc. has no top-level heading (or only a generic one). Add an
+  explicit heading — e.g. "BUCKETS — 11 SIGNAL CATEGORIES" — matched to the
+  typographic weight of other section headers (REVIEW PROMPTS, etc.).
+
 ---
 
 
