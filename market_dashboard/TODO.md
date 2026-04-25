@@ -79,19 +79,21 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 ### Phase E — Design-first items (route through Opus before Sonnet executes) 🅾️
 
-- [ ] 🅾️ **VIX term-structure evaluation** — design decision needed. Is VIX9D/VIX1D slope a valuable short-term vol signal beyond raw VIX? Where does it live — equity_volatility or rates_curve? yfinance ticker availability (^VIX9D appears to exist; ^VIX1D may not). Opus recommendation → Sonnet implements.
-
 - [x] **Brief 15 — Backtest signal-quality card + link** *(shipped)*
-  Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`. Dropped SPX overlay and lead-time / FP-rate metrics on purpose — those belong in the full report. Live rolling IC is the actual unshipped piece (claimed Phase 4 never landed on the dashboard). Ready for Sonnet — est. half a day. **Note:** Brief 15 implementation should include the Phase D data alignment checks (timestamp validation, sample count, freshness indicator).
+  Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`.
+
+- [ ] 🅾️ **VIX term-structure evaluation** — design decision needed. Is VIX9D/VIX1D slope a valuable short-term vol signal beyond raw VIX? Where does it live — equity_volatility or rates_curve? yfinance ticker availability (^VIX9D appears to exist; ^VIX1D may not). Opus recommendation → Sonnet implements.
 
 - [ ] 🅾️ **Brief 10 — Regime-aware weighting (LARGE)** *(multi-day)*
   Two weight sets by VIX tercile (low/mid/high), precomputed during backtest, applied at score time. Touches scoring, backtest, recalibrate. Opus should design the API + migration (how do we handle the weight-set switch in the composite calculation, how does it interact with Brief 3 momentum, how does history.csv represent which regime was active) before Sonnet executes.
 
-- [ ] 🅾️ **Paywalled news sources** *(user scope call + ToS review)*
-  Which of WSJ / FT / Bloomberg does Ian actually want? What's the minimum-viable integration (RSS where allowed, archive links, nothing questionable)? Legal / ToS review required before any scraping. Not a Sonnet task until Ian picks the feeds.
+### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 
-- [ ] **Portfolio integration** *(design scope call)*
-  System to connect directly to Fidelity Brokerage API OR read in CSV of position holdings so the model can make personalized recommendations. Scope needed: authentication method, data sync frequency, position fields required (symbol, quantity, cost basis?), how recommendations flow back to user. Not a Sonnet task until Ian specifies scope.
+- [ ] 🅾️ **Paywalled news sources** *(user scope call required)*
+  Which of WSJ / FT / Bloomberg does Ian actually want? What's the minimum-viable integration (RSS where allowed, archive links, nothing questionable)? Legal / ToS review required before any scraping. Not an Opus or Sonnet task until Ian picks the feeds.
+
+- [ ] **Portfolio integration** *(user scope call required)*
+  Fidelity API or CSV of position holdings for personalized recommendations. Ian needs to decide: (a) Fidelity API vs CSV input, (b) fields needed (symbol, quantity, cost basis?), (c) position-level alerts vs high-level commentary. Not an Opus or Sonnet task until Ian answers these.
 
 ---
 
