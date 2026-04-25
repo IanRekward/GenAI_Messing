@@ -62,20 +62,20 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 **Before adding new features, harden the existing system against silent failures and data drift.**
 
-- [ ] **Dashboard self-diagnostics** *(1–2 hours)*
-  Add "Last updated: 2026-04-24 07:31 UTC" timestamp to the top of the dashboard. Add a red banner warning if the dashboard hasn't updated in >30 hours (indicates automation failure). Timestamp is written at the end of `run_dashboard.py`, read from `data/run_metadata.json` or `history.csv` timestamp. Sonnet executes; no design needed.
+- [x] **Dashboard self-diagnostics** *(shipped)*
+  JS `automation-banner` div injected with ISO timestamp on `<body data-run-ts="...">`. If >30 hours since last run, injects red "AUTOMATION OFFLINE — X hours ago" banner. No-op when automation is healthy.
 
 - [ ] **Brief 15 data alignment checks** *(added to Brief 15 implementation)*
   Brief 15's rolling IC card is only valid if backtest and live dashboard are synchronized. Add: (a) timestamp validation — show "backtest: 2026-04-24 07:35, composite: 2026-04-24 07:30" and warn if >2 hours apart; (b) sample count display — show "IC: 0.12 (252 obs)" so small-sample noise is visible; (c) freshness indicator — show "last backtest: 2026-04-24" and warn if >2 days stale. Wired into `_build_signal_quality_card()`.
 
-- [ ] **Data quality monitoring / bucket health** *(2–3 hours)*
-  Brief 6 detects staleness (no new data). Expand to detect _broken_ data: if any indicator has been NaN/zero for ≥3 days, flag it in a "bucket health" diagnostic (e.g., "Inflation bucket: no valid data for 3 days — falling back to 3-day-old value"). Add to dashboard as a small collapsible section or footer note. Touches `src/indicators.py`, dashboard.py, `data/history.csv` validation.
+- [x] **Data quality monitoring / bucket health** *(shipped)*
+  `_build_bucket_health_card()` in `dashboard.py`: collapsible "DATA QUALITY (N issues)" section. Detects (a) indicators with `percentile=None` (failed fetches falling back to 50.0) and (b) bucket scores unchanged for ≥3 consecutive runs (possible stale source). Rendered between staleness banner and composite card.
 
-- [ ] **Alert channel redundancy** *(1 hour)*
-  Pushover can fail silently (network, app muted, account issue). Add an email fallback: if `_send_pushover()` returns `False`, queue an email to rekward01@gmail.com with the same alert body. Use `smtplib` (Pushover API key exists; email can use a transactional service or app password). Alternatively, log "alert would have fired" to dashboard so Ian can inspect manually.
+- [x] **Alert channel redundancy** *(shipped)*
+  `_send_email_fallback()` in `src/alerts.py` using `smtplib` + Gmail SMTP (port 587). Triggered when both Pushover and Twilio return False. Requires `GMAIL_APP_PASSWORD` in `.env`; `ALERT_EMAIL_FROM`/`ALERT_EMAIL_TO` default to rekward01@gmail.com. Wire `GMAIL_APP_PASSWORD` in `.env` to activate.
 
-- [ ] **Mobile / responsive design check** *(30 min assessment)*
-  Run the dashboard on a 4" phone screen (dev tools emulation). Verify flex bar charts, tooltip positioning, card layout don't overflow or become unreadable. Document any breakpoints needed (e.g., "hide indicator weights on screens <768px"). Optionally implement if gaps are found; otherwise add a note to CLAUDE.md about tested breakpoints.
+- [x] **Mobile / responsive design** *(shipped)*
+  Added `@media(max-width:600px)` block: `.hdr` stacks vertically, `.composite` stacks, `.bucket-grid` goes single-column, tooltips right-align to avoid overflow. Action row gets `flex-wrap:wrap;min-width:260px` so cards stack below ~534px.
 
 ### Phase E — Design-first items (route through Opus before Sonnet executes) 🅾️
 

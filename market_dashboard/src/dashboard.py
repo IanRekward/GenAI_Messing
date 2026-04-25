@@ -61,6 +61,13 @@ td:nth-child(3){text-align:right;width:34%}
 .tip{position:relative;cursor:help;border-bottom:1px dotted #6e7681}
 .tip::after{content:attr(data-tip);position:absolute;left:0;top:110%;background:#1c2128;color:#c9d1d9;padding:8px 12px;border-radius:6px;border:1px solid #30363d;font-size:.76rem;line-height:1.5;width:280px;z-index:200;white-space:normal;display:none;pointer-events:none;font-weight:400}
 .tip:hover::after,.tip:focus::after{display:block}
+@media(max-width:600px){
+  .hdr{flex-direction:column;align-items:flex-start;gap:6px}
+  .composite{flex-direction:column;gap:8px}
+  .tc-row{flex-wrap:wrap;gap:12px}
+  .tip::after{left:auto;right:0;width:220px}
+  .bucket-grid{grid-template-columns:1fr}
+}
 """
 
 
@@ -423,6 +430,45 @@ def _build_analog_card(analogs: list) -> str:
     )
 
 
+def _build_bucket_health_card(scoring: dict, history: "pd.DataFrame") -> str:
+    """Flag indicators with missing data and bucket scores frozen for ≥3 runs."""
+    issues = []
+
+    for bkey, bucket in scoring["buckets"].items():
+        for ikey, ind in bucket["indicators"].items():
+            if ind.get("percentile") is None:
+                issues.append(f"{ind['label']}: no live data (using fallback score)")
+
+    if len(history) >= 3:
+        for bkey, bucket in scoring["buckets"].items():
+            col = f"bucket_{bkey}"
+            if col not in history.columns:
+                continue
+            recent = history[col].dropna().tail(3)
+            if len(recent) >= 3 and recent.nunique() == 1:
+                issues.append(
+                    f"{bucket['label']}: bucket score unchanged for ≥3 runs "
+                    f"(value: {recent.iloc[-1]:.1f} — possible stale source)"
+                )
+
+    if not issues:
+        return ""
+
+    items_html = "".join(
+        f'<li style="color:#c9d1d9;margin:3px 0">{i}</li>' for i in issues
+    )
+    n = len(issues)
+    return (
+        f'<details style="margin-bottom:14px">'
+        f'<summary style="color:#ffcc00;cursor:pointer;font-size:.82rem;font-weight:700">'
+        f'&#9888; DATA QUALITY ({n} issue{"s" if n != 1 else ""})'
+        f'<span style="color:#8b949e;font-weight:400;margin-left:8px">'
+        f'(click to expand)</span></summary>'
+        f'<ul style="margin:8px 0 0 16px;padding:0;font-size:.80rem">{items_html}</ul>'
+        f'</details>'
+    )
+
+
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
                     calendar_events: list | None = None,
                     narrative: str = "") -> Path:
@@ -600,6 +646,8 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f"</span></div>"
         )
 
+    bucket_health_card = _build_bucket_health_card(scoring, history)
+
     # ── Bucket momentum (todo 37) ────────────────────────────────────────────
     bucket_vel = compute_bucket_momentum(history)
     # Top-3 accelerating: buckets with highest positive 7d velocity
@@ -754,9 +802,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         r_flush = review_card.replace('<div class="card"', '<div class="card no-mb"', 1)
         e_flush = escalation_card.replace('<div class="card"', '<div class="card no-mb"', 1)
         action_row = (
-            f'<div style="display:flex;gap:14px;margin-bottom:14px;align-items:flex-start">'
-            f'<div style="flex:1;min-width:0">{r_flush}</div>'
-            f'<div style="flex:1;min-width:0">{e_flush}</div>'
+            f'<div style="display:flex;flex-wrap:wrap;gap:14px;margin-bottom:14px;align-items:flex-start">'
+            f'<div style="flex:1;min-width:260px">{r_flush}</div>'
+            f'<div style="flex:1;min-width:260px">{e_flush}</div>'
             f'</div>'
         )
     else:
@@ -785,6 +833,8 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     # ── Calendar card ───────────────────────────────────────────────────────
     calendar_card = _build_calendar_card(calendar_events or [])
 
+    run_iso = scoring["run_timestamp"]
+
     html = f"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -793,13 +843,15 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
 <title>Market Stress Dashboard</title>
 <style>{_CSS}</style>
 </head>
-<body>
+<body data-run-ts="{run_iso}">
 <div class="wrap">
+  <div id="automation-banner"></div>
   <div class="hdr">
     <h1>Market Stress Dashboard</h1>
     <span class="ts">Last refreshed: {ts}</span>
   </div>
   {staleness_banner}
+  {bucket_health_card}
   {composite_card}
   {action_row}
   {narrative_card}
@@ -816,6 +868,23 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   {errors_html}
   <div class="footer">Not financial advice &nbsp;·&nbsp; Data: FRED, Yahoo Finance &nbsp;·&nbsp; Scores are percentile ranks vs {scoring.get('history_years', 10)}-year history</div>
 </div>
+<script>
+(function() {{
+  var ts = document.body.getAttribute('data-run-ts');
+  if (!ts) return;
+  var runTime = new Date(ts);
+  var hoursAgo = (Date.now() - runTime.getTime()) / 3600000;
+  var banner = document.getElementById('automation-banner');
+  if (!banner) return;
+  if (hoursAgo > 30) {{
+    var h = Math.round(hoursAgo);
+    banner.innerHTML = '<div style="background:#2e0d0d;border:1px solid #ff4444;border-radius:6px;padding:10px 16px;margin-bottom:14px;font-size:.82rem">'
+      + '<span style="color:#ff4444;font-weight:700">&#9888; AUTOMATION OFFLINE</span>'
+      + '<span style="color:#c9d1d9;margin-left:8px">Dashboard last ran ' + h + ' hours ago — morning automation may have failed. Check Task Scheduler.</span>'
+      + '</div>';
+  }}
+}})();
+</script>
 </body>
 </html>"""
 

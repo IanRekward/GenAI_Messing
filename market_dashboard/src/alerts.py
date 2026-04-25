@@ -1,11 +1,13 @@
 """
-Phone alerts via Pushover (preferred) or Twilio SMS (fallback).
+Phone alerts via Pushover (preferred), Twilio SMS, or email (fallback).
 State is persisted in data/alert_state.json to suppress duplicate alerts.
 """
 from __future__ import annotations
 
 import json
+import smtplib
 from datetime import date, datetime
+from email.mime.text import MIMEText
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -281,6 +283,31 @@ def _send_twilio(message: str, env: dict) -> bool:
         return False
 
 
+def _send_email_fallback(title: str, message: str, env: dict) -> bool:
+    """Send alert via Gmail SMTP when Pushover and Twilio are unavailable.
+
+    Requires GMAIL_APP_PASSWORD in .env. ALERT_EMAIL_FROM and ALERT_EMAIL_TO
+    default to rekward01@gmail.com if not set.
+    """
+    app_password = env.get("GMAIL_APP_PASSWORD", "")
+    if not app_password or app_password.startswith("your_"):
+        return False
+    from_addr = env.get("ALERT_EMAIL_FROM", "rekward01@gmail.com")
+    to_addr = env.get("ALERT_EMAIL_TO", "rekward01@gmail.com")
+    try:
+        msg = MIMEText(message)
+        msg["Subject"] = f"[Market Alert] {title}"
+        msg["From"] = from_addr
+        msg["To"] = to_addr
+        with smtplib.SMTP("smtp.gmail.com", 587, timeout=10) as server:
+            server.starttls()
+            server.login(from_addr, app_password)
+            server.sendmail(from_addr, [to_addr], msg.as_string())
+        return True
+    except Exception:
+        return False
+
+
 def _indicator_label(scoring: dict, ref: str) -> str:
     bkey, ikey = ref.split(".", 1)
     return scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {}).get("label", ikey)
@@ -500,6 +527,8 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
     if _send_pushover(title, body, env):
         sent = 1
     elif _send_twilio(f"{title}\n{body}", env):
+        sent = 1
+    elif _send_email_fallback(title, body, env):
         sent = 1
     else:
         print(f"\n  ALERT — {title}")
