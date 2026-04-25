@@ -32,6 +32,16 @@ Ordered top-down by value × (1/effort), respecting dependencies. Sonnet should
 execute in order. Design-first items marked 🅾️ — route through Opus before
 Sonnet starts.
 
+### Phase 0 — Highest priority (do these first)
+
+- [ ] 🅾️ **Codebase optimization pass** — Opus reviews all source files for superfluous code, rough edges between modules, and efficiency improvements. Produces a prioritised list; Sonnet executes.
+
+- [ ] **Model explainer section in backtest report** *(Sonnet-executable once content is drafted)*
+  Add a collapsible or tabbed section to `output/backtest_report.html` that explains the model two ways:
+  (1) **Expert view** — statistical methodology: percentile scoring, Spearman IC, bucket weighting, regime classification, backtest design, known limitations (look-ahead, survivorship, data gaps).
+  (2) **Plain-English view** — for someone with no stats/finance/econ background: what the score means, what each bucket is watching for, how to read the bands, what the model can and can't predict, when to act on it vs ignore it.
+  Both views should be accessible from the main dashboard via the existing "View full backtest report →" link.
+
 ### Phase A — Verify & clean (30–60 min)
 
 - [x] **Verification sweep** — all shipped briefs confirmed rendering: event overlay, correlation card, staleness, audit log, provenance (weights_hash populated; code_sha empty as expected — primary dir has no git). Pruning archive absent but OK (25 rows, < 2yr). No gaps found.
