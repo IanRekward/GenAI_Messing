@@ -137,6 +137,46 @@ def pearson_ic(signal: pd.Series, target: pd.Series) -> float:
     return float(stats.pearsonr(signal.loc[common], target.loc[common]).statistic)
 
 
+def rolling_composite_ic(
+    history: pd.DataFrame,
+    spx: pd.Series,
+    window_days: int = 252,
+    horizon_days: int = 21,
+) -> dict:
+    """Spearman IC of composite vs forward SPX drawdown over the last window_days of history.
+
+    Returns {"ic": float|None, "n_obs": int, "horizon_days": int, "window_days": int}.
+    ic is None when fewer than 30 aligned non-NaN pairs are available.
+    """
+    df = history.copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["_date"] = df["timestamp"].dt.normalize()
+    df = df.sort_values("timestamp").drop_duplicates(subset="_date", keep="last")
+    df = df.set_index("_date")["composite"].rename("composite")
+
+    spx_norm = spx.copy()
+    spx_norm.index = pd.to_datetime(spx_norm.index).normalize()
+    spx_aligned = spx_norm.reindex(df.index, method="ffill")
+
+    target = build_forward_drawdown(spx_aligned.dropna(), horizon_days)
+    target = target.reindex(df.index)
+
+    composite_slice = df.tail(window_days)
+    target_slice = target.reindex(composite_slice.index)
+
+    valid = composite_slice.notna() & target_slice.notna()
+    composite_valid = composite_slice[valid]
+    target_valid = target_slice[valid]
+
+    n_obs = int(valid.sum())
+    if n_obs < 30:
+        return {"ic": None, "n_obs": n_obs, "horizon_days": horizon_days, "window_days": window_days}
+
+    ic = spearman_ic(composite_valid, target_valid)
+    return {"ic": float(ic) if not np.isnan(ic) else None, "n_obs": n_obs,
+            "horizon_days": horizon_days, "window_days": window_days}
+
+
 def ew_ic(signal: pd.Series, target: pd.Series, halflife_days: int = 5 * 252) -> float:
     """
     Exponentially-weighted IC with the given half-life (in days).

@@ -49,11 +49,15 @@ def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
     dest = docs_dir / "index.html"
     shutil.copy2(dashboard_path, dest)
 
+    report_src = dashboard_path.parent / "backtest_report.html"
+    if report_src.exists():
+        shutil.copy2(report_src, docs_dir / "backtest_report.html")
+
     def _git(*args):
         return subprocess.run(["git"] + list(args), cwd=genai_tmp,
                               capture_output=True, text=True)
 
-    _git("add", "docs/index.html")
+    _git("add", "docs/index.html", "docs/backtest_report.html")
 
     # Check if there's actually a change staged
     diff = _git("diff", "--cached", "--quiet")
@@ -135,6 +139,9 @@ def main():
     # Score any past alerts whose T+7/14/30 windows have elapsed
     score_past_alerts(history)
 
+    from src.alerts import get_postmortem_stats
+    pm_stats = get_postmortem_stats(days=60)
+
     # Alerts
     if not args.no_alerts:
         if not args.quiet:
@@ -172,7 +179,9 @@ def main():
     # Write dashboard
     output_path = write_dashboard(scoring, news, history,
                                   calendar_events=calendar_events,
-                                  narrative=narrative)
+                                  narrative=narrative,
+                                  env=env,
+                                  signal_quality_stats=pm_stats)
 
     # Weekly digest (sends automatically on Mondays)
     if not args.no_alerts:

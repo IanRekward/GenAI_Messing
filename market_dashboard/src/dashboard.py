@@ -469,9 +469,118 @@ def _build_bucket_health_card(scoring: dict, history: "pd.DataFrame") -> str:
     )
 
 
+def _build_signal_quality_card(
+    history: "pd.DataFrame",
+    env: dict,
+    signal_quality_stats: dict | None,
+) -> str:
+    """Compact card with rolling composite IC + recent alert hit rate.
+
+    Returns "" if SPX fetch fails or history is too short to be meaningful.
+    """
+    from src.evaluation import rolling_composite_ic
+    from src.fetch import fetch_yfinance_series
+
+    REPORT_PATH = OUTPUT_DIR / "backtest_report.html"
+    _VERDICT = [
+        (0.15, "Tracking", "#22cc44"),
+        (0.05, "Weak signal", "#ffcc00"),
+        (0.00, "Miscalibrated", "#ff4444"),
+    ]
+
+    try:
+        spx = fetch_yfinance_series("^GSPC", env, years=2)
+        ic_result = rolling_composite_ic(history, spx)
+    except Exception:
+        return ""
+
+    ic = ic_result["ic"]
+    n_obs = ic_result["n_obs"]
+
+    # Verdict
+    if ic is None:
+        verdict, verdict_color = "Insufficient history", "#6e7681"
+        ic_display = "—"
+    else:
+        ic_display = f"{ic:.2f}"
+        verdict, verdict_color = "Miscalibrated", "#ff4444"
+        for threshold, label, color in _VERDICT:
+            if ic >= threshold:
+                verdict, verdict_color = label, color
+                break
+
+    # Data freshness — most recent history row
+    try:
+        last_ts = pd.to_datetime(history["timestamp"]).max().strftime("%Y-%m-%d")
+    except Exception:
+        last_ts = "unknown"
+
+    ic_panel = (
+        f'<div style="min-width:80px">'
+        f'<div style="font-size:1.6rem;font-weight:700;color:{verdict_color}">{ic_display}</div>'
+        f'<div style="font-size:.72rem;color:#6e7681">rolling IC ({n_obs} obs, 21d horizon)</div>'
+        f'<div style="font-size:.70rem;color:#484f58;margin-top:2px">as of {last_ts}</div>'
+        f'</div>'
+    )
+
+    # Alert hit rate panel
+    pm = signal_quality_stats or {}
+    scored = pm.get("scored_count", 0)
+    total = pm.get("total_alerts", 0)
+    hit_rate = pm.get("hit_rate_7d_pct")
+    if total == 0:
+        hr_display = "No alerts scored yet"
+        hr_sub = "60-day window"
+    elif scored == 0:
+        hr_display = f"{total} alert{'s' if total != 1 else ''} fired"
+        hr_sub = "T+7 outcomes pending"
+    else:
+        hr_display = f"{hit_rate:.0f}% still elevated at T+7"
+        hr_sub = f"{scored}/{total} alerts scored (60d)"
+
+    hr_panel = (
+        f'<div style="min-width:120px">'
+        f'<div style="font-size:.95rem;font-weight:600;color:#c9d1d9">{hr_display}</div>'
+        f'<div style="font-size:.72rem;color:#6e7681">{hr_sub}</div>'
+        f'</div>'
+    )
+
+    verdict_badge = (
+        f'<div style="margin-top:10px">'
+        f'<span style="background:{verdict_color}22;color:{verdict_color};'
+        f'font-weight:700;font-size:.78rem;padding:3px 10px;border-radius:4px">'
+        f'{verdict.upper()}</span>'
+        f'<span style="font-size:.72rem;color:#6e7681;margin-left:10px">'
+        f'IC ≥ 0.15 = Tracking · 0.05–0.15 = Weak · &lt;0.05 = Miscalibrated</span>'
+        f'</div>'
+    )
+
+    report_link = ""
+    if REPORT_PATH.exists():
+        report_link = (
+            f'<div style="text-align:right;margin-top:8px;font-size:.78rem">'
+            f'<a href="backtest_report.html" target="_blank" '
+            f'style="color:#58a6ff;text-decoration:none">'
+            f'View full backtest report →</a></div>'
+        )
+
+    return (
+        f'<div class="card" style="padding:14px 18px">'
+        f'<h2 style="margin-bottom:10px">Model Calibration</h2>'
+        f'<div style="display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start">'
+        f'{ic_panel}{hr_panel}'
+        f'</div>'
+        f'{verdict_badge}'
+        f'{report_link}'
+        f'</div>'
+    )
+
+
 def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
                     calendar_events: list | None = None,
-                    narrative: str = "") -> Path:
+                    narrative: str = "",
+                    env: dict | None = None,
+                    signal_quality_stats: dict | None = None) -> Path:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     out = OUTPUT_DIR / "dashboard.html"
 
@@ -647,6 +756,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         )
 
     bucket_health_card = _build_bucket_health_card(scoring, history)
+    signal_quality_card = _build_signal_quality_card(history, env or {}, signal_quality_stats)
 
     # ── Bucket momentum (todo 37) ────────────────────────────────────────────
     bucket_vel = compute_bucket_momentum(history)
@@ -857,6 +967,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   {narrative_card}
   {analog_card}
   {correlation_card}
+  {signal_quality_card}
   {trend_card}
   {calendar_card}
   <div class="bucket-grid">{buckets_html}</div>
