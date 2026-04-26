@@ -122,12 +122,17 @@ items 2/3/7 cluster naturally as a "naming + plain-English layer" batch; items 4
 are small ordering/link fixes; item 6 is a content-authoring brief. Sonnet should
 preserve Ian's numbering when committing so the trail back to this list is clear.
 
-- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17 in ROADMAP.md — design locked, ready for Sonnet)*
-  Full brief in ROADMAP.md. All design decisions resolved by Opus.
-  Summary: after `score_all()`, collect indicators with `percentile: None` or
-  in `stale_indicators`; pass `_remediation_keys` through `env`; call
-  `score_all()` a second time (once max). Log each attempt to
-  `data/alert_log.jsonl`. Skip `computed`-type indicators. 3 new tests.
+- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17 v2 in ROADMAP.md — design locked, ready for Sonnet)*
+  Full brief in ROADMAP.md. **Read v2 only — v1 had three load-bearing errors
+  (wrong function name, unsafe pipeline placement, dispatch in wrong layer)
+  that Opus corrected in v2.** Summary: after `annotate_results()` and
+  *before* `log_run()`/`send_alerts()`, collect indicators with `percentile:
+  None` or in `stale_indicators` (excluding `computed` types); pass
+  `_remediation_keys` through `env`; the bypass dispatch lives in
+  `_fetch_indicator()`, not the leaf fetch functions. Run
+  `compute_composite` + `annotate_results` a second time (once max). Log
+  each attempt to `data/alert_log.jsonl`. 3 new tests + 2 regression checks
+  (single history row, single alert call).
 
 - [ ] **G2 — Name "Weighted Average" section + plain-English explainer**
   Identify the section Ian is referring to (likely the composite card showing

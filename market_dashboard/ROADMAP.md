@@ -1556,10 +1556,15 @@ naive baseline.
 
 ## Brief 17 — Stale data + data quality auto-remediation
 
-**Authored by:** Sonnet 4.6 (2026-04-25) as a setup brief for Opus review.
-**Status:** DESIGN LOCKED by Opus before Sonnet executes. See "Design decisions"
-section — all decisions are pre-resolved. Sonnet can proceed straight to
-implementation.
+**Authored by:** Sonnet 4.6 (2026-04-25 v1).
+**Revised by:** Opus 4.7 (2026-04-25 v2) — corrected three load-bearing errors
+in the v1 brief: (a) function name `score_all` doesn't exist (it's
+`compute_composite` + `annotate_results`); (b) pipeline placement was unsafe
+(would have double-written history.csv and fired alerts on stale data);
+(c) force-fetch dispatch was specified at the wrong layer (leaf fetch functions
+don't see the logical indicator key). Read v2 only — v1 is superseded.
+
+**Status:** DESIGN LOCKED. Sonnet can proceed straight to implementation.
 
 **Dependencies:** Brief 7 (retry/backoff in fetch layer — already shipped).
 
@@ -1582,18 +1587,40 @@ should try once more before giving up.
 
 ---
 
-### How the current fetch/scoring pipeline works (context for Opus)
+### How the current fetch/scoring pipeline works (verified against code)
 
-- `run_dashboard.py` calls `score_all(env)` from `src/scoring.py`.
-- `score_all()` iterates indicators, calls the appropriate fetch function, runs
-  `compute_percentile`, and builds the scoring dict.
+- `run_dashboard.py` calls `compute_composite(weights, env, manual)` from
+  `src/scoring.py` (line 305 of scoring.py), then `annotate_results(scoring,
+  thresholds)` from `src/triggers.py`. There is no `score_all()` — that name
+  appeared in v1 of this brief in error.
+- `compute_composite()` iterates `weights["buckets"]`, calls
+  `_fetch_indicator(key, cfg, env, manual)` per indicator (line 96 of
+  scoring.py), runs percentile/banding, and builds the scoring dict.
+- `_fetch_indicator()` dispatches by `cfg["source"]["type"]` to either
+  `fetch_fred_series(series_id, env)`, `fetch_yfinance_series(ticker, env)`,
+  `fetch_treasury_auction_results(...)`, `fetch_cnn_fear_greed(env)`, or one
+  of the `COMPUTED_HANDLERS` for `type: computed`.
 - Failed fetches fall back to `50.0` with `"percentile": None` in the result.
-- `stale_indicators: list[str]` is populated in the result by
-  `check_series_staleness()` in `src/fetch.py`.
-- The fetch functions in `src/fetch.py` read from a file cache under
-  `data/fetch_cache/`. Cache age is checked against `CACHE_HOURS` from `env`.
+- `stale_indicators: list[str]` is populated in the scoring result by
+  `check_series_staleness()` calls inside `compute_composite`.
+- The leaf fetch functions read from a file cache under `data/fetch_cache/`.
+  Each one reads `cache_hours = float(env.get("CACHE_HOURS", 12))` and skips
+  the network when the cache file is younger than that.
+- The leaf fetch functions only know the FRED `series_id` or yfinance
+  `ticker` — they do NOT know the logical indicator key (`vix`, `hy_oas`,
+  etc.). The dispatch from logical key → fetch happens in `_fetch_indicator`.
+- After `compute_composite` + `annotate_results`, `run_dashboard.py` calls
+  (in order, all before `write_dashboard`):
+  1. `log_run(scoring)` — **appends a row to `data/history.csv`**.
+  2. `prune_history()` + `load_history(days=90)`.
+  3. `get_news_brief(env)`.
+  4. `score_past_alerts(history)` + `get_postmortem_stats(...)`.
+  5. `send_alerts(scoring, env, history)` — **fires Pushover/Twilio/email**.
+  6. `fetch_upcoming_events(env)`.
+  7. Momentum + shock-type + regime-adjusted composite computation.
+  8. `generate_narrative(...)` — **paid Haiku call**.
 - There is no persistent circuit breaker. Brief 7's retries are inline
-  (`_retry_get` calls `requests.get` up to 3× with backoff within a single
+  (`_retry_get` does `requests.get` up to 3× with backoff within a single
   fetch call). If all 3 retries fail, the exception propagates and scoring
   falls back to 50.0.
 
@@ -1609,28 +1636,57 @@ Run at most one remediation attempt per indicator per run. Don't remediate
 indicators that returned valid data (even if the data is old by calendar
 standards — staleness alerts handle that separately).
 
-**D2 — Pipeline placement.** Remediation runs between the first `score_all()`
-call and `write_dashboard()`, in `run_dashboard.py`. If any targeted indicators
-were successfully refreshed, call `score_all()` a second time (full re-score —
-don't try to patch individual indicator results). The second call uses the
-freshened cache and produces a clean scoring dict. The HTML shows the updated
-scores.
+**D2 — Pipeline placement (HARD CONSTRAINT).** Remediation runs in
+`run_dashboard.py` immediately after `annotate_results()` and **before**
+`log_run()`, `send_alerts()`, and `generate_narrative()`. This is a hard
+constraint, not a preference:
 
-Maximum two full `score_all()` passes per run. Never loop.
+- Before `log_run()` because `log_run` appends to `history.csv` — running it
+  on stale-then-fixed scoring would write the wrong row, and the next-day
+  run would back-compute momentum from corrupted history.
+- Before `send_alerts()` because alerts are the most consequential output;
+  firing Pushover on a 50.0 fallback that gets corrected one second later
+  would cause false positives or false negatives. (This means `send_alerts`
+  fires once, against the post-remediation scoring — not before AND after.)
+- Before `generate_narrative()` because Haiku is paid; we don't want to
+  generate narrative against scoring we know to be wrong.
 
-**D3 — Force-fetch mechanism.** Pass a new env key `_remediation_keys: set[str]`
-into `score_all()` and down to the individual fetch functions. When a fetch
-function sees its indicator key in `_remediation_keys`, it skips the cache-age
-check (treats `CACHE_HOURS` as 0 for that key only) and attempts a live fetch.
-If the live fetch succeeds, it writes the fresh result to cache as normal. If it
-fails, it raises as normal and scoring falls back to 50.0 again — no infinite
-retry.
+If `remediation_keys` is non-empty, do a second full pass:
+`compute_composite(weights, env_remediate, manual)` then
+`annotate_results(scoring, thresholds)`. The second pass uses the freshened
+cache and produces a clean scoring dict. **Maximum two full passes per run.
+Never loop.** If `remediation_keys` is empty, skip the entire remediation
+block — no overhead on clean runs.
 
-Implementation path: `score_all()` passes `_remediation_keys` through `env` to
-each fetch call. The individual fetch functions (`fetch_fred_series`,
-`fetch_yfinance_series`, `fetch_treasury_auction_results`) check
-`env.get("_remediation_keys", set())` before the cache-age guard and skip the
-guard when their key is present.
+The `momentum + shock_type + regime_adj` block (currently lines 162–170 of
+`run_dashboard.py`) reads from `history` and `scoring`. Since it runs *after*
+`load_history()`, and `load_history()` runs *after* `log_run()`, this block
+is downstream of remediation and needs no changes.
+
+**D3 — Force-fetch dispatch lives in `_fetch_indicator()`, NOT leaf fetch
+functions.** The leaf fetch functions (`fetch_fred_series`,
+`fetch_yfinance_series`, `fetch_treasury_auction_results`,
+`fetch_cnn_fear_greed`) only see series IDs / tickers — they don't know the
+indicator's logical key, so they can't check `key in _remediation_keys`.
+The dispatch belongs one layer up:
+
+```python
+# In src/scoring.py, _fetch_indicator(key, cfg, env, manual):
+remediation_keys = env.get("_remediation_keys", set())
+if key in remediation_keys:
+    env_local = {**env, "CACHE_HOURS": "0"}  # bypass cache for this call only
+else:
+    env_local = env
+# ... existing dispatch, but pass env_local instead of env to leaf fetches
+```
+
+This means **leaf fetch functions don't change at all.** All the new logic is
+contained in `_fetch_indicator()`. `compute_composite` already passes `env`
+through to `_fetch_indicator`, so `_remediation_keys` rides along
+transparently.
+
+If the live fetch succeeds, it writes fresh data to cache as normal. If it
+fails, it raises and scoring falls back to 50.0 — no infinite retry.
 
 **D4 — Logging.** For each remediation attempt, append one JSON line to
 `data/alert_log.jsonl`:
@@ -1641,8 +1697,34 @@ guard when their key is present.
  "reason": "percentile_none|stale"}
 ```
 
-Use the same append helper already used by the alert audit log. Write the log
-entry whether the remediation succeeds or fails.
+Do NOT reuse `_log_alert` from `src/alerts.py` — that helper is alert-shaped
+(takes title, body, scoring, alert_types) and would mix concerns. Inline the
+JSONL append in `run_dashboard.py`:
+
+```python
+import json
+from datetime import datetime
+from pathlib import Path
+
+def _log_remediation(indicator: str, outcome: str, reason: str) -> None:
+    Path("data").mkdir(exist_ok=True)
+    with open("data/alert_log.jsonl", "a") as f:
+        f.write(json.dumps({
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event_type": "remediation_attempt",
+            "indicator": indicator,
+            "outcome": outcome,
+            "reason": reason,
+        }) + "\n")
+```
+
+Write the log entry whether the remediation succeeds or fails.
+
+**D7 — Determining success/failure for the log.** "Success" = the indicator
+that was in `remediation_keys` is no longer in `stale_indicators` AND no
+longer has `percentile: None` after the second pass. "Failed" = it's still
+in one of those states. Compute this by comparing the post-remediation
+scoring dict to the original `remediation_keys` set.
 
 **D5 — No UI changes.** The dashboard is a static HTML artifact rendered once
 per run. The DATA QUALITY card will naturally reflect the outcome: if remediation
@@ -1658,10 +1740,30 @@ HTML — they already surface the information correctly post-remediation.
 
 ### Files to change
 
-1. **`run_dashboard.py`** — add remediation block between `score_all()` and
-   `write_dashboard()`:
+1. **`src/scoring.py`** — modify `_fetch_indicator(key, cfg, env, manual)`
+   (around line 96). Add the remediation bypass at the top of the function,
+   before the existing dispatch:
    ```python
-   # Identify candidates
+   def _fetch_indicator(key, cfg, env, manual):
+       remediation_keys = env.get("_remediation_keys", set())
+       if key in remediation_keys:
+           env = {**env, "CACHE_HOURS": "0"}  # force live fetch this call
+       # ... existing dispatch unchanged
+   ```
+   No other changes to scoring.py. `compute_composite` already threads `env`
+   through to `_fetch_indicator`, so `_remediation_keys` rides along.
+
+2. **`src/fetch.py`** — NO CHANGES. The leaf fetch functions don't see the
+   logical indicator key, so the bypass can't live here. The CACHE_HOURS=0
+   override from `_fetch_indicator` reaches them through `env` and they
+   already honour `env["CACHE_HOURS"]`.
+
+3. **`run_dashboard.py`** — insert the remediation block between
+   `annotate_results()` (line 121) and `log_run()` (line 126):
+   ```python
+   scoring = annotate_results(scoring, thresholds)
+
+   # ── Stale data + DQ remediation (Brief 17) ─────────────────────────
    stale_keys = set(scoring.get("stale_indicators", []))
    failed_keys = {
        ikey
@@ -1669,32 +1771,37 @@ HTML — they already surface the information correctly post-remediation.
        for ikey, ind in bdata["indicators"].items()
        if ind.get("percentile") is None
    }
-   remediation_keys = stale_keys | failed_keys
-   
+   # Exclude computed indicators (their fetch is derived, can't force-refresh)
+   remediation_keys = {
+       k for k in (stale_keys | failed_keys)
+       if _indicator_source_type(weights, k) != "computed"
+   }
+
    if remediation_keys:
-       _run_remediation(scoring, remediation_keys, env)
-       env_remediate = {**env, "_remediation_keys": remediation_keys}
-       scoring = score_all(env_remediate)
-       # Log outcome per key (success = no longer in stale/failed after re-score)
-   ```
-   Extract the logging into a small helper `_run_remediation(scoring, keys, env)`
-   in the same file (not worth a new module).
+       reasons = {k: ("stale" if k in stale_keys else "percentile_none")
+                  for k in remediation_keys}
+       env_r = {**env, "_remediation_keys": remediation_keys}
+       scoring = compute_composite(weights, env_r, manual)
+       scoring = annotate_results(scoring, thresholds)
 
-2. **`src/fetch.py`** — in `fetch_fred_series`, `fetch_yfinance_series`, and
-   `fetch_treasury_auction_results`: add a remediation bypass before the cache-age
-   guard. Pattern:
-   ```python
-   remediation_keys = env.get("_remediation_keys", set())
-   if series_key in remediation_keys:
-       cache_max_age = 0  # force live fetch
-   else:
-       cache_max_age = float(env.get("CACHE_HOURS", 12)) * 3600
-   ```
-   For `fetch_cnn_fear_greed`: same pattern but the key is `cnn_fear_greed`.
+       # Determine outcome per key
+       still_stale = set(scoring.get("stale_indicators", []))
+       still_failed = {
+           ikey for bdata in scoring["buckets"].values()
+           for ikey, ind in bdata["indicators"].items()
+           if ind.get("percentile") is None
+       }
+       still_broken = still_stale | still_failed
+       for k in remediation_keys:
+           outcome = "failed" if k in still_broken else "success"
+           _log_remediation(k, outcome, reasons[k])
 
-3. **`src/scoring.py`** — `score_all()` already passes `env` through to fetch
-   functions. No structural changes needed — `_remediation_keys` travels in
-   `env` transparently.
+   # Log to history (must run AFTER remediation so history.csv reflects fresh data)
+   log_run(scoring)
+   ```
+   Add `_log_remediation()` (per D4) and a small `_indicator_source_type(weights,
+   key)` helper (walks `weights["buckets"][b]["indicators"][key]["source"]["type"]`,
+   returning `""` if missing) at module scope.
 
 4. **`data/alert_log.jsonl`** — written at runtime, no code change.
 
@@ -1717,10 +1824,10 @@ HTML — they already surface the information correctly post-remediation.
   automatically. No special handling needed — the force-retry is sufficient.
 
 - **All-indicators-None edge case:** If every indicator failed (network outage),
-  remediation will attempt all of them. The second `score_all()` call will also
-  fail for all and return the same 50.0 defaults. This is correct behaviour.
-  Don't add a "minimum successful remediations" guard — it adds complexity with
-  no benefit.
+  remediation will attempt all of them. The second `compute_composite()` call
+  will also fail for all and return the same 50.0 defaults. This is correct
+  behaviour. Don't add a "minimum successful remediations" guard — it adds
+  complexity with no benefit.
 
 - **`--no-cache` flag:** This flag already sets `CACHE_HOURS=0` in `env`, which
   forces all fetches live. When `--no-cache` is set, `remediation_keys` will be
@@ -1732,20 +1839,28 @@ HTML — they already surface the information correctly post-remediation.
 ### Success criteria
 
 - Dry run (`--no-cache --no-alerts --quiet`) completes in under 2× normal time
-  (the second `score_all()` pass adds latency only when stale/failed indicators
-  are present; on a clean run it should not trigger).
+  (the second `compute_composite()` pass adds latency only when stale/failed
+  indicators are present; on a clean run the remediation block is skipped
+  entirely).
 - When a manual test injects a stale indicator (edit cache mtime or delete a
-  cache file), the remediation block fires, a log entry appears in
-  `data/alert_log.jsonl` with `event_type: "remediation_attempt"`, and the
-  indicator no longer shows as stale in the output HTML.
+  cache file under `data/fetch_cache/`), the remediation block fires, a log
+  entry appears in `data/alert_log.jsonl` with `event_type:
+  "remediation_attempt"`, and the indicator no longer shows as stale in the
+  output HTML.
 - When the live fetch fails during remediation (mock network failure in test),
   the run completes and the indicator appears in the DATA QUALITY card — no
-  crash, no infinite retry.
+  crash, no infinite retry, log entry shows `outcome: "failed"`.
 - `pytest tests/ -q` passes with 3 new tests covering:
   1. Remediation triggers when `percentile: None` indicators are present.
   2. Remediation triggers when `stale_indicators` is non-empty.
-  3. Remediation does not trigger on a clean scoring result.
-- `computed`-type indicators are excluded from `remediation_keys`.
-- The second `score_all()` call is skipped entirely when `remediation_keys`
-  is empty (confirmed by asserting `score_all` mock call count = 1 on a clean
-  run).
+  3. Remediation does not trigger on a clean scoring result (assert
+     `compute_composite` mock is called exactly once).
+- `computed`-type indicators are excluded from `remediation_keys` (verify by
+  checking that a `computed` indicator with `percentile: None` does NOT trigger
+  a second `compute_composite` call).
+- `history.csv` has exactly one row appended per dashboard run, even when
+  remediation fires (regression check — the placement-bug version of this
+  brief would have appended two).
+- `send_alerts()` is invoked at most once per run, against the
+  post-remediation scoring (regression check — alerts must not fire on
+  pre-remediation 50.0 fallbacks).
