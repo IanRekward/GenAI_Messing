@@ -442,15 +442,18 @@ def _build_bucket_health_card(scoring: dict, history: "pd.DataFrame") -> str:
             if ind.get("percentile") is None:
                 issues.append(f"{ind['label']}: no live data (using fallback score)")
 
-    if len(history) >= 3:
+    if "timestamp" in history.columns and len(history) >= 3:
+        dated = history.copy()
+        dated["_date"] = pd.to_datetime(dated["timestamp"]).dt.date
+        daily = dated.drop_duplicates("_date", keep="last")
         for bkey, bucket in scoring["buckets"].items():
             col = f"bucket_{bkey}"
-            if col not in history.columns:
+            if col not in daily.columns:
                 continue
-            recent = history[col].dropna().tail(3)
+            recent = daily[col].dropna().tail(3)
             if len(recent) >= 3 and recent.nunique() == 1:
                 issues.append(
-                    f"{bucket['label']}: bucket score unchanged for ≥3 runs "
+                    f"{bucket['label']}: bucket score unchanged for ≥3 days "
                     f"(value: {recent.iloc[-1]:.1f} — possible stale source)"
                 )
 

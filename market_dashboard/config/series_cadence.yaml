@@ -2,7 +2,7 @@
 # iran_trigger and repo_stress remain fully manual — no automated source.
 
 thresholds:
-  daily: 3       # FRED/yfinance daily series: tolerate 3-day weekend/holiday gaps
+  daily: 5       # FRED/yfinance daily series: covers 3-day holiday weekends + T+1 publish lag (ICE OAS posts Mon AM with Fri's value)
   weekly: 10     # FRED weekly (NFCI, STLFSI, jobless claims): published with ~1wk lag
   monthly: 60    # FRED monthly (CPI, UNRATE): period indexed to month-start + ~30d publication lag
 
@@ -28,6 +28,6 @@ indicators:
   eem_vol: daily
   cnn_fear_greed: daily   # CNN Fear & Greed; falls back to FRED UMCSENT if unavailable
   move_index: daily
-  treasury_auction_stress: weekly  # 10Y/30Y auctions roughly monthly; warn if no new data in 10d
+  treasury_auction_stress: monthly  # 10Y/30Y auctions are monthly; weekly threshold (10d) misfired between auctions
   sector_breadth: daily
   spx_200dma_distance: daily
