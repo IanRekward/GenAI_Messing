@@ -287,8 +287,18 @@ and requires Opus passes before Sonnet executes.
 
 ---
 
+## Design questions pending Opus input
+
+**Energy/Commodities bucket — paper vs. real prices** *(flagged 2026-04-27)*
+Current bucket (Commodities & Energy) only measures futures-based stress (WTI crude, oil 1M vol).
+This captures speculative/systemic stress but not real-economy impact. Ian noted: futures move ≠ what consumers pay.
+**Design question:** Should bucket include spot prices (gasoline, diesel, jet fuel) alongside or instead of futures?
+If yes: (a) add as separate indicators or reweight existing? (b) does "energy cost stress to economy" change the purpose?
+**Action:** Opus designs; Sonnet executes.
+
+---
+
 ## Execution priorities — 2026-04-25
 
-**Next up for Sonnet:** Phase D resilience hardening (5 items, ~8 hours total).
-After Phase D ships, Sonnet can execute Brief 15 with data alignment checks built in.
-Then Phase E design-first items await Opus review.
+**Next up for Sonnet:** Phase G items G3–G7 (dashboard UX additions).
+When a design question blocks progress, flag to Opus (e.g., Energy/Commodities bucket above).
