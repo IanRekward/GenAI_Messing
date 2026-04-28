@@ -145,7 +145,7 @@ preserve Ian's numbering when committing so the trail back to this list is clear
   each attempt to `data/alert_log.jsonl`. 3 new tests + 2 regression checks
   (single history row, single alert call).
 
-- [ ] **G2 — Name "Weighted Average" section + plain-English explainer**
+- [x] **G2 — Name "Weighted Average" section + plain-English explainer** *(commit 46dc1b5)*
   Identify the section Ian is referring to (likely the composite card showing
   the 0–100 score, or the per-bucket weighted contribution row).
   - Give it an explicit heading (e.g. "COMPOSITE — WEIGHTED AVERAGE OF 11 BUCKETS").
