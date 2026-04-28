@@ -2164,3 +2164,367 @@ level.
   band/composite alert machinery. Bucket-specific alert thresholds can be
   added later if a real episode shows the bucket-level signal mattering
   enough to warrant its own escalation rule.
+
+---
+
+## Brief 20 — Expand free wire-service news coverage
+
+**Dependencies:** None. Pure expansion of `src/news.py`'s feed list plus
+config-extraction and dedup hygiene. No new external paid services, no
+scraping, no paywall bypass.
+
+**Problem:** `src/news.py:RSS_FEEDS` (lines 13–18) hardcodes only four feeds:
+Reuters businessNews, MarketWatch, Yahoo Finance, WSJ markets. Three concrete
+weaknesses:
+
+1. **Missing the highest-signal sources entirely.** Federal Reserve press
+   releases, Treasury press releases, BLS news releases (CPI/NFP), BEA news
+   releases (GDP/PCE), and ECB press releases are *the source of truth* for
+   most market-moving macro news — every wire-service story about CPI is a
+   summary of the BLS release that's already public. We're reading
+   downstream when the upstream feed is free, official, and never breaks.
+2. **Underusing the wire services that already lead publishers.** Reuters and
+   AP wires are upstream of WSJ/FT/Bloomberg for most breaking news. We have
+   one Reuters feed (businessNews); we're missing Reuters Markets, Reuters
+   World (for geopolitical context that feeds the `iran_trigger` and global
+   spillover bucket), and AP Business entirely.
+3. **No source attribution in dashboard output.** `get_news_brief()` returns
+   `[{text, url}]` with no indication of which feed each headline came from.
+   You can't quickly judge "is this a Fed press release or a MarketWatch
+   summary" — both render identically.
+
+Additional code-level issues that come into scope when we touch this file:
+
+- **Feed list lives in code, not config.** Adding/removing a feed requires a
+  code change, against this project's "config is authoritative" principle
+  (CLAUDE.md). Should live in `config/news_feeds.yaml`.
+- **No headline dedup.** Same story carried by Reuters, AP, and a publisher
+  burns Haiku tokens three times and clutters the brief.
+- **Silent feed deaths.** A feed that 404s or returns empty is swallowed by
+  the existing `try/except: continue` (line 47–48). When a publisher kills
+  an RSS endpoint, we never know.
+
+**Design decisions — opinionated and locked:**
+
+1. **Move `RSS_FEEDS` to `config/news_feeds.yaml`**, matching the project's
+   data-driven config pattern. Each feed entry has `name`, `url`,
+   `category`, and `max_items`. Ian can add/remove feeds without a code
+   change.
+2. **Three-tier feed taxonomy** in the YAML, used for dedup priority and
+   downstream weighting decisions:
+   - `official` — Fed, Treasury, BLS, BEA, ECB, NY Fed press releases.
+     Highest signal density per item; never paywalled; structurally stable.
+   - `wire` — Reuters, AP. Upstream of most publisher coverage.
+   - `publisher` — MarketWatch, Yahoo, WSJ headlines (free RSS surface),
+     Bloomberg free feeds, FT Alphaville. Aggregation and commentary.
+3. **Per-feed `max_items`**, not the current global constant of 12:
+   - `official` feeds: 12 (publish less, every item matters)
+   - `wire` feeds: 12 (existing default)
+   - `publisher` feeds: 8 (often noisy with stock-mover headlines we filter
+     out anyway)
+4. **Headline dedup by Jaccard similarity ≥ 0.7** on token sets (4+ chars,
+   lowercase). When duplicates exist, keep the one from the highest-tier
+   source (`official` > `wire` > `publisher`). This both reduces Haiku token
+   spend and ensures the displayed source is the most authoritative.
+5. **Source attribution end-to-end.** `_pull_headlines()` returns
+   `[{title, url, source, category}]`; `get_news_brief()` returns
+   `[{text, url, source}]`; dashboard renders `Source: Headline text`
+   format with the source bolded or muted (Sonnet's choice — match
+   existing typography in `dashboard.py`).
+6. **Feed health goes to the existing audit log.** When a feed returns 0
+   entries or raises, append one line to `data/alert_log.jsonl` with
+   `{type: "news_feed_failure", feed: name, reason: str, ts: ...}`. Reuses
+   Brief 11 infrastructure; no new file. Don't fail the run on any single
+   feed's death — keep the existing graceful-degradation pattern.
+7. **Validate `news_feeds.yaml` at startup.** Add `_validate_news_feeds()`
+   to `src/config.py`'s `validate_config()` chain. Schema: at least one
+   feed; each feed has all four fields; `category` ∈ {`official`, `wire`,
+   `publisher`}; `max_items` is a positive int. The pre-commit hook then
+   catches schema breakage before deploy.
+8. **Don't parallelize fetch.** `feedparser` is synchronous; the round-trip
+   cost across 8–12 feeds at 7:30 AM is ~10s, well within the dashboard's
+   budget. Adding `aiohttp` or threadpool here is premature.
+9. **Don't add feed-level signal weighting yet.** Tempting to weight
+   `official` headlines higher when feeding Haiku, but that's empirical
+   tuning that needs weeks of operation to validate. Ship the breadth
+   expansion first; weighting is a follow-on if it proves needed.
+
+**Files to change:**
+
+1. **NEW `config/news_feeds.yaml`** — starter feed set. Sonnet should
+   `feedparser.parse()` each URL once before committing and drop any that
+   return zero entries; document the drop in the commit message. URLs
+   below are best-known-good as of 2026-04-27 but RSS endpoints move
+   without notice. Where a publisher's RSS landing page lists current
+   URLs, prefer that over hardcoded guesses:
+
+   ```yaml
+   # Free RSS feeds for news_brief headline ingestion.
+   # Categories used for dedup priority and per-feed item caps:
+   #   official  — government / central bank press releases (highest signal)
+   #   wire      — Reuters, AP, etc. (upstream of most publishers)
+   #   publisher — aggregation, commentary, paywalled-body headlines
+
+   feeds:
+     # --- Official ---
+     - name: "Fed Press Releases"
+       url: "https://www.federalreserve.gov/feeds/press_all.xml"
+       category: official
+       max_items: 12
+     - name: "Fed Speeches"
+       url: "https://www.federalreserve.gov/feeds/speeches.xml"
+       category: official
+       max_items: 12
+     - name: "BLS News Releases"
+       url: "https://www.bls.gov/feed/news_release/rss.xml"
+       category: official
+       max_items: 12
+     - name: "BEA News"
+       url: "https://www.bea.gov/news/rss.xml"
+       category: official
+       max_items: 12
+     - name: "Treasury Press Releases"
+       url: "https://home.treasury.gov/news/press-releases/feed"
+       category: official
+       max_items: 12
+     - name: "ECB Press Releases"
+       url: "https://www.ecb.europa.eu/rss/press.html"
+       category: official
+       max_items: 12
+
+     # --- Wire ---
+     - name: "Reuters Business"
+       url: "https://feeds.reuters.com/reuters/businessNews"
+       category: wire
+       max_items: 12
+     - name: "Reuters World"
+       url: "https://feeds.reuters.com/Reuters/worldNews"
+       category: wire
+       max_items: 12
+     - name: "AP Business"
+       url: "https://feeds.apnews.com/rss/apf-business"
+       category: wire
+       max_items: 12
+
+     # --- Publisher ---
+     - name: "MarketWatch"
+       url: "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/"
+       category: publisher
+       max_items: 8
+     - name: "Yahoo Finance"
+       url: "https://finance.yahoo.com/rss/topstories"
+       category: publisher
+       max_items: 8
+     - name: "WSJ Markets"
+       url: "https://www.wsj.com/xml/rss/3_7085.xml"
+       category: publisher
+       max_items: 8
+     - name: "FT Alphaville"
+       url: "https://www.ft.com/alphaville?format=rss"
+       category: publisher
+       max_items: 8
+   ```
+
+   At minimum 8 feeds must validate live. If fewer than 8 do, halt the
+   brief and surface the failures — under-shipping is fine; shipping a
+   list dominated by dead URLs isn't.
+
+2. **`src/news.py`** — three changes:
+
+   a. **Replace the `RSS_FEEDS` constant** with a loader:
+
+   ```python
+   def _load_news_feeds() -> list[dict]:
+       path = Path("config/news_feeds.yaml")
+       data = yaml.safe_load(path.read_text(encoding="utf-8"))
+       return data.get("feeds", [])
+   ```
+
+   b. **Rewrite `_pull_headlines()`** to use per-feed `max_items`, attach
+   source/category metadata, and log feed health:
+
+   ```python
+   def _pull_headlines() -> list[dict]:
+       items: list[dict] = []
+       for feed in _load_news_feeds():
+           try:
+               parsed = feedparser.parse(feed["url"])
+               if not parsed.entries:
+                   _log_feed_failure(feed["name"], "0 entries returned")
+                   continue
+               for entry in parsed.entries[:feed["max_items"]]:
+                   title = entry.get("title", "").strip()
+                   link  = entry.get("link", "").strip()
+                   if title:
+                       items.append({
+                           "title":    title,
+                           "url":      link,
+                           "source":   feed["name"],
+                           "category": feed["category"],
+                       })
+           except Exception as exc:
+               _log_feed_failure(feed["name"], str(exc))
+               continue
+       return _dedup_headlines(items)
+   ```
+
+   c. **Add `_dedup_headlines()` and `_log_feed_failure()`** helpers:
+
+   ```python
+   _CATEGORY_RANK = {"official": 0, "wire": 1, "publisher": 2}
+
+   def _title_tokens(title: str) -> set[str]:
+       return {w.lower() for w in re.findall(r"\b\w{4,}\b", title)}
+
+   def _dedup_headlines(items: list[dict], threshold: float = 0.7) -> list[dict]:
+       kept: list[dict] = []
+       kept_tokens: list[set[str]] = []
+       for item in items:
+           toks = _title_tokens(item["title"])
+           if not toks:
+               continue
+           dup_idx = -1
+           for i, prior_toks in enumerate(kept_tokens):
+               denom = len(toks | prior_toks)
+               if denom and len(toks & prior_toks) / denom >= threshold:
+                   dup_idx = i
+                   break
+           if dup_idx == -1:
+               kept.append(item)
+               kept_tokens.append(toks)
+           else:
+               # Replace with higher-priority source if applicable.
+               if _CATEGORY_RANK[item["category"]] < _CATEGORY_RANK[kept[dup_idx]["category"]]:
+                   kept[dup_idx] = item
+                   kept_tokens[dup_idx] = toks
+       return kept
+
+   def _log_feed_failure(name: str, reason: str) -> None:
+       try:
+           from src.alerts import _log_alert  # reuse Brief 11 audit channel
+           _log_alert({
+               "type":   "news_feed_failure",
+               "feed":   name,
+               "reason": reason[:200],
+           })
+       except Exception:
+           pass  # never let logging kill the run
+   ```
+
+   d. **Update `get_news_brief()`** to thread `source` through to the
+   returned dicts: `[{text, url, source}]`. The Haiku prompt should also
+   show source per headline (e.g. `- [Reuters] Fed signals...`), so the
+   model can distinguish authority levels in its summary. Update the
+   `_SYSTEM` prompt to mention "prefer official-source items when
+   summarizing, but include important wire-service stories."
+
+3. **`src/dashboard.py`** — find where `get_news_brief()` output is rendered
+   (search for the news brief section header). Add source label rendering:
+   change the line that emits each bullet to include `<span class="news-source">{source}</span> {text}` (or whatever
+   class name fits the existing CSS palette — Sonnet picks). If no
+   matching style exists, add a small muted-grey class. Source label is
+   shown only when non-empty.
+
+4. **`src/config.py`** — add to `validate_config()`:
+
+   ```python
+   _VALID_NEWS_CATEGORIES = frozenset({"official", "wire", "publisher"})
+
+   def _validate_news_feeds() -> None:
+       path = Path("config/news_feeds.yaml")
+       if not path.exists():
+           return  # absence is OK — news.py will emit empty brief
+       data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+       feeds = data.get("feeds", [])
+       if not feeds:
+           raise ConfigError("config/news_feeds.yaml has no 'feeds' entries.")
+       for i, f in enumerate(feeds):
+           for k in ("name", "url", "category", "max_items"):
+               if k not in f:
+                   raise ConfigError(f"news_feeds.yaml entry {i} missing field '{k}'.")
+           if f["category"] not in _VALID_NEWS_CATEGORIES:
+               raise ConfigError(
+                   f"news_feeds.yaml entry '{f['name']}' has invalid category "
+                   f"'{f['category']}' — must be one of {sorted(_VALID_NEWS_CATEGORIES)}."
+               )
+           if not isinstance(f["max_items"], int) or f["max_items"] < 1:
+               raise ConfigError(
+                   f"news_feeds.yaml entry '{f['name']}' has invalid max_items "
+                   f"{f['max_items']!r} — must be a positive int."
+               )
+   ```
+
+   Wire it into `validate_config()`. The pre-commit hook then guards
+   against schema breakage.
+
+5. **NEW `tests/test_news_feeds.py`** — three focused tests:
+
+   - **`test_news_feeds_yaml_validates`** — load the actual
+     `config/news_feeds.yaml`, call `_validate_news_feeds()`, assert no
+     error. Acts as canary if Ian edits the YAML and breaks schema.
+   - **`test_dedup_keeps_highest_tier_source`** — feed two synthetic items
+     with identical titles, one `category: publisher` and one
+     `category: official`. Assert `_dedup_headlines()` returns one item
+     and its `source` is from the official-tier feed.
+   - **`test_dedup_below_threshold_keeps_both`** — two items with low
+     token overlap (e.g. titles that share zero 4+ char words). Assert
+     both kept.
+
+6. **`config/series_cadence.yaml`, `config/tooltips.yaml`** — no changes
+   needed.
+
+**Edge cases:**
+
+- A feed URL is valid but the publisher started returning HTML instead of
+  XML (rare but happens) → `feedparser.parse()` returns an object with
+  empty `.entries`. Handled by the `if not parsed.entries` check; logs
+  failure and continues.
+- A YAML edit introduces a duplicate `name` field → not currently caught
+  by validation. Not worth catching — duplicate names cause confusing
+  logs but don't break anything. Skip.
+- Dedup on near-empty titles (<2 tokens) → `_title_tokens` returns small
+  set, Jaccard denominator small, false-positive dedups likely. The
+  `if not toks: continue` guard handles zero-token; for 1-token titles,
+  accept the small false-positive rate (very few 1-token financial
+  headlines exist).
+- Audit log file missing → `_log_alert` from `src/alerts.py` already
+  handles this gracefully (see Brief 11). The wrapping `try/except`
+  belt-and-suspenders is intentional — feed health logging must never
+  break the run.
+- All feeds dead → existing graceful path: dashboard shows "(no news
+  brief)" or whatever the current empty-list rendering does.
+
+**Success criteria:**
+
+- `pytest tests/ -q` passes.
+- Pre-commit hook runs `validate_config()` cleanly with the new YAML.
+- `python run_dashboard.py --no-cache --no-alerts --quiet` succeeds and
+  renders the news brief section with at least one source label visible
+  (look for "Fed", "Reuters", "AP", or one of the configured names).
+- `data/alert_log.jsonl` has at most a small number of `news_feed_failure`
+  entries (some feeds will inevitably 404 — that's expected and is the
+  signal value of having the audit log).
+- Manually inspect Haiku output: at least one bullet should reference
+  content from an official-tier source over the next ~5 dashboard runs
+  if there's relevant Fed/BLS/Treasury activity.
+- Total feeds in active rotation: ≥ 8 (vs current 4). If fewer than 8
+  validate live, halt and surface failures rather than ship a stub.
+
+**Non-goals:**
+
+- **Article body fetching of any kind.** This brief is headlines + dek
+  only. No scraping, no readability extraction.
+- **Paywall bypass tooling** (12ft.io, BPC techniques). Explicitly
+  rejected in the design conversation that produced this brief —
+  legal/operational risk exceeds marginal signal value vs free wires.
+- **Per-source signal weighting** in scoring or alerts. Tempting but
+  needs weeks of empirical tuning data; revisit only if a real episode
+  shows the breadth expansion isn't enough.
+- **Email-based ingestion** of Ian's WSJ/FT subscriptions (the original
+  "Brief B" alternative). Not declined permanently — just deferred until
+  Brief 20 ships and we see whether the breadth expansion alone is
+  sufficient.
+- **Async/parallel feed fetching.** ~10s sync round-trip is well within
+  budget for a 7:30 AM run.
+- **A new dashboard section.** Brief 20 enriches the existing news brief
+  in place; no new card.

@@ -115,6 +115,19 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Brief 10C — Apply regime weights at score time** *(shipped — commit pending)*
   regime_weights: block in weights.yaml (Option A conservative multipliers, enabled=false). _apply_regime_weights() in scoring.py: computes both composite_naive and composite_regime_weighted every run. Dashboard shows "Regime preview: XX (disabled)" side-by-side with composite. Flip enabled: true after review. 3 new tests, 195/195 passing.
 
+- [ ] **Brief 20 — Expand free wire-service news coverage** *(design locked 2026-04-27, ready for Sonnet)*
+  Full brief in [ROADMAP.md](ROADMAP.md#brief-20--expand-free-wire-service-news-coverage).
+  Replaces hardcoded 4-feed `RSS_FEEDS` constant with `config/news_feeds.yaml`
+  (≥8 feeds across `official` / `wire` / `publisher` tiers — Fed, Treasury,
+  BLS, BEA, ECB press releases plus Reuters World, AP Business, FT Alphaville).
+  Adds Jaccard-similarity dedup (keeps highest-tier source on collision),
+  source attribution end-to-end (Haiku prompt + dashboard render), per-feed
+  `max_items`, feed-health logging to `data/alert_log.jsonl`, and
+  `_validate_news_feeds()` startup validation. Intentionally rejects paywall
+  bypass tooling (12ft.io / BPC) — see brief's non-goals for the rationale.
+  Three new tests; Sonnet must validate each feed URL with `feedparser.parse()`
+  before committing and drop any that return 0 entries.
+
 - [ ] **Brief 19 — Commodities & Energy bucket diversification** *(design locked 2026-04-27, ready for Sonnet)*
   Full brief in [ROADMAP.md](ROADMAP.md#brief-19--commodities--energy-bucket-diversification).
   Drops `oil_vol` (redundant with VIX/MOVE in real stress); adds `crack_spread_321`
@@ -131,8 +144,15 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 ### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 
-- [ ] 🅾️ **Paywalled news sources** *(user scope call required)*
-  Which of WSJ / FT / Bloomberg does Ian actually want? What's the minimum-viable integration (RSS where allowed, archive links, nothing questionable)? Legal / ToS review required before any scraping. Not an Opus or Sonnet task until Ian picks the feeds.
+- [ ] 🅾️ **Paywalled news sources** *(user scope call required — partially superseded 2026-04-27)*
+  **Update:** Opus design pass 2026-04-27 produced **Brief 20 (free
+  wire-service expansion)** as the first move — explicitly rejecting paywall
+  bypass tooling (12ft.io / Bypass Paywalls Clean) on legal + operational +
+  marginal-signal grounds. Ship Brief 20 first; revisit paywalled-source
+  integration only if a real market episode shows the breadth expansion
+  isn't enough. The original "Brief B" alternative (manual override channel
+  via `data/manual_news.json` for Ian's existing WSJ/FT subscriptions)
+  remains available as a follow-on if needed.
 
 - [ ] **Portfolio integration** *(user scope call required)*
   Fidelity API or CSV of position holdings for personalized recommendations. Ian needs to decide: (a) Fidelity API vs CSV input, (b) fields needed (symbol, quantity, cost basis?), (c) position-level alerts vs high-level commentary. Not an Opus or Sonnet task until Ian answers these.
