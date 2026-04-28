@@ -785,22 +785,35 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
 
     composite_card = f"""
 <div class="composite" style="background:{band_bg};border-left:6px solid {band_color}">
-  <div>
-    <div class="score-num" style="color:{band_color}">{composite_score_html}</div>
-    <div class="score-sub">out of 100</div>
-  </div>
-  <div>
-    <div class="score-band" style="color:{band_color}">{band_label_html}</div>
-    {mom_html}
-    {shock_html}
-    {regime_html}
-    {vix_regime_html}
-    {regime_sidebyside_html}
-    {regime_adj_html}
-    <div class="tc-row">
-      <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
-      <span class="tc"><b style="color:#ff8800">{scoring['orange_count']}</b> orange</span>
-      <span class="tc"><b style="color:#ffcc00">{scoring['yellow_count']}</b> yellow</span>
+  <div style="width:100%">
+    <div style="font-weight:600;color:#8b949e;font-size:.85rem;margin-bottom:8px">COMPOSITE — WEIGHTED AVERAGE OF 11 BUCKETS</div>
+    <div style="display:flex;align-items:center;gap:24px">
+      <div>
+        <div class="score-num" style="color:{band_color}">{composite_score_html}</div>
+        <div class="score-sub">out of 100</div>
+      </div>
+      <div style="flex:1">
+        <div class="score-band" style="color:{band_color}">{band_label_html}</div>
+        {mom_html}
+        {shock_html}
+        {regime_html}
+        {vix_regime_html}
+        {regime_sidebyside_html}
+        {regime_adj_html}
+        <div class="tc-row">
+          <span class="tc"><b style="color:#ff4444">{scoring['red_count']}</b> red</span>
+          <span class="tc"><b style="color:#ff8800">{scoring['orange_count']}</b> orange</span>
+          <span class="tc"><b style="color:#ffcc00">{scoring['yellow_count']}</b> yellow</span>
+        </div>
+        <details style="margin-top:12px;cursor:pointer">
+          <summary style="color:#6e7681;font-size:.85rem;user-select:none"><b>What does this mean?</b></summary>
+          <div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363d;font-size:.85rem;line-height:1.5;color:#c9d1d9">
+            <p style="margin:0 0 6px 0"><b>The 0–100 score</b> measures market stress across 11 signal categories: equity volatility, credit spreads, yield curve, rates, liquidity, commodities, bonds, sentiment, economic momentum, spillover effects, and market breadth. 0 = all calm; 100 = severe stress across the board.</p>
+            <p style="margin:0 0 6px 0"><b>The band</b> (green/yellow/orange/red) reflects your current position in the stress distribution. Green = historically calm; yellow = elevated but not alarming; orange = material stress; red = critical conditions.</p>
+            <p style="margin:0"><b>How to use it:</b> This score is a summary, not a signal. Use it to think through your positioning and risk: Are you comfortable with the stress level? Does your portfolio match your conviction? What's moving? Are you missing something? Never take action on the score alone—always reconcile it with your own view and the conditions you see.</p>
+          </div>
+        </details>
+      </div>
     </div>
   </div>
 </div>"""
