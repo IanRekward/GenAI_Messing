@@ -1864,3 +1864,303 @@ HTML — they already surface the information correctly post-remediation.
 - `send_alerts()` is invoked at most once per run, against the
   post-remediation scoring (regression check — alerts must not fire on
   pre-remediation 50.0 fallbacks).
+
+---
+
+## Brief 19 — Commodities & Energy bucket diversification
+
+**Dependencies:** None. All four target tickers are live on yfinance (`CL=F`,
+`RB=F`, `HO=F`, `NG=F`, `HG=F`, `GC=F`). Existing `commodities` bucket structure
+is config-driven — no scoring.py code references `oil_vol` by name.
+
+**Problem:** The `commodities` bucket is misnamed and undiversified. Both
+indicators (`wti_crude` 0.55, `oil_vol` 0.45) derive from the same `CL=F`
+contract, so the bucket is 100% WTI exposure with two views of it. This creates
+two distinct weaknesses:
+
+1. **No real diversification within the bucket.** If WTI is stable but natural
+   gas is spiking on European supply contagion, or copper is collapsing on
+   growth fears, the bucket reads "calm." The bucket label says "Commodities &
+   Energy" but the contents are one commodity.
+2. **No paper-vs-physical signal.** Flat WTI captures futures-market dislocation
+   but not whether refiners can keep up — i.e., whether downstream products
+   (gasoline, distillate) are actually pricing the crude move through.
+   Hurricanes, refinery fires, and product embargoes (e.g. Russian distillate
+   restrictions) widen the *crack spread* before they meaningfully move flat
+   WTI. We currently miss this.
+
+Additionally, `oil_vol` (1-month realized vol of CL=F) is largely redundant with
+`vix` and `move_index` during real stress episodes — it co-moves with broad
+risk-off vol regimes but rarely contributes independent signal at the bucket
+level.
+
+**Design decisions — opinionated and locked:**
+
+1. **Drop `oil_vol`.** Its independent signal is weak in stress regimes where
+   it would matter most. Reuse the freed weight to add genuinely orthogonal
+   commodities exposure. Removal is config-only — no scoring.py references.
+2. **Add three new indicators to `commodities`:**
+   - `crack_spread_321` — 3-2-1 crack spread, $/bbl. Captures Ian's
+     paper-vs-physical intuition in its standard industry form: the margin
+     between crude (input) and refined products (what gets sold to consumers).
+     Wide crack = refining bottleneck = real-economy oil stress that flat
+     futures don't show.
+   - `natgas` — Henry Hub front-month YoY % change. Independent supply-shock
+     vector (winter cold snaps, Europe LNG contagion, storage anomalies). YoY
+     transform mirrors the `cpi_yoy` pattern — strips out "what's the new
+     normal price" noise and leaves the stress signal.
+   - `copper_gold_ratio` — HG=F / GC=F ratio. Classic growth/risk-off proxy.
+     Falls when the market prices recession (industrial demand ↓, safe-haven
+     demand ↑). Independent of energy entirely — gives the bucket actual
+     breadth.
+3. **Bucket weight redistribution:**
+   - **Old:** wti_crude 0.55, oil_vol 0.45
+   - **New:** wti_crude 0.30, crack_spread_321 0.25, natgas 0.25,
+     copper_gold_ratio 0.20
+   - Rationale: WTI stays the largest single exposure (it's still the headline
+     energy signal). Crack spread gets meaningful weight as the
+     paper-vs-physical signal Ian asked for. Natgas and copper/gold get
+     enough weight to actually move the bucket when their domain is in stress
+     while WTI is calm.
+4. **Bucket weight in composite stays at 0.07.** Cross-bucket reweighting is
+   `recalibrate.py`'s job, not this brief's.
+5. **Keep the bucket label "Commodities & Energy".** Rename was tempting but
+   adds no signal — the bucket genuinely contains both energy (WTI, crack
+   spread, natgas) and a non-energy commodity (copper). Existing dashboard
+   templates, alert references, and history columns all use `commodities` as
+   the key — leave them.
+6. **`crack_spread_321`: type `computed`, handler `crack_spread_321`.**
+   Formula in $/bbl: `(2 × RBOB × 42 + 1 × ULSD × 42) / 3 - WTI`. RBOB and
+   ULSD (HO=F) are quoted $/gal, WTI in $/bbl, 42 gal/bbl conversion is
+   correct. `direction: high`, `invert: false`.
+7. **`copper_gold_ratio`: type `computed`, handler `copper_gold_ratio`.**
+   Simple ratio HG=F / GC=F (units cancel meaningfully — copper $/lb over
+   gold $/oz, treated as a unitless rank-able series). Lower = stress, so
+   `invert: true`, `direction: low`.
+8. **`natgas`: type `yfinance` ticker `NG=F` with `transform: yoy_series`.**
+   No new computed handler needed — reuses existing `_TRANSFORMS["yoy_series"]`.
+   `direction: high`, `invert: false`.
+9. **Threshold bands** are starting estimates calibrated against rough
+   long-run distributions. After ~2 weeks of live data, re-check actual
+   percentile placement and tune if any band is unreachable or always-on:
+   - `crack_spread_321` (direction: high, $/bbl):
+     yellow 35, orange 45, red 55
+   - `natgas` (direction: high, % YoY):
+     yellow 30, orange 60, red 100
+   - `copper_gold_ratio` (direction: low, raw ratio HG/GC):
+     yellow 0.0021, orange 0.0018, red 0.0015
+10. **No new alerts in this brief.** The existing band/composite alert
+    machinery picks up the new indicators automatically once they're scored.
+    Adding indicator-specific alerts is a follow-on if a bucket-level signal
+    proves useful.
+11. **History schema migration is automatic.** New `raw_commodities__*`
+    columns appear on first run; old `raw_commodities__oil_vol` will go
+    unwritten and read empty for new rows. This matches the established
+    pattern (no migration code needed; `log_run` writes whatever keys are
+    present).
+
+**Files to change:**
+
+1. **`config/weights.yaml`** — replace the entire `commodities` block:
+
+   ```yaml
+   commodities:
+     label: "Commodities & Energy"
+     weight: 0.07
+     indicators:
+       wti_crude:
+         label: WTI Crude Oil
+         weight: 0.30
+         source:
+           type: yfinance
+           ticker: "CL=F"
+         invert: false
+         unit: "$/bbl"
+       crack_spread_321:
+         label: "3-2-1 Crack Spread"
+         weight: 0.25
+         source:
+           type: computed
+           handler: crack_spread_321
+         invert: false
+         unit: "$/bbl"
+       natgas:
+         label: "Henry Hub Natural Gas (YoY)"
+         weight: 0.25
+         source:
+           type: yfinance
+           ticker: "NG=F"
+           transform: yoy_series
+         invert: false
+         unit: "%"
+       copper_gold_ratio:
+         label: "Copper / Gold Ratio"
+         weight: 0.20
+         source:
+           type: computed
+           handler: copper_gold_ratio
+         invert: true
+         unit: "ratio"
+   ```
+
+   Verify: bucket weight 0.07 unchanged; indicator weights sum to 1.0.
+
+2. **`src/scoring.py`** — add two handlers near `_handler_vix_term_structure`:
+
+   ```python
+   def _handler_crack_spread_321(key, cfg, env, manual, years):
+       wti  = fetch.fetch_yfinance_series("CL=F", env, years)
+       rbob = fetch.fetch_yfinance_series("RB=F", env, years)
+       ulsd = fetch.fetch_yfinance_series("HO=F", env, years)
+       combined = pd.concat(
+           [wti.rename("wti"), rbob.rename("rbob"), ulsd.rename("ulsd")],
+           axis=1,
+       ).dropna()
+       crack = (2 * combined["rbob"] * 42 + combined["ulsd"] * 42) / 3 - combined["wti"]
+       return float(crack.iloc[-1]), crack
+
+   def _handler_copper_gold_ratio(key, cfg, env, manual, years):
+       copper = fetch.fetch_yfinance_series("HG=F", env, years)
+       gold   = fetch.fetch_yfinance_series("GC=F", env, years)
+       combined = pd.concat(
+           [copper.rename("copper"), gold.rename("gold")], axis=1
+       ).dropna()
+       ratio = combined["copper"] / combined["gold"]
+       return float(ratio.iloc[-1]), ratio
+   ```
+
+   Register both in `COMPUTED_HANDLERS`:
+
+   ```python
+   COMPUTED_HANDLERS: dict = {
+       ...existing entries...,
+       "crack_spread_321":   _handler_crack_spread_321,
+       "copper_gold_ratio":  _handler_copper_gold_ratio,
+   }
+   ```
+
+3. **`src/config.py`** — in `KNOWN_INDICATOR_KEYS`:
+   - **Remove:** `"oil_vol"`
+   - **Add:** `"crack_spread_321"`, `"natgas"`, `"copper_gold_ratio"`
+
+4. **`config/thresholds.yaml`** — in the `# --- Commodities & Energy ---`
+   section:
+   - **Remove the entire `oil_vol:` block.**
+   - **Keep the `wti_crude:` block as-is.**
+   - **Add:**
+
+   ```yaml
+   crack_spread_321:           # 3-2-1 crack spread, $/bbl; wide = refining bottleneck
+     direction: high
+     yellow: 35.0
+     orange: 45.0
+     red: 55.0
+
+   natgas:                     # Henry Hub front-month YoY %; high = supply stress
+     direction: high
+     yellow: 30.0
+     orange: 60.0
+     red: 100.0
+
+   copper_gold_ratio:          # HG=F / GC=F; low = risk-off / growth fears
+     direction: low
+     yellow: 0.0021
+     orange: 0.0018
+     red: 0.0015
+   ```
+
+5. **`config/tooltips.yaml`** — under `indicators:`:
+   - **Remove the `oil_vol:` entry** (lines 97–98).
+   - **Add three new entries near `wti_crude:`:**
+
+   ```yaml
+   crack_spread_321:
+     tip: "3-2-1 crack spread ($/bbl): refining margin between crude (input) and gasoline + distillate (output). Standard industry stress metric. Wide crack = refiners can't keep up — hurricanes, refinery fires, product embargoes. Captures real-economy oil stress that flat WTI misses."
+   natgas:
+     tip: "Henry Hub natural gas front-month, YoY % change. Independent supply-shock vector — winter cold snaps, European LNG contagion, storage anomalies. YoY framing strips out 'new normal' price drift."
+   copper_gold_ratio:
+     tip: "Copper futures / gold futures (HG=F / GC=F). Classic growth-vs-fear proxy: copper rises with industrial demand, gold rises with safe-haven demand. Low ratio = market pricing recession. Lower readings = more stress."
+   ```
+
+6. **`tests/test_commodities_bucket.py`** — new file with three focused tests:
+
+   - **`test_crack_spread_321_arithmetic`** — Mock `fetch.fetch_yfinance_series`
+     to return synthetic series for `CL=F`, `RB=F`, `HO=F`. Use simple values
+     so the formula is hand-verifiable, e.g. WTI=[60,70,80], RBOB=[2.0,2.5,3.0]
+     ($/gal), ULSD=[2.0,2.5,3.0]. Expected crack on the last row:
+     `(2*3.0*42 + 1*3.0*42)/3 - 80 = 126 - 80 = 46.0`. Assert handler returns
+     `(46.0, series)` and series last value matches.
+
+   - **`test_copper_gold_ratio_arithmetic`** — Mock copper=[4.0, 5.0],
+     gold=[2000.0, 2000.0]. Expected ratio last = `5.0/2000.0 = 0.0025`.
+
+   - **`test_commodities_bucket_validates`** — Load
+     `config/weights.yaml` and `config/thresholds.yaml`, call
+     `validate_config()`, assert no error. Assert the `commodities` bucket
+     has exactly four indicators with keys
+     `{wti_crude, crack_spread_321, natgas, copper_gold_ratio}` and
+     indicator weights sum to 1.0 within `_WEIGHT_TOLERANCE`.
+
+   Mocking pattern: see `tests/test_vix_term_structure.py` for the canonical
+   shape (patch `fetch.fetch_yfinance_series`).
+
+**Edge cases:**
+
+- One leg of crack spread (RB=F, HO=F, CL=F) returns short or empty series →
+  `dropna()` after concat handles mismatched-date rows; if the result is
+  empty, `crack.iloc[-1]` raises and the outer scoring try/except falls back
+  to score 50.0 (existing pattern). Don't add bespoke error handling.
+- `NG=F` has < 1 year of data (shouldn't happen — series goes back 25+ years
+  on yfinance, but defensively): `yoy_series` will return NaN → outer
+  scoring catches → fallback 50.0.
+- HG=F or GC=F have weekend/holiday gaps that don't align → `dropna()` after
+  concat handles it. Do NOT `ffill` — would invent ratio data.
+- First post-deploy run will have no prior `raw_commodities__crack_spread_321`
+  history → percentile is computed against whatever the freshly-fetched
+  series provides (10y from yfinance, full history available immediately).
+  No backfill of `data/history.csv` needed.
+- `recalibrate.py` will see new indicator keys on its next run. Its design
+  is key-agnostic (operates on whatever keys are in the current config), so
+  no changes needed; the next recalibration cycle will naturally include
+  these.
+
+**Success criteria:**
+
+- `pytest tests/ -q` passes (198/198 with the three new tests, assuming
+  baseline 195/195 from CLAUDE.md memory note).
+- Pre-commit hook runs `validate_config()` cleanly after the YAML change.
+- `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
+  succeeds end-to-end. Inspect output:
+  - `commodities` bucket on the dashboard shows four rows (wti_crude,
+    crack_spread_321, natgas, copper_gold_ratio) with raw values and bands.
+  - The bucket header weight display shows the new split (30/25/25/20).
+  - Tooltips render on hover for all three new indicators.
+- `data/history.csv` newest row has non-empty
+  `raw_commodities__crack_spread_321`,
+  `raw_commodities__natgas`, and
+  `raw_commodities__copper_gold_ratio` columns;
+  `raw_commodities__oil_vol` is absent (or empty for new rows).
+- Composite score before/after change should differ only modestly — the
+  bucket weight in composite is unchanged at 0.07, and the new indicators
+  on a calm day should percentile to roughly mid-range. A composite swing
+  of more than ~3 points on a quiet day is suspicious; investigate.
+
+**Non-goals:**
+
+- **Brent-WTI spread.** Geographic dislocation signal; partially overlaps
+  with `global_spillover` thinking. Adds dimensionality without clear new
+  signal at the bucket level. Reconsider only if a future episode shows
+  WTI calm but Brent stressed and the composite missed it.
+- **Retail gasoline minus wholesale RBOB.** Marketing-margin noise; lags
+  crude by 2–6 weeks. Wrong tool for an early-warning dashboard.
+- **Bucket renaming.** "Commodities & Energy" still describes contents
+  accurately. Rename = pure churn (history schema, dashboard templates,
+  alert keys all use the `commodities` key already).
+- **Separate "consumer energy burden" display card.** Worth doing later as
+  its own non-scored panel (gasoline/diesel/heating-oil retail prices, for
+  Ian's qualitative read on real-economy energy cost). Track separately as
+  a future Phase H item — do NOT bundle into this brief.
+- **Per-indicator alert types.** New indicators inherit the existing
+  band/composite alert machinery. Bucket-specific alert thresholds can be
+  added later if a real episode shows the bucket-level signal mattering
+  enough to warrant its own escalation rule.

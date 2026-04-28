@@ -115,6 +115,17 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 - [x] **Brief 10C — Apply regime weights at score time** *(shipped — commit pending)*
   regime_weights: block in weights.yaml (Option A conservative multipliers, enabled=false). _apply_regime_weights() in scoring.py: computes both composite_naive and composite_regime_weighted every run. Dashboard shows "Regime preview: XX (disabled)" side-by-side with composite. Flip enabled: true after review. 3 new tests, 195/195 passing.
 
+- [ ] **Brief 19 — Commodities & Energy bucket diversification** *(design locked 2026-04-27, ready for Sonnet)*
+  Full brief in [ROADMAP.md](ROADMAP.md#brief-19--commodities--energy-bucket-diversification).
+  Drops `oil_vol` (redundant with VIX/MOVE in real stress); adds `crack_spread_321`
+  (3-2-1 crack — paper-vs-physical refining-margin signal, Ian's specific ask),
+  `natgas` (NG=F YoY — independent supply-shock vector), and `copper_gold_ratio`
+  (HG=F/GC=F — growth/risk-off proxy). New weights: wti_crude 0.30,
+  crack_spread_321 0.25, natgas 0.25, copper_gold_ratio 0.20. Bucket weight in
+  composite stays 0.07. Two new computed handlers, one yfinance ticker with
+  yoy_series transform, three new threshold blocks, three new tooltips, three
+  new tests. Bucket label stays "Commodities & Energy".
+
 - [ ] **Regime-weights review checkpoint** *(due 2026-05-30)*
   Run `python -m src.recalibrate --regime` and check history.csv for regime distribution and composite vs composite_naive divergence. Decision criteria: (a) at least one high-regime episode where composite_regime > composite_naive and divergence made sense, (b) IC table still shows rates_curve and inflation positive in high regime, (c) no frequent regime flapping. If criteria met, flip `regime_weights.enabled: true` in config/weights.yaml and tell Sonnet to commit.
 
@@ -289,12 +300,13 @@ and requires Opus passes before Sonnet executes.
 
 ## Design questions pending Opus input
 
-**Energy/Commodities bucket — paper vs. real prices** *(flagged 2026-04-27)*
-Current bucket (Commodities & Energy) only measures futures-based stress (WTI crude, oil 1M vol).
-This captures speculative/systemic stress but not real-economy impact. Ian noted: futures move ≠ what consumers pay.
-**Design question:** Should bucket include spot prices (gasoline, diesel, jet fuel) alongside or instead of futures?
-If yes: (a) add as separate indicators or reweight existing? (b) does "energy cost stress to economy" change the purpose?
-**Action:** Opus designs; Sonnet executes.
+**Energy/Commodities bucket — paper vs. real prices** *(flagged 2026-04-27, resolved 2026-04-27)*
+~~Original ask: should bucket include spot gasoline/diesel/jet fuel?~~
+**Resolved as Brief 19** in ROADMAP.md. Crack spread (3-2-1) captures Ian's
+paper-vs-physical intuition more cleanly than retail spot prices, and the
+bucket is simultaneously diversified beyond pure WTI exposure (added natgas,
+copper/gold). Real-economy "consumer energy burden" deferred to a future
+non-scored display panel. See Phase E for the executable brief.
 
 ---
 
