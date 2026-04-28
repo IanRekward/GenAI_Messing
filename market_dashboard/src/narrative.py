@@ -111,6 +111,11 @@ def generate_narrative(scoring: dict, history_summary: dict, env: dict) -> tuple
         )
         raw = msg.content[0].text.strip()
         try:
+            # Strip markdown code fences if present (```json ... ```)
+            if raw.startswith("```"):
+                raw = raw.split("```")[1].strip()
+                if raw.startswith("json"):
+                    raw = raw[4:].strip()
             parsed = json.loads(raw)
             expert = parsed.get("expert", raw)
             layman = parsed.get("layman", "")
