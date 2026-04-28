@@ -133,7 +133,7 @@ items 2/3/7 cluster naturally as a "naming + plain-English layer" batch; items 4
 are small ordering/link fixes; item 6 is a content-authoring brief. Sonnet should
 preserve Ian's numbering when committing so the trail back to this list is clear.
 
-- [ ] **G1 — Stale data + data quality auto-remediation** *(Brief 17 v2 in ROADMAP.md — design locked, ready for Sonnet)*
+- [x] **G1 — Stale data + data quality auto-remediation** *(Brief 17 v2 in ROADMAP.md — design locked, ready for Sonnet)* *(commit 13a9beb)*
   Full brief in ROADMAP.md. **Read v2 only — v1 had three load-bearing errors
   (wrong function name, unsafe pipeline placement, dispatch in wrong layer)
   that Opus corrected in v2.** Summary: after `annotate_results()` and
