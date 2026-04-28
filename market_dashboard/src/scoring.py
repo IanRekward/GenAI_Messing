@@ -104,6 +104,11 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
     src = cfg.get("source", {})
     stype = src.get("type")
 
+    # Remediation bypass (Brief 17): force-refresh stale/failed indicators
+    remediation_keys = env.get("_remediation_keys", set())
+    if key in remediation_keys:
+        env = {**env, "CACHE_HOURS": "0"}
+
     if stype == "manual" or cfg.get("manual"):
         return float(manual.get(key, 0)), None
 

@@ -41,6 +41,29 @@ from src.history import (
 )
 
 
+def _indicator_source_type(weights: dict, key: str) -> str:
+    """Walk weights.yaml structure to find an indicator's source type; return '' if missing."""
+    for bucket_data in weights.get("buckets", {}).values():
+        if key in bucket_data.get("indicators", {}):
+            ind_cfg = bucket_data["indicators"][key]
+            return ind_cfg.get("source", {}).get("type", "")
+    return ""
+
+
+def _log_remediation(indicator: str, outcome: str, reason: str) -> None:
+    """Log a remediation attempt to data/alert_log.jsonl."""
+    import json
+    Path("data").mkdir(exist_ok=True)
+    with open("data/alert_log.jsonl", "a") as f:
+        f.write(json.dumps({
+            "ts": datetime.now().isoformat(timespec="seconds"),
+            "event_type": "remediation_attempt",
+            "indicator": indicator,
+            "outcome": outcome,
+            "reason": reason,
+        }) + "\n")
+
+
 def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
     """Copy dashboard.html to _genai_tmp/docs/index.html and push to GitHub."""
     genai_tmp = Path(__file__).resolve().parent.parent / "_genai_tmp"
@@ -120,7 +143,40 @@ def main():
         print("\n[2/5] Evaluating triggers...")
     scoring = annotate_results(scoring, thresholds)
 
-    # Log to history before alerts (so chart includes current run)
+    # ── Stale data + DQ remediation (Brief 17) ─────────────────────────
+    stale_keys = set(scoring.get("stale_indicators", []))
+    failed_keys = {
+        ikey
+        for bdata in scoring["buckets"].values()
+        for ikey, ind in bdata["indicators"].items()
+        if ind.get("percentile") is None
+    }
+    # Exclude computed indicators (their fetch is derived, can't force-refresh)
+    remediation_keys = {
+        k for k in (stale_keys | failed_keys)
+        if _indicator_source_type(weights, k) != "computed"
+    }
+
+    if remediation_keys:
+        reasons = {k: ("stale" if k in stale_keys else "percentile_none")
+                   for k in remediation_keys}
+        env_r = {**env, "_remediation_keys": remediation_keys}
+        scoring = compute_composite(weights, env_r, manual)
+        scoring = annotate_results(scoring, thresholds)
+
+        # Determine outcome per key
+        still_stale = set(scoring.get("stale_indicators", []))
+        still_failed = {
+            ikey for bdata in scoring["buckets"].values()
+            for ikey, ind in bdata["indicators"].items()
+            if ind.get("percentile") is None
+        }
+        still_broken = still_stale | still_failed
+        for k in remediation_keys:
+            outcome = "failed" if k in still_broken else "success"
+            _log_remediation(k, outcome, reasons[k])
+
+    # Log to history (must run AFTER remediation so history.csv reflects fresh data)
     if not args.quiet:
         print("\n[3/5] Logging to history...")
     log_run(scoring)
