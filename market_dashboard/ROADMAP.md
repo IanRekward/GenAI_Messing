@@ -2528,3 +2528,609 @@ Additional code-level issues that come into scope when we touch this file:
   budget for a 7:30 AM run.
 - **A new dashboard section.** Brief 20 enriches the existing news brief
   in place; no new card.
+
+---
+
+## Brief 21 — Codebase optimization pass
+
+**Dependencies:** None. All items below are surgical and independent — Sonnet
+can ship them in any order, or split into multiple commits.
+
+**Problem:** The codebase has accumulated real cruft and structural drift over
+the past months as Briefs 1–17 + 10A/B/C + 16 layered features on. This pass
+is the prioritized punch list of items worth fixing *before* the next round of
+features (Phase G remainder, Briefs 19/20, plus future briefs). The findings
+below are ranked by risk/correctness × value/effort. P0 items have observable
+correctness or observability gaps; P1 are DRY/structural improvements that
+compound over future work; P2 are small wins.
+
+Each item is self-contained — Sonnet should commit them individually with
+the brief number suffix (e.g. `Brief 21A — backtest indicator gap`).
+
+---
+
+### P0 — Correctness / observability gaps
+
+#### 21A — Backtest is missing six active production indicators
+
+**File:** `src/backtest.py` (specifically `_IND_TO_SERIES` lines 144–164,
+plus `_fetch_raw` and `_build_derived`)
+
+**Diagnosis:** The backtest engine maps only 19 indicators to derived series.
+The following live production indicators are silently absent from the
+backtest output and therefore from `recalibrate.py`'s IC measurements:
+
+- `vix_term_structure` (Brief 16, shipped)
+- `move_index`
+- `cnn_fear_greed` (CNN F&G launch)
+- `treasury_auction_stress`
+- `sector_breadth`
+- `spx_200dma_distance`
+
+Effect: when `recalibrate.py` calls `_indicator_ic_series` on the backtest
+CSVs, these indicators have no `__score` column → `ic_recent` and `ic_hist`
+are NaN → the recalibrator falls into the "keep (no recent/hist data)"
+silent-pass branch (lines 191–196). They never get IC validated, never get
+weight-adjusted, and we have no quantitative evidence whether they're
+helping or hurting the composite.
+
+**Fix:** Add point-in-time fetch + derivation for each missing indicator:
+
+- `vix_term_structure`: needs `^VIX3M` fetched (≥18 years available); ratio
+  `vix / vix3m`. Add to `_IND_TO_SERIES`. New entry `_AVAIL["vix_term_structure"] = "2008-04-01"` (VIX3M start).
+- `move_index`: yfinance ticker `^MOVE`. Add directly.
+- `cnn_fear_greed`: no historical series available outside the live cache
+  (CNN does not expose pre-2022 data via API). Mark as `_MANUAL`-equivalent
+  in backtest — set raw=50, pct=50, score=50 for all dates (i.e. neutral).
+  Document this in a comment so the IC table is not misleading.
+- `treasury_auction_stress`: TreasuryDirect search API does provide
+  historical auctions, but reliably only back to ~2008. Add `_AVAIL = "2008-01-01"`. Reuse `_compute_auction_stress` from `scoring.py`.
+- `sector_breadth`: 11 sector ETFs, all on yfinance. XLY/XLE/XLI/XLF/XLB
+  start ~1998; XLRE starts 2015 (handle by skipping it before that date in
+  the breadth calculation, not by setting `_AVAIL` — the indicator is
+  meaningful with 10/11 sectors). Reuse `_compute_sector_breadth` logic.
+- `spx_200dma_distance`: derive from existing `^GSPC` series. Add to
+  `_build_derived` as `(price - price.rolling(200).mean()) / rolling_mean * 100`.
+
+**Tests to add:** One test per new indicator confirming `_indicator_pit`
+returns a numeric value at a representative date when the indicator is
+available, and `(None, None, None)` before its `_AVAIL` date.
+
+**Effort:** ~60–90 min. Must re-run both backtests after change
+(`python -m src.backtest`) and inspect `output/backtest_full.csv` for new
+columns.
+
+---
+
+#### 21B — `_band_from_score` is duplicated four times with three implementations
+
+**Files:**
+- `src/scoring.py:241` (`_band_from_score`) — canonical
+- `src/triggers.py:30` (`_score_band`) — identical body, used in
+  `annotate_results`
+- `src/dashboard.py:771` (inline `_band_fn` lambda inside `write_dashboard`)
+- `src/backtest_report.py:317` (inline `band = "red" if score_at >= 70 else ...`
+  inside `_section_events`)
+
+**Diagnosis:** Every band-from-score derivation is copy-pasted with the same
+30/50/70 thresholds. If thresholds ever change (or someone wants to test a
+sensitivity), they have to find and update all four. Two of the four are
+hidden inside other functions (lambda + inline ternary) — easy to miss.
+
+**Fix:**
+1. Move the canonical implementation to `src/indicators.py` as
+   `band_from_score(score: float) -> str` (public name).
+2. Add `BAND_THRESHOLDS = {"yellow": 30, "orange": 50, "red": 70}` constant
+   alongside it.
+3. Update the three duplicates to import and call it. In `triggers.py`,
+   delete `_score_band` and import `band_from_score`. In `dashboard.py`,
+   delete the `_band_fn` lambda. In `backtest_report.py`, replace the
+   inline ternary.
+4. `scoring.py` already exports `_band_from_score` (used by `dashboard.py`);
+   keep it as a re-export from indicators or just have everything import
+   from indicators.
+
+**Tests:** Existing tests on `_band_from_score` (search `tests/` for it)
+should keep passing; add one assertion that `band_from_score(70.0) == "red"`
+boundary case.
+
+**Effort:** ~20 min.
+
+---
+
+#### 21C — Band color palette diverges between dashboard and backtest report
+
+**Files:**
+- `src/dashboard.py:22` `_BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}`
+- `src/history.py:17` — same palette as dashboard (good)
+- `src/indicator_detail.py:9` `_THRESH_COLOR` and line 121 `band_colors` —
+  same as dashboard (good)
+- `src/backtest_report.py:46` `.pos {color:#3fb950} .neg {color:#f85149} .neu {color:#8b949e} .warn {color:#d29922}`
+- `src/backtest_report.py:322` `badge_color = {"red": "#f85149", "orange": "#d29922", "yellow": "#e3b341", "green": "#3fb950"}`
+
+**Diagnosis:** The dashboard uses one set of greens/reds/oranges; the
+backtest report uses different hex values for the same semantic bands
+(`#ff4444` vs `#f85149` for red, `#22cc44` vs `#3fb950` for green). When a
+user clicks "View full backtest report →" from the dashboard, the visual
+language shifts — same word "red" maps to two different visible reds. Minor
+but easy to fix.
+
+**Fix:** Decide which palette is canonical (recommend dashboard's because
+it's already used by 3+ files vs backtest_report's 1). Move `_BAND_COLOR`
+and `_BAND_BG` to a new file `src/colors.py` (or append to `indicators.py`).
+Update both dashboard.py and backtest_report.py to import from there.
+Replace the divergent hex values in backtest_report.py CSS and
+`badge_color` dict.
+
+**Effort:** ~15 min. Visual regression check: open dashboard then backtest
+report in browser, confirm reds/greens/oranges match.
+
+---
+
+### P1 — DRY / structural improvements
+
+#### 21D — Live and backtest fetch implementations duplicate 80% of their logic
+
+**Files:** `src/fetch.py` (live, with retry + stale-cache fallback) vs
+`src/backtest.py:_bt_fred / _bt_yf` (lines 68–117, no retry, no fallback)
+
+**Diagnosis:** `_bt_fred` and `_bt_yf` are near-copies of `fetch_fred_series`
+and `fetch_yfinance_series` with three differences: (a) different cache
+directory (`data/cache/backtest/`), (b) different default years (26 vs 10),
+(c) no retry / stale-cache logic. The duplication exists because the
+backtest needs longer history and a separate cache so 26-year fetches don't
+overwrite the live 10-year cache. But that's parameterizable, not
+duplication-worthy.
+
+**Fix:** Refactor `fetch.py` to expose:
+
+```python
+def fetch_fred_series(series_id: str, env: dict, years: int = 10,
+                     cache_subdir: str = "") -> pd.Series:
+    ...
+def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
+                          cache_subdir: str = "") -> pd.Series:
+    ...
+```
+
+`cache_subdir` defaults to `""` (live cache root). Backtest passes
+`cache_subdir="backtest"`. Existing live callers don't change. Delete
+`_bt_fred` and `_bt_yf` from `backtest.py`; replace with calls to
+`fetch.fetch_fred_series(..., years=FETCH_YEARS, cache_subdir="backtest")`.
+
+The retry/stale-cache logic now applies to backtest too — pure win, since
+backtest currently fails hard on transient network errors mid-2-hour run.
+
+**Tests:** Existing fetch tests must still pass. Add a test that
+`cache_subdir="backtest"` writes to `data/cache/backtest/` and doesn't
+collide with the live cache.
+
+**Effort:** ~45 min. Risk: low — additive parameter, defaults preserve
+existing behavior.
+
+---
+
+#### 21E — Six near-identical YAML loader functions in `dashboard.py`
+
+**File:** `src/dashboard.py`, functions: `_load_events`, `_load_review_prompts`,
+`_load_tooltips`, `_load_thresholds`, `_load_ind_weights`,
+`_load_escalation_paths` (lines 128–250 of dashboard.py)
+
+**Diagnosis:** Each is ~10 lines doing the same thing: check path exists,
+`yaml.safe_load`, optionally extract a sub-key, fallback to `{}` on error.
+Six near-identical bodies in one file.
+
+**Fix:** Add a single helper at the top of `dashboard.py`:
+
+```python
+def _load_yaml(path: str, key: str | None = None, default=None):
+    p = Path(path)
+    if not p.exists():
+        return default if default is not None else {}
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return data.get(key, default if default is not None else {}) if key else data
+    except Exception:
+        return default if default is not None else {}
+```
+
+Then collapse the six callers:
+- `_load_events()` → `_load_yaml("config/events.yaml", "events", [])`
+- `_load_review_prompts()` → `_load_yaml("config/review_prompts.yaml", "bands")`
+- `_load_tooltips()` → `_load_yaml("config/tooltips.yaml")`
+- `_load_thresholds()` → `_load_yaml("config/thresholds.yaml", "indicators")`
+- `_load_escalation_paths()` → `_load_yaml("config/escalation_paths.yaml", "buckets")`
+- `_load_ind_weights()` is slightly more complex (nested transformation);
+  leave as-is or refactor with a helper call + comprehension.
+
+**Effort:** ~30 min. Net: ~50 lines deleted.
+
+---
+
+#### 21F — `compute_composite` special-cases VIX series capture by string match
+
+**File:** `src/scoring.py`, `compute_composite` lines 364–365:
+
+```python
+if bkey == "equity_volatility" and ikey == "vix" and series is not None:
+    _vix_series_for_regime = series
+```
+
+**Diagnosis:** The VIX series is captured for downstream regime
+classification (line 442) by hardcoded string match on the bucket+indicator
+keys. If `weights.yaml` ever renames `equity_volatility` → `volatility`, or
+`vix` → `vix_index`, regime classification silently breaks. This is the
+exact failure mode `validate_config()` was built to prevent — but here the
+keys are hardcoded *outside* the validation surface.
+
+**Fix:** Two options, pick one:
+
+(a) **Re-fetch VIX inside `classify_vix_regime` rather than threading it
+through.** Cheap because the series is cached anyway. Removes the cross-
+function coupling entirely. Recommended.
+
+(b) **Add a `regime_input: vix` flag to the indicator's config** in
+weights.yaml; have `_fetch_indicator` annotate the result with this flag;
+let `compute_composite` collect any `regime_input`-flagged series. More
+flexible but more machinery.
+
+Go with (a). In `compute_composite`, delete the special-case capture.
+After the bucket loop, before regime classification:
+
+```python
+try:
+    vix_series = fetch.fetch_yfinance_series("^VIX", env, years=int(env.get("HISTORY_YEARS", 10)))
+    regime_info = classify_vix_regime(vix_series, _load_prev_regime())
+except Exception as exc:
+    errors.append(f"vix_regime: {exc}")
+    regime_info = {}
+```
+
+**Tests:** Existing scoring tests should pass. Verify the regime block in
+the dashboard still renders (`scoring["regime"]` populated).
+
+**Effort:** ~20 min.
+
+---
+
+#### 21G — Top-level deferred imports for no apparent reason
+
+**Files:**
+- `src/scoring.py:440` — `from src.history import classify_vix_regime`
+  inside `compute_composite`
+- `src/alerts.py:318` — `from src.history import compute_composite_momentum, ...`
+  inside `send_alerts`
+- `src/alerts.py:488` — `from src.history import classify_shock_type` inside
+  `send_alerts`
+- `src/backtest_report.py` — `from src.evaluation import ...` repeated 3+
+  times inside functions
+
+**Diagnosis:** These imports are at function scope, suggesting a circular
+dependency was historically there and worked-around. Verify there's no
+cycle today — `history.py` does not import from `scoring`, `alerts`, or
+`backtest_report`. The deferred imports are unnecessary cargo cult.
+
+**Fix:** Move all four to module-level imports. If a cycle is discovered,
+restore the deferred import with a one-line comment explaining the cycle.
+
+**Tests:** All tests must pass. If imports succeed at module load, no
+runtime change.
+
+**Effort:** ~10 min.
+
+---
+
+### P2 — Small wins
+
+#### 21H — Dead string in `backtest._MANUAL`
+
+**File:** `src/backtest.py:141` —
+`_MANUAL = {"repo_stress", "aaii_bull_bear", "iran_trigger"}`
+
+**Diagnosis:** `aaii_bull_bear` is not in `KNOWN_INDICATOR_KEYS`,
+`weights.yaml`, or any handler. It's a leftover from an earlier draft. The
+string sits dormant; no current effect, but it's misleading documentation.
+
+**Fix:** Delete `"aaii_bull_bear"` from the set. One-character commit.
+
+**Effort:** ~1 min.
+
+---
+
+#### 21I — Duplicate "not in model" badge in `dashboard._calendar_indicator_badge`
+
+**File:** `src/dashboard.py:282–291`
+
+**Diagnosis:** Lines 282–286 and 287–291 produce the same fallback HTML
+(`"not in model"` badge). The for-loop's `else` branch is identical to the
+post-loop fallback. One can be removed.
+
+**Fix:** Delete lines 287–291 (the post-loop fallback) and let the function
+fall through cleanly, OR collapse the conditional inside the loop. Trivial.
+
+**Effort:** ~5 min.
+
+---
+
+### Summary table
+
+| ID | Item | Priority | Effort |
+|----|------|----------|--------|
+| 21A | Add 6 missing indicators to backtest | P0 | 60–90 min |
+| 21B | Consolidate `_band_from_score` (4 → 1) | P0 | 20 min |
+| 21C | Unify band color palette across reports | P0 | 15 min |
+| 21D | Parameterize fetch (live + backtest in one impl) | P1 | 45 min |
+| 21E | Generic `_load_yaml` helper in dashboard | P1 | 30 min |
+| 21F | Remove VIX series string-match special case | P1 | 20 min |
+| 21G | Lift deferred imports to module level | P1 | 10 min |
+| 21H | Delete dead `aaii_bull_bear` string | P2 | 1 min |
+| 21I | Remove duplicate calendar-badge fallback | P2 | 5 min |
+
+**Total effort estimate:** ~3.5–4 hours for everything. Recommended order:
+21A → 21B → 21C → 21D → 21F → 21G → 21E → 21H → 21I. Run full test suite
+after each commit. **Do not bundle into one mega-commit** — keep the
+21A/21B/21C/... split so any single revert is surgical.
+
+**Non-goals (deliberately not included):**
+
+- Splitting `dashboard.py` into multiple files. The 1100-line size is
+  uncomfortable but the file is mostly HTML strings; splitting now would
+  scatter related templates without enabling anything. Revisit only if a
+  Phase G UX brief makes part of it genuinely reusable.
+- Replacing `recalibrate._patch_weights_file` with `ruamel.yaml` for proper
+  comment-preserving round-trip. Real concern but adds a dependency for
+  marginal benefit; manual review of recalibration output is the existing
+  safety net. Track separately.
+- Vectorizing `evaluation.build_forward_drawdown` (currently O(n²)). At
+  6500 backtest dates the runtime is ~30s on cold cache — acceptable for
+  a function that runs once per recalibration cycle. Don't optimize until
+  it's actually a bottleneck.
+- Type-hinting alert state with a TypedDict / dataclass. Worth doing; not
+  worth the refactor cost right now. Add when next state-key is added.
+- Splitting `compute_composite` into smaller functions. Real complexity
+  but the function is well-tested and the splits aren't obvious. Defer.
+
+---
+
+## Brief 22 — Backtest model explainer (expert + plain-English)
+
+**Dependencies:** None. Pure content addition to `output/backtest_report.html`.
+
+**Problem:** The backtest report currently presents IC values, confidence
+intervals, ROC curves, regime-stratified metrics, and event case studies —
+all without context for *what any of it means*. A reader who isn't already
+fluent in time-series statistics + market microstructure has no way to read
+the report. Specifically:
+
+1. **What is "IC"?** Spearman vs Pearson, what counts as good (0.05 vs 0.15),
+   why it's the right metric for a stress signal.
+2. **Why "forward SPX drawdown" as the target?** Other choices exist
+   (forward HY widening, forward stress index) — why is this the headline?
+3. **What does regime stratification tell you that the headline doesn't?**
+   A composite IC of 0.12 averaged across regimes might hide that the
+   model is strong in stress regimes and noise in calm regimes.
+4. **Known limitations** — look-ahead bias, survivorship in indicator
+   selection, regime change risk, out-of-sample = "out of training" not
+   "out of fitting" because there was no training (the model is rules-based).
+
+**Design decisions — locked:**
+
+1. **Two collapsible `<details>` sections at the top of the report**, above
+   the headline IC table. Both default to collapsed (so the report still
+   opens cleanly to numbers for return readers); the summaries on the
+   `<summary>` line make the value of opening obvious.
+2. **"Expert view"** — for someone fluent in stats but new to *this*
+   project. Methodology + caveats. Roughly 350–500 words.
+3. **"Plain-English view"** — for an intelligent generalist (lawyer,
+   doctor, retired professional, family member) with no stats / no finance
+   background. Answers: what is this report? What does the model do? Why
+   should I care? What can it predict, and what can't it? Roughly 350–500
+   words. No jargon, no acronyms used without expansion.
+4. **Same visual style** as the rest of the report (dark theme, existing
+   `.card` and `.note` classes). New section gets a subtle blue
+   left-border to differentiate it from data sections.
+5. **Wired in via a new `_section_explainer()` function** in
+   `backtest_report.py`, called from `generate_report` *before* the first
+   `_run_and_render` call. Function is content-only — paste the prose
+   below into it as raw HTML strings.
+
+**Files to change:**
+
+1. **`src/backtest_report.py`** — add `_section_explainer()` function
+   (content provided in full below). Insert call in `generate_report()`
+   immediately after the `<div class="ts">...</div>` line and before the
+   first `sections.append(...)` call.
+
+2. **No new dependencies, no schema changes, no test additions.** Visual
+   smoke test only: regenerate report with `python -m src.backtest_report`
+   and confirm both expandable sections render at the top.
+
+**The two sections — paste this prose verbatim into `_section_explainer()`:**
+
+```python
+def _section_explainer() -> str:
+    """Two collapsible sections explaining the report. Insert above headline table."""
+    return """
+<div class="card" style="border-left:3px solid #58a6ff;background:#0d1f2e">
+<details>
+<summary style="cursor:pointer;font-size:1rem;font-weight:600;color:#e6edf3">
+Methodology and caveats — for finance / stats readers
+<span style="color:#8b949e;font-size:.85rem;font-weight:400;margin-left:8px">click to expand</span>
+</summary>
+<div style="margin-top:14px;line-height:1.65;font-size:.92rem">
+
+<p><b>What this report measures.</b> Each row is a Spearman rank correlation
+(IC) between the model's composite stress score on date T and a
+forward-looking outcome over the subsequent 1–6 months — primarily peak
+S&amp;P 500 drawdown, secondarily HY OAS widening and a multi-asset stress
+index. Spearman is preferred over Pearson because the composite is bounded
+[0, 100] and outcome distributions are heavy-tailed; rank correlation is
+robust to both.</p>
+
+<p><b>Reading the IC table.</b> An IC of <b>0.15+</b> is considered strong
+for a daily-frequency macro stress signal — it is the threshold above
+which institutional risk teams typically take a signal seriously. <b>0.05
+to 0.15</b> is detectable signal that's worth keeping but not strong on
+its own. <b>Below 0.05</b> is statistically indistinguishable from noise
+at this sample size, even if the headline number is positive. The 95%
+confidence intervals are computed via block bootstrap with quarterly
+blocks (63 business days) to preserve autocorrelation — they will be
+substantially wider than naive bootstrap CIs and that is correct. If a CI
+crosses zero, the IC is not significantly different from random.</p>
+
+<p><b>Why these specific targets.</b> Forward SPX drawdown is the headline
+because it is what the user actually cares about — capital preservation —
+and because drawdown distributions are non-Gaussian in ways that the
+composite is designed to anticipate. HY widening and the multi-asset
+stress index are sanity checks: a real stress signal should predict all
+three, not just one. If the composite hits SPX drawdowns but misses HY
+widening, that's a hint the signal is overfit to equity vol. The
+benchmark columns (VIX alone, HY OAS alone, NFCI, 3-factor average) test
+whether the composite adds anything over its own components — if VIX
+alone matches the composite, the other 25 indicators are dead weight.</p>
+
+<p><b>Regime stratification.</b> The single-number IC averages across
+calm and stress periods, which can hide regime-dependent performance. The
+regime-stratified table breaks IC out by VIX tercile (bottom third =
+calm, top third = stress). A model with strong stress-regime IC and weak
+calm-regime IC is *better* than one with uniform mediocre IC — calm-period
+noise is harmless because the user does nothing on calm days. Conversely,
+strong calm-regime IC and weak stress-regime IC is the worst pattern: the
+model is most confident exactly when it shouldn't be.</p>
+
+<p><b>Known limitations.</b> (1) <b>No look-ahead bias is structural</b> —
+each date T uses only data from [T−10y, T] for percentile computation —
+but indicator <i>selection</i> is post-hoc, chosen with the benefit of
+knowing 2008 / 2020 / 2022 happened. The 2000–2017 subset model exists
+specifically to test out-of-sample. (2) <b>Survivorship</b> — indicators
+in the current model are ones that survived discretionary review. Failed
+prior candidates are not preserved, so the headline IC is biased upward.
+(3) <b>Manual indicators</b> (`repo_stress`, `iran_trigger`) are always
+zero historically because no historical series exists; this slightly
+deflates pre-2018 composite levels. (4) <b>FRED licensing</b> — ICE BofA
+OAS series are limited to ~3 years on the FRED API regardless of
+requested start date; the engine handles this by skipping unavailable
+indicators and renormalizing bucket weights, so the pre-2018 subset model
+is structurally smaller than the post-2018 full model.</p>
+
+<p><b>Recalibration cycle.</b> Bucket weights and indicator weights are
+re-tuned via <code>src/recalibrate.py</code>, which applies a 2×2 matrix
+on each indicator's pre-2016 and post-2016 IC. Strong/strong → keep;
+strong/weak → reduce 4×; weak/strong → keep (new signal); weak/weak →
+drop. Re-running this requires both backtest CSVs to be fresh. The
+checkpoint cadence is documented in the project TODO.</p>
+
+</div>
+</details>
+</div>
+
+<div class="card" style="border-left:3px solid #58a6ff;background:#0d1f2e">
+<details>
+<summary style="cursor:pointer;font-size:1rem;font-weight:600;color:#e6edf3">
+What does this report actually mean? — for non-specialists
+<span style="color:#8b949e;font-size:.85rem;font-weight:400;margin-left:8px">click to expand</span>
+</summary>
+<div style="margin-top:14px;line-height:1.65;font-size:.92rem">
+
+<p><b>The big picture.</b> The dashboard you saw is a kind of weather
+station for financial markets. It reads 26 different gauges every day —
+stock-market jumpiness, the cost of borrowing for risky companies, how
+worried investors are, what the Federal Reserve is signaling, oil prices,
+unemployment numbers, and so on — and combines them into one summary
+number from 0 to 100. Higher means more market stress; lower means
+calmer. This report is the answer to a fair question: "is that summary
+number actually any good?"</p>
+
+<p><b>The way we test it.</b> We replay history. Imagine pretending it's
+March 1, 2008. We compute the dashboard's stress score using <i>only</i>
+the data that existed on that date — no peeking ahead. Then we look at
+what the stock market actually did over the following weeks and months
+and ask: when the score was high back then, did bad things tend to
+follow? When the score was low, did the market mostly behave? We do this
+every business day going back to 2000 (for the older subset) and 2018
+(for the newer full model), and we measure how reliably high scores
+preceded losses. That measurement — the "IC" you see throughout the
+report — is essentially "how often was the dashboard right, on a scale
+where 0 means useless and higher means more useful."</p>
+
+<p><b>What counts as good.</b> Forecasting markets is hard, and you
+should be deeply skeptical of anyone who claims a perfect score. For
+this kind of broad early-warning gauge, an IC above 0.15 is genuinely
+good news — it means the signal is meaningfully better than guessing,
+even if it's far from a crystal ball. Between 0.05 and 0.15 is "real but
+modest" — useful in combination with other information, not on its own.
+Below 0.05 is essentially noise. The colored badges next to each row in
+the IC tables tell you which bucket each row falls into.</p>
+
+<p><b>Why it's not a crystal ball.</b> Three honest limits to bear in
+mind. <b>First</b>, the model was built knowing what crises happened
+between 2008 and today, so it's been quietly tuned in hindsight to catch
+those events. The 2000–2017 subset is included specifically to check
+that the model still works on a period the designers didn't optimize for
+— but even there, the choice of which gauges to include benefits from
+hindsight. <b>Second</b>, future crises will not look exactly like past
+ones. The 2008 crisis and the 2020 COVID crash and the 2022 inflation
+shock all triggered different gauges in different orders. A new kind of
+crisis — say, an AI-driven flash crash, or a sovereign-debt episode in a
+country we don't track — could move markets without our gauges seeing it.
+<b>Third</b>, the dashboard tells you when stress is rising. It does not
+tell you what to do about it. A high score is a prompt to think
+carefully about your situation, not an instruction to sell.</p>
+
+<p><b>Reading the rest of this report.</b> The "headline" table at the
+top shows the model's score against three different definitions of "bad
+outcome" — biggest stock drop, biggest credit-market widening, and an
+overall stress index. The tables further down break performance out by
+indicator (which gauges are pulling weight, which aren't), by VIX tercile
+(does the model work better when markets are already nervous, or when
+they're calm?), and by year (was 2017 a fluke or representative?). The
+ROC curves are a different way of asking the same question — they show
+how often the model gives a true alarm vs a false alarm at different
+sensitivity settings. The event case studies pick specific historical
+crises and show what the model said in advance and during them.</p>
+
+<p><b>The bottom line.</b> If you take only one thing away: this report
+exists so the model is not a black box. It tells you, with numbers and
+caveats, where the model is reliable and where it isn't. The dashboard's
+job is to help its user think more carefully about market risk, not to
+replace that thinking — and this report is the receipts.</p>
+
+</div>
+</details>
+</div>
+"""
+```
+
+**Wiring it in:** In `generate_report` (around line 478), add one line:
+
+```python
+sections.append(_section_explainer())
+sections.append(html_full)
+```
+
+That's the entire change. The two new collapsible cards render at the top
+of the report, both default-collapsed.
+
+**Success criteria:**
+
+- `python -m src.backtest_report` regenerates `output/backtest_report.html`
+  without error.
+- Both new sections appear at the top, default-collapsed; expanding each
+  shows the full prose with proper paragraph breaks.
+- Existing sections (headline table, per-indicator IC, ROC curves, regime,
+  events) render unchanged below.
+- Visual: blue left-border on the explainer cards distinguishes them from
+  data cards.
+
+**Non-goals:**
+
+- Inline tooltips on individual metrics. The two top-of-report sections
+  are the right level of detail; sprinkling per-cell tooltips would clutter
+  the data tables and duplicate explanation across many sites.
+- Auto-generated commentary on the actual numbers ("the model's IC this
+  cycle is X, which means…"). Tempting, but writing it requires either
+  hardcoded ranges or LLM synthesis — both add fragility for marginal
+  user value. The reader can interpret the badges + their own knowledge.
+- A third "investor view" register. Two registers cover the realistic
+  audience (Ian himself, plus anyone he might show this to). More
+  registers = more drift over time as the report's content evolves.

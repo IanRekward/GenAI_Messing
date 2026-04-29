@@ -1,0 +1,772 @@
+# Per-indicator explainer text — used by Brief 18 (G6) to enrich the
+# Indicator Detail drill-down pages on the dashboard.
+#
+# Each entry has three fields:
+#   advanced     — for someone fluent in markets / macro: what it measures,
+#                  what regimes it discriminates, known failure modes,
+#                  lead-lag relationships
+#   layman       — plain-English: what is this number, why it matters,
+#                  how to think about it relative to the composite,
+#                  no jargon and no acronyms left unexpanded
+#   model_role   — one or two sentences on its bucket, weight, and the
+#                  indicators it co-moves with — anchors the indicator
+#                  in the model's structure
+#
+# Validation: every active indicator key in config/weights.yaml should
+# have an entry below. Brief 18 wires startup validation that warns when
+# an entry is missing. Adding new indicators? Add the key here in the
+# same commit as the weights.yaml change.
+
+indicators:
+
+  # ── Equity Volatility ───────────────────────────────────────────────────
+
+  vix:
+    advanced: >
+      The VIX is the 30-day implied volatility of S&P 500 options, computed
+      from the variance swap formula on a strip of out-of-the-money SPX
+      puts and calls. It is the canonical "market expectation of near-term
+      equity volatility" — what option market makers are charging to insure
+      equity exposure over the next month. Spikes are concurrent with stress
+      rather than leading it; the lead time on real crises has historically
+      been hours, not days. Failure modes: VIX is structurally elevated
+      around earnings season and FOMC weeks for mechanical reasons (more
+      pinned-volatility events) — not all elevation is stress. Watch the
+      term-structure ratio against VIX3M for a cleaner stress read.
+    layman: >
+      The VIX is the most-quoted "fear gauge" of the U.S. stock market. It
+      tracks how much investors are paying right now to insure against big
+      swings in stock prices over the next month. Roughly: under 15 means
+      markets are calm and complacent, around 20 means normal, in the 30s
+      means investors are seriously worried, and above 40 means panic. The
+      VIX usually moves at the same time as a market drop, not before it,
+      so it tells you "how stressed are markets right now" more than "what
+      will markets do next."
+    model_role: >
+      Equity Volatility bucket, 50% weight (the largest single indicator
+      in the bucket). Co-moves with realized S&P vol and the term-structure
+      ratio; together they make up the headline equity-volatility signal.
+
+  sp500_1m_vol:
+    advanced: >
+      One-month annualized realized volatility of the S&P 500, computed
+      from log returns over a 21-day rolling window. This is what the
+      market actually delivered, not what options imply. The interesting
+      signal is its relationship to VIX: if implied (VIX) significantly
+      exceeds realized for a sustained period, options markets are pricing
+      a stress event that hasn't shown up yet — sometimes prescient,
+      sometimes premature. If realized exceeds implied, vol-selling
+      strategies (short-vol funds, risk-parity) face mark-to-market pressure
+      and can become forced sellers. Both extremes matter.
+    layman: >
+      This measures how much the S&P 500 has actually moved up and down
+      over the last month, expressed as a percentage. Where the VIX is what
+      investors expect, this is what really happened. When realized
+      movement and the VIX expectation agree, the picture is internally
+      consistent; when they diverge significantly, one of them is wrong
+      about what's coming and that itself is a stress signal.
+    model_role: >
+      Equity Volatility bucket, 25% weight. Cross-checks the VIX — when
+      the two diverge, look at the term-structure ratio for the tiebreaker.
+
+  vix_term_structure:
+    advanced: >
+      Ratio of the 30-day VIX to the 90-day VIX3M. Below ~0.95 the curve is
+      contango (the historical norm — front-month vol cheaper than longer
+      dated, market expects mean reversion). Above 1.0 the curve is
+      backwardated — front-month panic priced to fade in 90 days, which
+      has historically preceded most major equity events (Aug 2015, Feb
+      2018, Mar 2020, Sep 2022). Backwardation is rare (~5% of trading
+      days) and is one of the cleaner forward-looking equity-stress signals
+      in the model. Note: the ratio is scale-invariant, so a backwardated
+      curve at VIX 18 carries the same information weight as backwardated
+      at VIX 35.
+    layman: >
+      The VIX itself measures expected stock-market jumpiness over the
+      next 30 days. There's a longer-dated cousin called VIX3M that does
+      the same thing for the next 90 days. This indicator is the ratio
+      between them. Normally the longer-dated one is higher (markets
+      expect things to be calmer up close than far away — "the storm has
+      already passed"). When the short-dated one rises above the long-dated
+      one, it means the market is pricing immediate panic that's expected
+      to fade — and in past crises, that flipped reading has been one of
+      the better warning signs.
+    model_role: >
+      Equity Volatility bucket, 25% weight. Functions as the
+      forward-looking complement to the level-based VIX — the term ratio
+      is what flags imminent persistence.
+
+  # ── Credit Spreads ──────────────────────────────────────────────────────
+
+  hy_oas:
+    advanced: >
+      ICE BofA U.S. High Yield Option-Adjusted Spread, in percentage
+      points. It is the extra yield investors demand to hold sub-investment-
+      grade corporate debt over comparable Treasuries, after adjusting for
+      embedded call options. Levels: under 350bp is risk-on / reach-for-
+      yield, 400–550bp is normal, above 700bp is recessionary, above 1000bp
+      is genuine credit crisis. HY OAS is one of the highest-information
+      indicators in the model — it integrates real-economy default
+      expectations, liquidity premia, and risk appetite all at once.
+      Widens early in slowdowns (companies refinance at rising costs
+      before equity prices it), and is the canary for forced-selling
+      regimes when ETF arb breaks down.
+    layman: >
+      This is the extra yield investors demand to lend to riskier U.S.
+      companies (those rated below "investment grade") versus lending to
+      the U.S. government for the same time period. The wider this gap
+      gets, the more nervous the bond market is about companies failing.
+      It often widens before the stock market falls, because lenders pull
+      back before equity investors do. Crossing about 5.5% historically
+      coincides with material economic stress; crossing 7.5% with genuine
+      crisis.
+    model_role: >
+      Credit Spreads bucket. Anchor indicator of the model — when HY
+      widens early and other buckets follow, that's the canonical
+      slow-burn stress regime.
+
+  ig_oas:
+    advanced: >
+      ICE BofA U.S. Investment Grade BBB Option-Adjusted Spread, in
+      percentage points. The spread on the lowest-rated investment-grade
+      tranche (BBB) — the segment most at risk of "fallen angel"
+      downgrades to high yield, which trigger forced selling by IG-only
+      mandates. IG widening tends to lag HY by weeks to a month in real
+      stress regimes; if IG widens *with* HY, the de-risking is broader
+      than initially apparent. The 2020 fallen-angel wave (Ford, Kraft
+      Heinz on the brink) is the canonical IG-stress episode.
+    layman: >
+      Similar to high-yield spreads, but for the safer end of corporate
+      lending — companies with decent credit ratings, just one notch above
+      "junk." When this spread widens, it means even relatively safe
+      companies are seen as riskier than usual. It's a more reliable
+      "things are spreading beyond the riskiest borrowers" signal than
+      high yield alone, which can move on supply-and-demand factors
+      specific to risky-debt funds.
+    model_role: >
+      Credit Spreads bucket. Tends to lag HY; co-movement of HY and IG
+      together is the strongest credit-stress signal the model produces.
+
+  # ── Rates & Yield Curve ─────────────────────────────────────────────────
+
+  yield_curve:
+    advanced: >
+      The 10-year Treasury yield minus the 2-year Treasury yield, in
+      percentage points. A negative reading (inverted curve) historically
+      precedes every U.S. recession of the modern era by 6–18 months,
+      though with significant variance and at least one false positive
+      (1965). The model treats inversion as stress: lower readings = more
+      stress (`invert: true`). The signal is most informative on the
+      *re-steepening* — recessions tend to begin when the curve has
+      uninverted from its trough, not while it remains inverted. The 2022
+      inversion that uninverted in late 2024 is the most recent test case.
+    layman: >
+      Normally, lending money to the U.S. government for 10 years pays
+      more than lending for 2 years, because longer commitments carry
+      more uncertainty. Sometimes that flips — short-term rates pay more
+      than long-term — and that "inverted" condition has preceded every
+      U.S. recession since the 1960s, usually by 6 to 18 months. It's not
+      a perfect predictor (one false alarm in the 1960s) but it's one of
+      the best macro signals economists have. Lower numbers, especially
+      negative ones, equal more stress.
+    model_role: >
+      Rates & Yield Curve bucket, 45% weight (largest in bucket). The
+      single best lead-time recession indicator in the model.
+
+  ten_year:
+    advanced: >
+      Yield on the 10-year U.S. Treasury note, the benchmark "risk-free"
+      long rate that anchors mortgage rates, corporate borrowing costs,
+      and equity discount rates. Elevated levels (>4.5%) reflect either
+      strong growth expectations or inflation premia or fiscal-supply
+      concerns — disentangling which is the policy-watcher's job, but the
+      effect on financial conditions is identical regardless. Sustained
+      readings above ~5% historically coincide with valuation pressure on
+      duration-sensitive equity sectors (tech, REITs) and with rising
+      mortgage-market stress.
+    layman: >
+      The interest rate the U.S. government pays to borrow for 10 years.
+      It's the benchmark that drives mortgage rates, business loans, and
+      to a degree, what stocks are "worth" relative to the risk-free
+      alternative. When this rate is high (above about 4.5%), borrowing
+      gets expensive across the economy, and investors have to demand
+      more from stocks to make them worthwhile compared to just lending
+      money to the government. Persistent readings above 5% have
+      historically pressured asset prices broadly.
+    model_role: >
+      Rates & Yield Curve bucket, 20% weight. Higher levels = stress,
+      paired with the curve indicator (which captures the steepness).
+
+  move_index:
+    advanced: >
+      The ICE BofA MOVE Index — implied volatility on a normalized
+      Treasury yield curve (the rates equivalent of the VIX). Measured in
+      basis points of expected daily yield movement. Calm readings are
+      below ~75bp, normal 75–110bp, elevated 110–150bp, crisis above 150bp.
+      MOVE is one of the better leading indicators of broader risk-off
+      regimes because rates volatility precedes credit and equity
+      volatility in most modern crises (2008, 2013 taper tantrum, 2022).
+      A persistent divergence where MOVE is high but VIX is calm is a
+      hint that bond-market stress is being absorbed by rates-vol dealers
+      rather than being transmitted into equities — yet.
+    layman: >
+      Just as the VIX measures how jumpy investors expect the stock
+      market to be, the MOVE index measures how jumpy they expect the
+      U.S. government bond market to be. Bond-market jumpiness is a
+      bigger deal than people realize — it propagates through mortgage
+      rates, corporate borrowing, and bank balance sheets. Historically
+      it tends to spike before stress shows up in stocks, making it a
+      useful early warning. Above 135 means bond traders are bracing for
+      large yield swings.
+    model_role: >
+      Rates & Yield Curve bucket, 20% weight. Functions as the rates
+      analogue of the VIX — together they cover both legs of vol
+      transmission.
+
+  treasury_auction_stress:
+    advanced: >
+      Composite z-score derived from the most recent 10-Year Note and
+      30-Year Bond auctions, combining bid-to-cover ratio, indirect-bidder
+      percentage (foreign / official demand), and primary-dealer takedown
+      percentage. Higher z-scores = weaker demand = more stress. The
+      signal is structurally noisy (one auction per security per month,
+      so z-scores can move materially on a single bad print) and works
+      best as a multi-month trend rather than a single-print read. Two
+      historical episodes where this deteriorated cleanly: late 2023
+      (heavy supply meeting Fed-balance-sheet runoff) and the 2018 Q4
+      auction wobble.
+    layman: >
+      Every month or so, the U.S. Treasury holds auctions to sell new
+      10-year and 30-year bonds to investors. This indicator measures how
+      strong the demand was at those auctions — strong demand means
+      investors still want U.S. government debt; weak demand means
+      they're hesitant. Persistent weak demand is a signal that the
+      U.S.'s ability to keep borrowing cheaply is eroding, which would
+      eventually push rates up across the entire economy. It's a slower-
+      moving signal than the others but it's structurally important.
+    model_role: >
+      Rates & Yield Curve bucket, 15% weight. The lowest-frequency
+      indicator in the bucket (about one observation per month per
+      tenor); reads better in trend than in single-print spikes.
+
+  # ── Financial Conditions ────────────────────────────────────────────────
+
+  nfci:
+    advanced: >
+      Chicago Fed National Financial Conditions Index. A weekly composite
+      of 105 measures of risk, credit, and leverage in U.S. financial
+      markets, standardized so 0 = historical average. Positive = tighter
+      than average, negative = looser. The NFCI lacks the lead time of
+      individual market signals (it's a weighted *consensus*, by
+      construction lagging individual movers) but is the best single
+      "are conditions actually tightening" read because it integrates
+      across credit, equity, money, and shadow-banking indicators. Watch
+      sustained readings above 0.4 — that's where Fed officials start
+      citing the index in speeches.
+    layman: >
+      The Chicago Federal Reserve combines about 100 different financial-
+      market measurements into one weekly score. It's measuring "how
+      easy or hard is it to get money / credit / financing in the U.S.
+      financial system right now" against a historical baseline. Zero is
+      average. Positive means harder than usual (tighter), negative means
+      easier (looser). It's a slower indicator than market prices but
+      it's harder to game — when it crosses materially positive, real
+      economic stress is usually following.
+    model_role: >
+      Financial Conditions bucket. The most comprehensive single
+      financial-conditions read in the model; co-moves with the St. Louis
+      stress index.
+
+  stlfsi:
+    advanced: >
+      St. Louis Fed Financial Stress Index — a weekly z-scored composite
+      of 18 weekly market measures (VIX, OAS, term spreads, etc.). Like
+      NFCI it is mean-zero by construction. The two indices overlap in
+      construction philosophy but use different inputs — STLFSI is more
+      market-data-heavy, NFCI is more credit-aggregate-heavy. Divergence
+      between them is itself informative: NFCI > STLFSI suggests stress
+      in non-public credit markets that STLFSI doesn't see; STLFSI >
+      NFCI suggests market stress that hasn't yet propagated into the
+      broader credit aggregates NFCI tracks.
+    layman: >
+      The St. Louis Federal Reserve's version of the same idea — they
+      take 18 different market-stress measurements and combine them into
+      one weekly score, again with zero meaning average. Having two
+      different agencies build similar indices is useful: if both say
+      "stress is elevated," the signal is robust; if they diverge, it
+      points to where the stress is and isn't.
+    model_role: >
+      Financial Conditions bucket. Cross-checks NFCI; when both fire,
+      the financial-conditions signal is robust.
+
+  # ── Inflation ───────────────────────────────────────────────────────────
+
+  breakeven_5y:
+    advanced: >
+      Five-year breakeven inflation: 5-year Treasury yield minus 5-year
+      TIPS (inflation-protected) yield, in percentage points. The market's
+      pricing of average annual CPI inflation over the next five years.
+      Anchored breakevens (~2.0–2.5%) reflect Fed-credibility-intact
+      regimes; unanchored above 3% historically coincides with major
+      monetary-policy tightening cycles. The breakeven leads realized CPI
+      because it incorporates expectations of future Fed action; a falling
+      breakeven during a hiking cycle is the market's signal that
+      "they're being effective."
+    layman: >
+      A way to extract what the bond market thinks inflation will average
+      over the next five years. It compares the yield on regular U.S.
+      bonds against the yield on bonds that adjust for inflation — the
+      gap between them is essentially the market's expected inflation
+      rate. The Federal Reserve's stated target is 2%, so readings around
+      2.0–2.5% mean the market trusts the Fed; readings above 3.0% mean
+      the market is pricing in inflation the Fed has lost control of.
+    model_role: >
+      Inflation bucket. Forward-looking; complements the backward-looking
+      CPI year-over-year measure.
+
+  cpi_yoy:
+    advanced: >
+      Consumer Price Index year-over-year percentage change — the
+      headline inflation print that drives Fed policy expectations and
+      the political environment. Trailing 12-month series; the most
+      recent observation is typically 2–3 weeks old when the dashboard
+      runs. Useful for *level* and *trend* but a poor real-time signal
+      because CPI prints once a month with a lag. Sustained readings
+      above 5% (the 2022 episode) historically force aggressive Fed
+      tightening; readings below 1.5% (post-2008, pre-COVID) bring
+      deflation-risk policy responses.
+    layman: >
+      The official monthly inflation rate — how much consumer prices
+      have risen over the past year. Updated monthly, with the most
+      recent number always 2-3 weeks behind. The Fed's target is 2%; in
+      2022 it peaked above 9%, the highest level in 40 years. It's the
+      single most-watched economic statistic by markets and policymakers.
+    model_role: >
+      Inflation bucket. Slow-moving (monthly) but high-information; the
+      "what is actually happening" complement to the forward-looking
+      breakeven.
+
+  # ── Funding & Liquidity ─────────────────────────────────────────────────
+
+  sofr_spread:
+    advanced: >
+      Secured Overnight Financing Rate minus the Effective Federal Funds
+      Rate, in basis points. SOFR is the post-LIBOR overnight benchmark
+      for secured lending against U.S. Treasuries; EFFR is the unsecured
+      interbank rate. Their spread should be near zero in calm regimes;
+      meaningful divergence indicates either secured-funding stress
+      (SOFR > EFFR — collateral squeeze, repo-market dislocation, the
+      September 2019 episode) or unsecured-credit stress (EFFR > SOFR —
+      counterparty risk premia). The signal is one of the cleanest
+      early-warning reads on bank-and-dealer-system stress because both
+      legs are observable daily.
+    layman: >
+      Two different "what does it cost banks to borrow overnight"
+      benchmarks. One uses U.S. government bonds as collateral (SOFR),
+      the other doesn't (EFFR). Normally these track each other very
+      closely — within a basis point or two. When they pull apart it
+      means something has gone wrong in the plumbing of the financial
+      system: either banks are hoarding government bonds (squeeze) or
+      they don't trust each other to lend without collateral (credit
+      fear). The September 2019 repo crisis is the textbook example of
+      this gap blowing out.
+    model_role: >
+      Funding & Liquidity bucket. The cleanest available read on
+      money-market plumbing stress; spikes early in genuine funding
+      crises.
+
+  repo_stress:
+    advanced: >
+      Manual override indicator: 0 (calm), 1 (elevated), 2 (crisis), 3
+      (extreme). Set in `data/manual_overrides.json` based on the user's
+      read of repo-market color (Fed standing-repo facility usage,
+      money-market-fund cash piles, dealer repo balance-sheet headlines).
+      No automated time series — exists because the cleanest repo signals
+      (Fed Daily Treasury statements, dealer commentary) are not API-
+      accessible and meaningful repo stress moves faster than any free
+      proxy series.
+    layman: >
+      A manual override the user can flip to flag "the overnight lending
+      market between banks looks stressed right now" based on news,
+      conversation, or judgment. The dashboard can't see this directly
+      because the relevant data is buried in private bank communications
+      and Fed reports — so when there's a real story (like the September
+      2019 repo crunch), the user can dial it in by hand. Most days it
+      sits at 0.
+    model_role: >
+      Funding & Liquidity bucket, manual. Should be 0 except during
+      active funding-market stress episodes; complements the SOFR spread.
+
+  # ── Commodities & Energy ────────────────────────────────────────────────
+
+  wti_crude:
+    advanced: >
+      West Texas Intermediate crude oil front-month futures, in dollars
+      per barrel. The benchmark price for U.S. crude. Stress reads
+      pivot on context — sustained levels above $100/bbl historically
+      coincide with consumer-spending pressure and inflation feed-through;
+      sub-$40 with energy-sector credit stress and shale-producer
+      defaults. The model treats high prices as the stress condition
+      because that's the demand-destruction / inflation-pressure side of
+      the trade-off. Note: WTI moves on a mix of supply (geopolitics,
+      OPEC) and demand (recessionary expectations) factors that often
+      offset; the price level alone is a coarse signal.
+    layman: >
+      The U.S. benchmark price for crude oil, in dollars per barrel. It
+      drives gasoline prices, airline costs, and big chunks of inflation.
+      Sustained prices above $100/barrel tend to squeeze consumers and
+      can tip the economy into recession; very low prices can break the
+      finances of U.S. shale-oil producers, which has its own
+      destabilizing effects. The model flags high prices as the stress
+      condition.
+    model_role: >
+      Commodities & Energy bucket. The headline energy-price indicator;
+      paired with realized oil volatility for the level + jumpiness picture.
+
+  oil_vol:
+    advanced: >
+      One-month annualized realized volatility of WTI crude, computed
+      the same way as `sp500_1m_vol` but on the `CL=F` price series.
+      Spikes to 60%+ historically map to supply shocks (Iran, Saudi
+      attacks, OPEC defections) and severe demand-destruction events
+      (COVID April 2020 negative-price episode). The signal duplicates
+      VIX-and-MOVE during real broad risk-off regimes — it tends not to
+      add independent information when everything else is also stressed.
+      It does add information during energy-specific dislocations that
+      don't (yet) propagate to broad markets.
+    layman: >
+      How much the oil price has been jumping around over the past
+      month, in percentage terms. Steady prices imply a normal supply-
+      and-demand backdrop; wild swings imply a supply shock (war,
+      pipeline attack, OPEC fight) or a demand collapse. It mostly tells
+      you "is something specifically going on in the energy market right
+      now" — when broader markets are also stressed, the regular VIX
+      already carries that signal.
+    model_role: >
+      Commodities & Energy bucket. Subsumed by VIX/MOVE in broad stress
+      regimes; carries independent signal mainly during energy-specific
+      shocks.
+
+  # ── Brief 19 (designed, not yet shipped) ────────────────────────────────
+  # These three indicators are part of the Commodities & Energy bucket
+  # diversification brief. Entries pre-staged here so Sonnet can ship
+  # Brief 19 with explainer content already available.
+
+  crack_spread_321:
+    advanced: >
+      The 3-2-1 crack spread, in dollars per barrel: the standard
+      industry refining-margin metric, computed as
+      (2 × RBOB gasoline + 1 × ULSD distillate) / 3 − WTI, with all legs
+      converted to dollars per barrel (RBOB and ULSD are quoted per
+      gallon). Wide crack = refining is the bottleneck — refiners can't
+      keep up with crude moves due to outages, hurricanes, fires, or
+      product-export restrictions. Narrow crack = demand destruction has
+      caught up to upstream supply. As a stress indicator, wide crack
+      captures the "paper-vs-physical" gap that flat WTI misses: the
+      moment when consumers and end-users start paying more than the
+      futures price would suggest.
+    layman: >
+      Crude oil isn't what people actually buy — they buy gasoline,
+      diesel, jet fuel. Refineries take the oil and turn it into those
+      products, and the "crack spread" measures how much money refiners
+      make on that conversion. When the spread is wide, it means
+      refineries are running flat-out and can't keep up — usually because
+      a hurricane took some out, or there's a fire, or international
+      politics has cut off supply. That's the moment when gas-pump prices
+      stop tracking oil futures and start spiking on their own. It's the
+      cleanest read on "real-economy energy stress" available.
+    model_role: >
+      Commodities & Energy bucket (per Brief 19), 25% weight. The
+      paper-vs-physical signal that flat WTI misses — captures
+      refining-side shocks distinctly from upstream price moves.
+
+  natgas:
+    advanced: >
+      Henry Hub natural gas front-month futures, year-over-year percentage
+      change. The YoY framing strips the level (which is heavily seasonal
+      and structurally trending with U.S. shale supply) and isolates the
+      stress-relevant signal: "is this winter / supply situation
+      meaningfully worse than last year's?" Spikes above +50% YoY map
+      historically to winter cold snaps (2014, 2021), Europe-LNG-arbitrage
+      contagion (2022), or U.S. storage anomalies (2018). Independent of
+      crude — natgas and oil have decoupled since the U.S. became a net
+      LNG exporter.
+    layman: >
+      The U.S. price for natural gas — the fuel that heats most American
+      homes in winter and runs most U.S. electricity generators. Rather
+      than the absolute price (which has a lot of seasonal noise) the
+      indicator looks at how much the price has changed compared to the
+      same time last year. A 50%+ year-over-year jump usually means a
+      bad winter, a European supply crisis spilling over (because the
+      U.S. now exports natural gas), or storage problems. It's an energy
+      signal that doesn't move with oil, which is why it's worth watching
+      separately.
+    model_role: >
+      Commodities & Energy bucket (per Brief 19), 25% weight. Independent
+      of crude oil; captures winter / European-spillover supply shocks.
+
+  copper_gold_ratio:
+    advanced: >
+      Ratio of copper futures (HG=F, $/lb) to gold futures (GC=F, $/oz).
+      The classic growth-vs-fear macro proxy: copper rises with
+      industrial / construction demand (real economy strong), gold rises
+      with safe-haven demand (real economy fearful or monetary regime
+      stressed). The ratio is `invert: true` in the model — low ratio =
+      market pricing recession or systemic risk. Historical lows
+      coincide with major risk-off episodes (early 2009, March 2020,
+      late 2022). Ratio readings are not directly comparable across
+      decades because both metals have structural demand shifts (copper
+      = green energy, gold = central-bank-reserve diversification), but
+      relative-percentile comparisons within recent windows are robust.
+    layman: >
+      Copper is the metal of growth — it's used to build factories,
+      homes, electric cars, electrical grids. Gold is the metal of
+      fear — investors buy it when they want safety. So the ratio of
+      copper price to gold price is one of the cleanest market-priced
+      reads on "is the economy expected to grow or to slow." When this
+      ratio falls hard, it's because investors are selling growth-
+      sensitive assets and buying defensive ones. Historically, the ratio
+      reaches local lows around recessions and risk-off events.
+    model_role: >
+      Commodities & Energy bucket (per Brief 19), 20% weight. The
+      non-energy diversifier — gives the bucket actual breadth beyond
+      pure oil exposure.
+
+  # ── Economic Momentum ───────────────────────────────────────────────────
+
+  jobless_claims:
+    advanced: >
+      Initial unemployment claims, four-week moving average, in thousands.
+      The four-week smoother is preferred over weekly prints (which are
+      noisy with seasonality and one-off events) but still reads almost
+      real-time — claims data lags by only one week. Historically the
+      most-leading high-frequency labor-market indicator: claims tend to
+      bottom 6–12 months before recession start and inflect upward 2–4
+      months before NFP turns negative. Sustained readings above 300K
+      are recessionary; the 2008–2010 cycle peaked above 600K; COVID
+      April 2020 hit 6,000K (the famous off-the-chart spike).
+    layman: >
+      Every week, the Department of Labor reports how many people filed
+      for unemployment benefits for the first time. To smooth out weekly
+      noise, the model uses a four-week average. This is one of the
+      fastest economic indicators we have — most economic data comes
+      with a multi-month delay; jobless claims come with a one-week
+      delay. When claims start rising before any other economic data
+      turns, that's an early warning the labor market is cooling. Above
+      300,000 per week, recessionary territory.
+    model_role: >
+      Economic Momentum bucket, 55% weight. The fastest-moving labor-
+      market signal in the model.
+
+  unemployment:
+    advanced: >
+      Unemployment rate, headline U-3 measure, in percent. Monthly print
+      with about a one-month lag. Slower than jobless claims but more
+      definitive — it's the official reading. The Sahm Rule (3-month
+      average UR ≥ 0.5pp above 12-month low) has historically nailed
+      every U.S. recession in real time. Watch the velocity, not the
+      level — going from 3.5% to 4.0% is more meaningful than 4.0%
+      flat. The 2024 episode is the Sahm Rule's most recent test (it
+      triggered, modestly).
+    layman: >
+      The official U.S. unemployment rate — the percentage of people who
+      want jobs but don't have them. Reported once a month. It's the
+      most-watched single economic statistic. The interesting thing for
+      this dashboard isn't the level so much as the change: when
+      unemployment ticks up half a percentage point from its low over
+      a few months (the "Sahm Rule"), recessions have followed every
+      time in the modern record.
+    model_role: >
+      Economic Momentum bucket, 45% weight. Slower than jobless claims
+      but the official reading; together they triangulate the labor
+      market.
+
+  # ── Sentiment ───────────────────────────────────────────────────────────
+
+  cnn_fear_greed:
+    advanced: >
+      CNN Fear & Greed Index, scale 0–100 (extreme fear → extreme greed).
+      Composite of seven retail-investor-sentiment proxies: market
+      momentum, stock breadth, equity put/call, market volatility,
+      junk-bond demand, market vs bond performance, and safe-haven
+      demand. Note: the data is *scraped* from CNN's public dataviz
+      endpoint, not an official API — schema changes have broken the
+      fetch in the past, with FRED UMCSENT used as fallback. Treat low
+      readings (extreme fear) as the stress condition; the model uses
+      `direction: low`. As a contrarian indicator, extreme-fear readings
+      have historically been near-bottoms — but the dashboard's job is
+      to flag stress, not call bottoms.
+    layman: >
+      An index from CNN that scores investor sentiment from 0 (extreme
+      fear) to 100 (extreme greed) by combining seven different market-
+      based signals. Low readings mean investors are scared; high
+      readings mean they're complacent. Historically, "extreme fear" has
+      often coincided with market bottoms — but that's hindsight; in
+      real time, extreme fear is also just plain stress. The dashboard
+      treats low readings as the stress signal. This data is scraped
+      from CNN's website and isn't always available.
+    model_role: >
+      Sentiment bucket. Inverted (low = stress); the only retail-
+      sentiment-flavored signal in the model — most others are
+      institutional / professional.
+
+  iran_trigger:
+    advanced: >
+      Manual override: 0 (calm), 1 (elevated tension), 2 (active crisis),
+      3 (war or shipping disruption). Captures the user's read on
+      Middle-East geopolitical risk that affects oil supply and global
+      risk premia. No automated time series — by design, geopolitical
+      flashpoints don't have clean numerical proxies and are better
+      handled by a human dialing in a level based on news consumption
+      and judgment. Set in `data/manual_overrides.json`.
+    layman: >
+      A manual override the user can flip to flag "tensions in the
+      Middle East are elevated right now" based on the news. The
+      dashboard can't directly measure geopolitical risk — there's no
+      free, daily, machine-readable feed for that — so the user dials
+      it in. Most of the time it's at zero. It went up during episodes
+      like the 2024 Iran-Israel exchanges.
+    model_role: >
+      Sentiment bucket, manual. Geopolitical-risk dial; complements the
+      market-derived sentiment signal.
+
+  # ── Global Spillover ────────────────────────────────────────────────────
+
+  usd_index:
+    advanced: >
+      Trade-weighted broad U.S. dollar index (FRED DTWEXBGS) — the
+      dollar's value against a basket of major trading-partner currencies.
+      Strong dollar (>115 on this index) is unambiguous global stress:
+      it tightens financial conditions for any foreign borrower with
+      dollar-denominated debt (most emerging markets, many corporates),
+      pressures U.S. exporters and multinationals, and historically
+      precedes EM-credit blowups by weeks. The 2022 dollar surge to ~120
+      coincided with EM ETF drawdowns and the U.K. gilt crisis. The
+      index moved later than expected during the 2024 cycle as
+      cross-currency-swap spreads absorbed some of the pressure.
+    layman: >
+      How strong the U.S. dollar is against the currencies of America's
+      major trading partners (Canada, Europe, Japan, China, etc.).
+      Counterintuitively, a *very strong* dollar is bad for global
+      stability: a lot of foreign companies and countries borrow in
+      dollars, so when dollars get expensive, their debt gets harder to
+      pay back. A strong dollar is also bad for U.S. companies that
+      sell abroad (their goods become expensive). Levels above 115 on
+      this index historically coincide with stress in emerging markets.
+    model_role: >
+      Global Spillover bucket. The clearest "U.S. financial conditions
+      tightening for the rest of the world" signal in the model.
+
+  euro_hy_oas:
+    advanced: >
+      ICE BofA European High Yield Option-Adjusted Spread, in percentage
+      points. The European cousin of `hy_oas`. Watching it alongside
+      U.S. HY OAS is the canonical "is this a U.S.-specific story or a
+      global credit story" diagnostic — the 2022 cycle had Euro HY
+      widening earlier and harder than U.S. HY due to Russia exposure
+      and ECB lag. FRED's BAML series is licensed and has historically
+      shown only ~3 years of history regardless of requested start; the
+      backtest engine handles the data gap by skipping the indicator
+      and renormalizing weights for affected dates.
+    layman: >
+      The same idea as the U.S. high-yield credit spread, but for
+      European junk bonds. Comparing the two side by side tells you
+      whether market stress is a U.S. story (only U.S. spreads widening),
+      a European story, or a global story (both moving). During the
+      2022 energy shock, European credit widened earlier than U.S. credit
+      because Europe was more exposed to Russia.
+    model_role: >
+      Global Spillover bucket. Cross-checks U.S. HY — divergence between
+      the two locates the geographic source of credit stress.
+
+  em_corp_oas:
+    advanced: >
+      ICE BofA Emerging Market Corporate Plus Option-Adjusted Spread,
+      in percentage points. Captures stress in dollar-denominated EM
+      corporate debt — a segment particularly sensitive to combined
+      U.S.-rate / strong-dollar conditions. Same FRED-licensing caveat
+      as `euro_hy_oas`. The 2018 EM selloff (Argentina, Turkey) and the
+      2022 cycle are the cleanest historical signals; early 2024 also
+      moved meaningfully on China-property concerns.
+    layman: >
+      The extra yield investors demand for lending to companies in
+      emerging-market countries (Brazil, Mexico, India, Turkey,
+      South Africa, etc.) versus U.S. Treasuries. EM corporate debt is
+      especially vulnerable when the U.S. dollar is strong (because
+      most of it is denominated in dollars) — so when both this spread
+      and the dollar index are rising together, EM stress is the
+      probable transmission path of the next crisis.
+    model_role: >
+      Global Spillover bucket. Co-moves with the dollar index — joint
+      strength is the EM-stress signal.
+
+  eem_vol:
+    advanced: >
+      One-month annualized realized volatility of the EEM emerging-
+      markets equity ETF, computed the same way as `sp500_1m_vol`.
+      Captures EM equity stress, which tends to lead U.S. equity stress
+      by days to weeks during global de-risking episodes. Useful as a
+      cross-check on `em_corp_oas`: if EEM vol spikes without EM credit
+      moving, the stress is equity-and-currency-specific (e.g., 2018
+      Turkey lira crisis); if both move, the stress is broader.
+    layman: >
+      How much the emerging-markets stock index has been jumping around
+      over the past month — same idea as the S&P realized vol indicator
+      but for the developing world. Emerging-market stocks tend to move
+      first during global risk-off episodes because they're seen as
+      riskier — when investors get nervous, they sell EM first, then
+      U.S. stocks.
+    model_role: >
+      Global Spillover bucket. Equity-side counterpart to the EM
+      corporate spread; together they cover both the credit and equity
+      legs of EM stress.
+
+  # ── Breadth & Trend ─────────────────────────────────────────────────────
+
+  sector_breadth:
+    advanced: >
+      Percentage of S&P 500 sector ETFs (the 11 SPDRs: XLY, XLC, XLK,
+      XLE, XLV, XLI, XLF, XLB, XLRE, XLU, XLP) trading below their
+      200-day moving averages. 0% = all sectors above their MAs (broad
+      uptrend), 100% = all below (broad downtrend). The "narrow
+      market" failure mode — when only a few mega-cap tech sectors
+      hold up the index while breadth deteriorates underneath — is one
+      of the cleaner pre-correction signals of the modern era.
+      Sustained readings above 60% (most sectors below MA) historically
+      coincide with material drawdown environments. Note: XLRE (real
+      estate sector) only launched 2015, so pre-2015 readings use the
+      remaining 10 sectors.
+    layman: >
+      The S&P 500 has 11 industry sectors (technology, finance,
+      healthcare, energy, etc.). This indicator measures how many of
+      them are trending downward (specifically, trading below their
+      200-day average price). When most sectors are trending down at
+      once, it means the market weakness is broad — not just a couple
+      of bad-news stocks dragging things down. Broad weakness is more
+      dangerous than narrow weakness.
+    model_role: >
+      Breadth & Trend bucket. The breadth-of-decline diagnostic; pairs
+      with the SPX 200-day-MA distance for the level + breadth picture.
+
+  spx_200dma_distance:
+    advanced: >
+      S&P 500 percentage distance from its 200-day moving average.
+      Negative readings = price below MA = downtrend. The single
+      cleanest binary trend-regime indicator. Below ~−5% historically
+      coincides with material risk-off periods; below −15% is genuine
+      bear-market territory. The model treats lower readings as more
+      stress (`invert: true`). The signal is mechanical and slow-moving
+      — it lags individual indicator turns but is robust to noise. A
+      sustained re-cross *above* the MA is one of the cleanest regime-
+      change signals available.
+    layman: >
+      The simplest possible trend gauge: where is the S&P 500 right
+      now compared to its average price over the past 200 trading days?
+      If it's above that average, markets are in an uptrend. If it's
+      below, they're in a downtrend. The further below, the more
+      serious. Distances of −10% or worse have historically marked
+      genuine bear-market conditions. It's a slow-moving signal but
+      it's hard to fake.
+    model_role: >
+      Breadth & Trend bucket. The trend-state binary; sustained reads
+      below the MA are one of the cleanest regime markers in the model.

@@ -45,13 +45,10 @@ Sonnet starts.
 
 ### Phase 0 — Highest priority (do these first)
 
-- [ ] 🅾️ **Codebase optimization pass** — Opus reviews all source files for superfluous code, rough edges between modules, and efficiency improvements. Produces a prioritised list; Sonnet executes.
+- [x] 🅾️ **Codebase optimization pass** — Opus design pass complete 2026-04-29.
+  Produced **Brief 21** (in [ROADMAP.md](ROADMAP.md#brief-21--codebase-optimization-pass)) — 9 prioritized items split across P0/P1/P2 tiers with effort estimates totaling ~3.5–4 hours. Recommended commit order: 21A (backtest indicator gap) → 21B (band-from-score consolidation) → 21C (color palette unification) → 21D (fetch dedup) → 21F (VIX series capture) → 21G (deferred imports) → 21E (yaml loader helper) → 21H/21I (small wins). Sonnet to execute as separate commits per item.
 
-- [ ] **Model explainer section in backtest report** *(Sonnet-executable once content is drafted)*
-  Add a collapsible or tabbed section to `output/backtest_report.html` that explains the model two ways:
-  (1) **Expert view** — statistical methodology: percentile scoring, Spearman IC, bucket weighting, regime classification, backtest design, known limitations (look-ahead, survivorship, data gaps).
-  (2) **Plain-English view** — for someone with no stats/finance/econ background: what the score means, what each bucket is watching for, how to read the bands, what the model can and can't predict, when to act on it vs ignore it.
-  Both views should be accessible from the main dashboard via the existing "View full backtest report →" link.
+- [x] **Model explainer section in backtest report** — Opus content drafted 2026-04-29 as **Brief 22** in [ROADMAP.md](ROADMAP.md#brief-22--backtest-model-explainer-expert--plain-english). Both registers (~400 words each) provided as ready-to-paste HTML in a `_section_explainer()` function. Sonnet wires into `src/backtest_report.py:generate_report` above the first `_run_and_render` call.
 
 ### Phase A — Verify & clean (30–60 min)
 
@@ -204,19 +201,22 @@ preserve Ian's numbering when committing so the trail back to this list is clear
   (a) confirm the RSS feed exposes URLs, (b) thread URL through to rendered
   HTML. If clickable but not visibly so: add styling (underline + hover).
 
-- [ ] **G6 — Indicator Detail enrichment: advanced + layman interpretations** *(Brief 18)*
-  In `src/indicator_detail.py`, each indicator's `<details>` block currently
-  shows chart + stats. Add two prose sub-sections per indicator:
-  (a) **Advanced** — what it measures, what regimes it discriminates, known
-      failure modes / lead-lag relationships.
-  (b) **Plain-English** — what is this number, why it matters, how to think
-      about it relative to the composite.
-  Plus a "How this fits the model" line — bucket, weight, co-moving indicators.
-  - Source: hand-authored YAML at `config/indicator_explainers.yaml`
-    (deterministic, reviewable, no API spend per run). Schema:
-    `<key>: { advanced: "...", layman: "...", model_role: "..." }`.
-  - Validate at startup: every indicator in `weights.yaml` has an entry
-    (or warn with a placeholder).
+- [ ] **G6 — Indicator Detail enrichment: advanced + layman interpretations** *(Brief 18 — content drafted 2026-04-29, ready for Sonnet wiring)*
+  Content delivered: `config/indicator_explainers.yaml` is authored with
+  advanced + layman + model_role entries for all 27 active indicators plus
+  3 staged for Brief 19 (crack_spread_321 / natgas / copper_gold_ratio).
+  Sonnet's remaining work is purely the wiring:
+  (a) Extend `src/indicator_detail.py:build_indicator_detail` to load the
+      YAML and render the three prose blocks below the existing chart +
+      stats table. Render `model_role` as a footer line, not a separate
+      block.
+  (b) Add `_validate_indicator_explainers()` to `src/config.py` that warns
+      (does not raise) when an indicator in weights.yaml has no explainer
+      entry — placeholder text "(explainer coming soon — Brief 18)" should
+      render in the dashboard for that case so the absence is visible.
+  (c) Add a small test that loads the YAML and asserts every key in
+      `KNOWN_INDICATOR_KEYS` (excluding the 3 Brief 19 entries which are
+      pre-staged) has all three fields populated.
 
 - [ ] **G7 — Name the buckets section**
   The container section housing Equity Volatility, Credit Spreads, Rates &
