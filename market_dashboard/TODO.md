@@ -26,6 +26,120 @@ See the bottom "Completed" block for the older-history milestone list.
 
 ---
 
+## Known issues — observed 2026-04-29 (diagnose first)
+
+These two items are **observed bugs**, not design tasks. Diagnose before
+shipping more features. If Sonnet picks them up, run the diagnostic steps
+in order rather than guessing at fixes.
+
+### Issue 1 — Morning automation fired at 9:30 AM CST instead of 7:30 AM
+
+**Symptom:** Today's dashboard run completed at ~9:30 AM CST. Expected
+7:30 AM (per Windows Task Scheduler "Market Stress Dashboard" task). Two-
+hour delay is consistent with: laptop failed to wake, or the scheduled
+task fired but stalled on something (network, fetch, dependency).
+
+**Diagnostic order** (per CLAUDE.md "Morning automation" section):
+
+1. `powercfg /lastwake` (admin shell) — what woke the machine and when?
+   - If wake timestamp is 9:30 AM, the wake task at 7:20 AM didn't fire
+     → check `powercfg /waketimers` (admin) for the "Market Dashboard
+     Wake" entry; verify `RTCWAKE=1` is still set in the task XML; verify
+     the laptop wasn't unplugged (RTC wake is power-state-dependent on
+     some configs).
+   - If wake timestamp is 7:20 AM but dashboard ran at 9:30 AM, the wake
+     succeeded but the 7:30 task either fired-and-stalled or didn't fire.
+2. `schtasks /query /tn "Market Stress Dashboard" /v /fo LIST` — check
+   "Last Run Time" and "Last Result" code. Result `0x0` = success;
+   anything else (especially `0x1` or `0x2`) is a fault to investigate.
+3. Check `data/alert_log.jsonl` for entries between 7:30 AM and 9:30 AM
+   today — if there are entries, the dashboard *did* run at 7:30 but
+   maybe failed silently and retried.
+4. Check `output/dashboard.html` mtime — if it's 9:30, only one run
+   happened. If 7:30 mtime exists but stale content, the run completed
+   but didn't write properly (rare but possible if a fetch hung).
+5. Windows Event Viewer → Applications and Services Logs → Microsoft →
+   Windows → TaskScheduler → Operational. Filter for the dashboard task
+   GUID; look for "Task Engine launched" / "Task completed" pairs and any
+   error events in the 7:30–9:30 window.
+
+**Note on DST:** US DST began 2026-03-08, so we're 7 weeks in. Unlikely to
+be a DST-edge-case bug at this point in the cycle, but worth checking
+that the task XML still has the local-time trigger and not a UTC trigger
+that drifted at the DST boundary.
+
+### Issue 2 — Overnight News Brief not updating in the Pushover-delivered report
+
+**Symptom:** Pushover alerts / heartbeats coming through but the news
+brief content appears stale (or the news section appears empty).
+
+**Clarification needed before fixing:** the dashboard's "Overnight News
+Brief" section and the news content in Pushover messages come from
+*different code paths*. Likely interpretations:
+
+- **(a) The dashboard HTML's news section is stale** — `get_news_brief()`
+  in `src/news.py` returned `[]` so `news_html` is empty; the previous
+  render's news doesn't carry forward (each run rewrites the file). When
+  Ian clicks the GitHub Pages link in his Pushover message, the dashboard
+  has no news section.
+- **(b) The Pushover message body lacks news context** — by design,
+  `send_alerts()` only appends `get_trigger_news_context()` output when
+  triggers actually fire. Daily heartbeats (`send_heartbeat()`) and
+  weekly digests (`send_weekly_digest()`) do *not* include news. If Ian
+  expects news in the daily heartbeat, that's a feature gap, not a bug.
+
+**Most likely root cause for (a):** one of the 4 hardcoded RSS feeds in
+`src/news.py:RSS_FEEDS` (Reuters businessNews, MarketWatch, Yahoo
+Finance, WSJ markets) has gone dead, and the silent `try/except: continue`
+on lines 47–48 hides the failure. If 2+ feeds die, the headline list is
+short or empty → `_filter_relevant` returns nothing → Haiku gets nothing
+to summarize → `get_news_brief` returns `[]`.
+
+**Diagnostic steps (run in order):**
+
+1. From the primary dir, run a manual dry pass and inspect the news
+   section: `python run_dashboard.py --no-cache --no-alerts --quiet`
+   then open `output/dashboard.html` in a browser. Is the "Overnight
+   News Brief" section present and populated, or empty?
+2. If empty, instrument the four RSS feeds — quick Python REPL:
+   ```python
+   import feedparser
+   for url in [
+       "https://feeds.reuters.com/reuters/businessNews",
+       "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/",
+       "https://finance.yahoo.com/rss/topstories",
+       "https://www.wsj.com/xml/rss/3_7085.xml",
+   ]:
+       f = feedparser.parse(url)
+       print(url, "→", len(f.entries), "entries")
+   ```
+   Any feed returning 0 entries is the (or a) culprit.
+3. Check `.env` for `ENABLE_NEWS_TRIAGE` — if it's `false` or missing,
+   the brief is intentionally skipped. Default should be `true` (or
+   unset, which `news.py` treats as `true`).
+4. Check `ANTHROPIC_API_KEY` is still valid — if Haiku auth fails,
+   `get_news_brief` returns `[]` silently.
+5. Inspect `data/cache/` for any news-related cache file — if one is
+   minutes old but empty, the cache is masking a fetch failure.
+
+**Likely fix:** **Brief 20** in [ROADMAP.md](ROADMAP.md#brief-20--expand-free-wire-service-news-coverage)
+already addresses this directly:
+- expands feeds from 4 to ≥8 (so a single feed death isn't fatal),
+- moves feed list to `config/news_feeds.yaml` (no code change to swap a
+  dead feed),
+- adds `_log_feed_failure()` writing to `alert_log.jsonl` so silent
+  failures become observable,
+- adds source attribution end-to-end (Ian can see *which* feed each
+  headline came from in the dashboard).
+
+**Recommendation:** diagnose with the steps above to confirm root cause
+*today*, then prioritise shipping Brief 20 as the durable fix. If it's
+specifically interpretation (b) — Ian wants news in the daily heartbeat
+itself — open a separate small brief for that (heartbeat enrichment
+is a 30-min change in `src/alerts.py:send_heartbeat`).
+
+---
+
 ## Tactical Markets (In Planning, Hopper Until Market Stress Dashboard Ships)
 
 **Two companion tool briefs drafted and committed (2026-04-27):**
