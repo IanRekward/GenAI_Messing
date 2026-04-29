@@ -332,6 +332,13 @@ preserve Ian's numbering when committing so the trail back to this list is clear
       `KNOWN_INDICATOR_KEYS` (excluding the 3 Brief 19 entries which are
       pre-staged) has all three fields populated.
 
+  > ⚠️ **Coordination with Brief 19:** when Brief 19 ships, it must
+  > delete the `oil_vol:` block from `config/indicator_explainers.yaml`
+  > in the same commit. The 3 Brief 19 entries (`crack_spread_321`,
+  > `natgas`, `copper_gold_ratio`) are *already* present in the YAML —
+  > Brief 19 does NOT need to add them. See Brief 19's file step 6 in
+  > ROADMAP.md.
+
 - [ ] **G7 — Name the buckets section**
   The container section housing Equity Volatility, Credit Spreads, Rates &
   Yield Curve, etc. has no top-level heading (or only a generic one). Add an

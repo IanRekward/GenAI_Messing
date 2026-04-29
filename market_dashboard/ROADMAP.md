@@ -1873,6 +1873,19 @@ HTML — they already surface the information correctly post-remediation.
 `RB=F`, `HO=F`, `NG=F`, `HG=F`, `GC=F`). Existing `commodities` bucket structure
 is config-driven — no scoring.py code references `oil_vol` by name.
 
+> ⚠️ **Coordination with Brief 18 — DO NOT MISS:** This brief deletes
+> `oil_vol` from `config/weights.yaml` and `KNOWN_INDICATOR_KEYS`. The
+> explainer YAML at `config/indicator_explainers.yaml` (authored
+> 2026-04-29) currently has an `oil_vol` block. **In the same commit
+> that ships Brief 19, you must also delete the `oil_vol` block from
+> `config/indicator_explainers.yaml`.** If you don't, the
+> `_validate_indicator_explainers()` validator added by Brief 18 will
+> warn on every dashboard run that an explainer exists for an indicator
+> that no longer ships. The `crack_spread_321`, `natgas`, and
+> `copper_gold_ratio` explainer blocks are already pre-staged in that
+> file — they will activate on this commit and need no addition. See
+> file step 7 below.
+
 **Problem:** The `commodities` bucket is misnamed and undiversified. Both
 indicators (`wti_crude` 0.55, `oil_vol` 0.45) derive from the same `CL=F`
 contract, so the bucket is 100% WTI exposure with two views of it. This creates
@@ -2082,7 +2095,21 @@ level.
      tip: "Copper futures / gold futures (HG=F / GC=F). Classic growth-vs-fear proxy: copper rises with industrial demand, gold rises with safe-haven demand. Low ratio = market pricing recession. Lower readings = more stress."
    ```
 
-6. **`tests/test_commodities_bucket.py`** — new file with three focused tests:
+6. **`config/indicator_explainers.yaml`** — coordination with Brief 18:
+   - **Delete the `oil_vol:` block entirely** (the indicator no longer
+     ships, so the explainer would orphan and trigger a validation warning).
+   - **Leave `crack_spread_321`, `natgas`, and `copper_gold_ratio` as-is.**
+     They were pre-staged in this file when Brief 18's content was authored
+     on 2026-04-29 specifically so this brief doesn't need to add them.
+     Verify all three blocks are present before committing — if Brief 18's
+     wiring has shipped between then and now, the `_validate_indicator_explainers()`
+     check should pass cleanly.
+   - **Do not edit the `# ── Brief 19 (designed, not yet shipped) ─` header
+     comment** — instead, after this brief ships, change that comment block
+     to `# ── Commodities & Energy (Brief 19, shipped) ─` so future readers
+     know the staging is resolved. Small but keeps the file honest.
+
+7. **`tests/test_commodities_bucket.py`** — new file with three focused tests:
 
    - **`test_crack_spread_321_arithmetic`** — Mock `fetch.fetch_yfinance_series`
      to return synthetic series for `CL=F`, `RB=F`, `HO=F`. Use simple values
