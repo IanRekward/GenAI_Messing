@@ -473,3 +473,25 @@ non-scored display panel. See Phase E for the executable brief.
 
 **Next up for Sonnet:** Phase G items G3–G7 (dashboard UX additions).
 When a design question blocks progress, flag to Opus (e.g., Energy/Commodities bucket above).
+
+---
+
+### Phase H — Future / low priority (do not start until everything above is done)
+
+- [ ] **Phone-triggered dashboard update + push** *(Ian's ask 2026-04-29)*
+  Ability to kick off a fresh dashboard run and GitHub Pages publish from Ian's
+  phone without opening a laptop. Needs design pass (Opus) before execution.
+  Options to explore:
+  - **Pushover webhook / callback URL** — Pushover supports reply callbacks;
+    could listen on a small local HTTP server (or ngrok tunnel) and trigger
+    `run_dashboard.py --publish` on receipt.
+  - **iOS Shortcut → SSH** — SSH into the laptop from Shortcuts, run the
+    script directly. Requires laptop awake + SSH server running.
+  - **iOS Shortcut → GitHub Actions webhook** — push a trigger to a GH Actions
+    workflow that runs on a cloud runner (no laptop dependency, but needs
+    secrets wired into GH Actions and a hosted runner that can reach FRED/yfinance).
+  - **ntfy.sh or similar self-hosted push** — free pub/sub; phone sends a
+    message, a listener on the laptop fires the run.
+  Decision criteria: reliable wake-on-command (laptop may be sleeping),
+  no ongoing cost, minimal setup, works from cellular not just home wifi.
+  Opus should evaluate the options and lock one in before Sonnet builds it.
