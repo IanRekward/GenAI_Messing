@@ -234,7 +234,7 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   205/205 tests. Fixed pre-existing `test_remediation_skipped_on_clean_run` failure
   (weekly FRED series legitimately stale — test was asserting wrong condition).
 
-- [ ] **Brief 19 — Commodities & Energy bucket diversification** *(design locked 2026-04-27, ready for Sonnet)*
+- [x] **Brief 19 — Commodities & Energy bucket diversification** *(shipped 2026-04-29 — commit 86be640)*
   Full brief in [ROADMAP.md](ROADMAP.md#brief-19--commodities--energy-bucket-diversification).
   Drops `oil_vol` (redundant with VIX/MOVE in real stress); adds `crack_spread_321`
   (3-2-1 crack — paper-vs-physical refining-margin signal, Ian's specific ask),
