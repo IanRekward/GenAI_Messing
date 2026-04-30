@@ -62,6 +62,27 @@ def _handler_spx_200dma_distance(key: str, cfg: dict, env: dict, manual: dict, y
     return _compute_spx_200dma_distance(env, years)
 
 
+def _handler_crack_spread_321(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    wti  = fetch.fetch_yfinance_series("CL=F", env, years)
+    rbob = fetch.fetch_yfinance_series("RB=F", env, years)
+    ulsd = fetch.fetch_yfinance_series("HO=F", env, years)
+    combined = pd.concat(
+        [wti.rename("wti"), rbob.rename("rbob"), ulsd.rename("ulsd")], axis=1
+    ).dropna()
+    crack = (2 * combined["rbob"] * 42 + combined["ulsd"] * 42) / 3 - combined["wti"]
+    return float(crack.iloc[-1]), crack
+
+
+def _handler_copper_gold_ratio(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    copper = fetch.fetch_yfinance_series("HG=F", env, years)
+    gold   = fetch.fetch_yfinance_series("GC=F", env, years)
+    combined = pd.concat(
+        [copper.rename("copper"), gold.rename("gold")], axis=1
+    ).dropna()
+    ratio = combined["copper"] / combined["gold"]
+    return float(ratio.iloc[-1]), ratio
+
+
 def _handler_vix_term_structure(key: str, cfg: dict, env: dict, manual: dict, years: int):
     import yfinance as yf
     vix = yf.download("^VIX", period=f"{years}y", progress=False, auto_adjust=True)
@@ -84,6 +105,8 @@ COMPUTED_HANDLERS: dict = {
     "treasury_auction_stress": _handler_treasury_auction_stress,
     "sector_breadth":          _handler_sector_breadth,
     "spx_200dma_distance":     _handler_spx_200dma_distance,
+    "crack_spread_321":        _handler_crack_spread_321,
+    "copper_gold_ratio":       _handler_copper_gold_ratio,
     "vix_term_structure":      _handler_vix_term_structure,
 }
 

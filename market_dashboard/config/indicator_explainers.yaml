@@ -423,34 +423,9 @@ indicators:
       Commodities & Energy bucket. The headline energy-price indicator;
       paired with realized oil volatility for the level + jumpiness picture.
 
-  oil_vol:
-    advanced: >
-      One-month annualized realized volatility of WTI crude, computed
-      the same way as `sp500_1m_vol` but on the `CL=F` price series.
-      Spikes to 60%+ historically map to supply shocks (Iran, Saudi
-      attacks, OPEC defections) and severe demand-destruction events
-      (COVID April 2020 negative-price episode). The signal duplicates
-      VIX-and-MOVE during real broad risk-off regimes — it tends not to
-      add independent information when everything else is also stressed.
-      It does add information during energy-specific dislocations that
-      don't (yet) propagate to broad markets.
-    layman: >
-      How much the oil price has been jumping around over the past
-      month, in percentage terms. Steady prices imply a normal supply-
-      and-demand backdrop; wild swings imply a supply shock (war,
-      pipeline attack, OPEC fight) or a demand collapse. It mostly tells
-      you "is something specifically going on in the energy market right
-      now" — when broader markets are also stressed, the regular VIX
-      already carries that signal.
-    model_role: >
-      Commodities & Energy bucket. Subsumed by VIX/MOVE in broad stress
-      regimes; carries independent signal mainly during energy-specific
-      shocks.
-
-  # ── Brief 19 (designed, not yet shipped) ────────────────────────────────
-  # These three indicators are part of the Commodities & Energy bucket
-  # diversification brief. Entries pre-staged here so Sonnet can ship
-  # Brief 19 with explainer content already available.
+  # ── Commodities & Energy (Brief 19, shipped) ────────────────────────────
+  # crack_spread_321, natgas, copper_gold_ratio replace oil_vol in the
+  # commodities bucket. oil_vol explainer removed in same commit.
 
   crack_spread_321:
     advanced: >

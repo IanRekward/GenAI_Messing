@@ -171,21 +171,37 @@ buckets:
     indicators:
       wti_crude:
         label: WTI Crude Oil
-        weight: 0.55
+        weight: 0.30
         source:
           type: yfinance
           ticker: "CL=F"
         invert: false
         unit: "$/bbl"
-      oil_vol:
-        label: Oil 1M Realized Vol
-        weight: 0.45
+      crack_spread_321:
+        label: "3-2-1 Crack Spread"
+        weight: 0.25
+        source:
+          type: computed
+          handler: crack_spread_321
+        invert: false
+        unit: "$/bbl"
+      natgas:
+        label: "Henry Hub Natural Gas (YoY)"
+        weight: 0.25
         source:
           type: yfinance
-          ticker: "CL=F"
-          transform: realized_vol_series
+          ticker: "NG=F"
+          transform: yoy_series
         invert: false
         unit: "%"
+      copper_gold_ratio:
+        label: "Copper / Gold Ratio"
+        weight: 0.20
+        source:
+          type: computed
+          handler: copper_gold_ratio
+        invert: true
+        unit: "ratio"
 
   economic_momentum:
     label: Economic Momentum

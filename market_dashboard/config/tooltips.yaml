@@ -47,7 +47,7 @@ buckets:
   funding_liquidity:
     tip: "Stress in short-term money markets. A SOFR spread blowout is the modern equivalent of the 2008 LIBOR-OIS crisis — it means banks are charging each other above the Fed's target."
   commodities:
-    tip: "Oil price level and oil volatility. Oil spikes historically trigger recessions (1973, 1979, 1990, 2007). High oil vol reflects geopolitical risk and supply uncertainty."
+    tip: "Energy prices, refining margins, and commodity-based growth signals. Captures real-economy stress that flat futures prices miss — crack spread blowouts, supply shocks, and growth/risk-off flows."
   economic_momentum:
     tip: "Lagging indicators of labor market health. Rising jobless claims or unemployment lag the crisis but confirm a recession is underway."
   sentiment:
@@ -94,8 +94,12 @@ indicators:
     tip: "Manual assessment of repo market conditions (0=calm, 1=elevated, 2=crisis, 3=extreme). Repo stress can freeze short-term funding overnight, as happened in Sept 2019."
   wti_crude:
     tip: "WTI crude oil price ($/barrel). Above $100 historically triggers recession risk. Extreme moves (±20% in weeks) indicate supply shocks or geopolitical crisis."
-  oil_vol:
-    tip: "1-month realized volatility of WTI crude (annualized %). Sustained above 40% suggests a supply shock or geopolitical event severe enough to destabilize energy markets."
+  crack_spread_321:
+    tip: "3-2-1 crack spread ($/bbl): refining margin between crude (input) and gasoline + distillate (output). Standard industry stress metric. Wide crack = refiners can't keep up — hurricanes, refinery fires, product embargoes. Captures real-economy oil stress that flat WTI misses."
+  natgas:
+    tip: "Henry Hub natural gas front-month, YoY % change. Independent supply-shock vector — winter cold snaps, European LNG contagion, storage anomalies. YoY framing strips out 'new normal' price drift."
+  copper_gold_ratio:
+    tip: "Copper futures / gold futures (HG=F / GC=F). Classic growth-vs-fear proxy: copper rises with industrial demand, gold rises with safe-haven demand. Low ratio = market pricing recession. Lower readings = more stress."
   jobless_claims:
     tip: "4-week moving average of U.S. initial jobless claims (thousands). Above 300K signals labor market deterioration. Above 375K indicates recession conditions."
   unemployment:

@@ -30,7 +30,7 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "nfci", "stlfsi",
     "breakeven_5y", "cpi_yoy",
     "sofr_spread",
-    "wti_crude", "oil_vol",
+    "wti_crude", "crack_spread_321", "natgas", "copper_gold_ratio",
     "jobless_claims", "unemployment",
     "usd_index", "euro_hy_oas", "em_corp_oas", "eem_vol",
     "cnn_fear_greed",

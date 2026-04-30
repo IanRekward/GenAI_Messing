@@ -125,11 +125,23 @@ indicators:
     orange: 100.0
     red: 120.0
 
-  oil_vol:                    # WTI 1-month realized vol, annualized %
+  crack_spread_321:           # 3-2-1 crack spread, $/bbl; wide = refining bottleneck
+    direction: high
+    yellow: 35.0
+    orange: 45.0
+    red: 55.0
+
+  natgas:                     # Henry Hub front-month YoY %; high = supply stress
     direction: high
     yellow: 30.0
-    orange: 45.0
-    red: 60.0
+    orange: 60.0
+    red: 100.0
+
+  copper_gold_ratio:          # HG=F / GC=F; low = risk-off / growth fears
+    direction: low
+    yellow: 0.0021
+    orange: 0.0018
+    red: 0.0015
 
   # --- Economic Momentum ---
   jobless_claims:             # 4-week avg initial claims, in thousands
