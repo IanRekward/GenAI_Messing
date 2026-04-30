@@ -1,0 +1,49 @@
+# Free RSS feeds for news_brief headline ingestion.
+# Categories control dedup priority and per-feed item caps:
+#   official  — government / central bank press releases (highest signal)
+#   wire      — Reuters, AP, etc. (upstream of most publishers)
+#   publisher — aggregation, commentary, paywalled-body headlines
+#
+# Note: Reuters and AP no longer publish free public RSS feeds as of 2026.
+# Official-tier feeds are the upstream primary sources for most macro news.
+
+feeds:
+  # --- Official ---
+  - name: "Fed Press Releases"
+    url: "https://www.federalreserve.gov/feeds/press_all.xml"
+    category: official
+    max_items: 12
+  - name: "Fed Speeches"
+    url: "https://www.federalreserve.gov/feeds/speeches.xml"
+    category: official
+    max_items: 12
+  - name: "ECB Press Releases"
+    url: "https://www.ecb.europa.eu/rss/press.html"
+    category: official
+    max_items: 12
+  - name: "Treasury"
+    url: "https://home.treasury.gov/rss.xml"
+    category: official
+    max_items: 12
+
+  # --- Publisher ---
+  - name: "MarketWatch"
+    url: "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/"
+    category: publisher
+    max_items: 8
+  - name: "Yahoo Finance"
+    url: "https://finance.yahoo.com/rss/topstories"
+    category: publisher
+    max_items: 8
+  - name: "FT Alphaville"
+    url: "https://www.ft.com/alphaville?format=rss"
+    category: publisher
+    max_items: 8
+  - name: "Bloomberg Markets"
+    url: "https://feeds.bloomberg.com/markets/news.rss"
+    category: publisher
+    max_items: 8
+  - name: "CNBC Markets"
+    url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
+    category: publisher
+    max_items: 8

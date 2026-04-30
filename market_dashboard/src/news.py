@@ -10,13 +10,6 @@ from pathlib import Path
 import feedparser
 import yaml
 
-RSS_FEEDS = [
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/",
-    "https://finance.yahoo.com/rss/topstories",
-    "https://www.wsj.com/xml/rss/3_7085.xml",
-]
-
 WATCHLIST = [
     "fed", "federal reserve", "rate", "inflation", "recession", "credit",
     "yield", "vix", "volatility", "bank", "liquidity", "spread",
@@ -28,25 +21,85 @@ WATCHLIST = [
 _SYSTEM = (
     "You are a concise financial analyst. Given a list of news headlines, "
     "return exactly 4–5 bullet points (start each with '•') summarising the "
-    "most market-relevant stories. Focus on systemic risk, macro policy, and "
+    "most market-relevant stories. Prefer official-source items (Fed, ECB, "
+    "Treasury, BLS) when summarizing, but include important wire-service and "
+    "publisher stories too. Focus on systemic risk, macro policy, and "
     "credit/liquidity signals. Skip individual stock moves."
 )
 
+_CATEGORY_RANK = {"official": 0, "wire": 1, "publisher": 2}
 
-def _pull_headlines(max_per_feed: int = 12) -> list[dict]:
-    """Return [{title, url}] from all feeds."""
+
+def _load_news_feeds() -> list[dict]:
+    path = Path("config/news_feeds.yaml")
+    if not path.exists():
+        return []
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    return data.get("feeds", []) if data else []
+
+
+def _title_tokens(title: str) -> set[str]:
+    return {w.lower() for w in re.findall(r"\b\w{4,}\b", title)}
+
+
+def _dedup_headlines(items: list[dict], threshold: float = 0.7) -> list[dict]:
+    kept: list[dict] = []
+    kept_tokens: list[set[str]] = []
+    for item in items:
+        toks = _title_tokens(item["title"])
+        if not toks:
+            continue
+        dup_idx = -1
+        for i, prior_toks in enumerate(kept_tokens):
+            denom = len(toks | prior_toks)
+            if denom and len(toks & prior_toks) / denom >= threshold:
+                dup_idx = i
+                break
+        if dup_idx == -1:
+            kept.append(item)
+            kept_tokens.append(toks)
+        else:
+            if _CATEGORY_RANK[item["category"]] < _CATEGORY_RANK[kept[dup_idx]["category"]]:
+                kept[dup_idx] = item
+                kept_tokens[dup_idx] = toks
+    return kept
+
+
+def _log_feed_failure(name: str, reason: str) -> None:
+    try:
+        from src.alerts import _log_alert
+        _log_alert({
+            "type": "news_feed_failure",
+            "feed": name,
+            "reason": reason[:200],
+        })
+    except Exception:
+        pass
+
+
+def _pull_headlines() -> list[dict]:
+    """Return [{title, url, source, category}] from all configured feeds, deduped."""
     items: list[dict] = []
-    for feed_url in RSS_FEEDS:
+    for feed in _load_news_feeds():
         try:
-            feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:max_per_feed]:
+            parsed = feedparser.parse(feed["url"])
+            if not parsed.entries:
+                _log_feed_failure(feed["name"], "0 entries returned")
+                continue
+            for entry in parsed.entries[:feed["max_items"]]:
                 title = entry.get("title", "").strip()
                 link = entry.get("link", "").strip()
                 if title:
-                    items.append({"title": title, "url": link})
-        except Exception:
+                    items.append({
+                        "title": title,
+                        "url": link,
+                        "source": feed["name"],
+                        "category": feed["category"],
+                    })
+        except Exception as exc:
+            _log_feed_failure(feed["name"], str(exc))
             continue
-    return items
+    return _dedup_headlines(items)
 
 
 def _filter_relevant(headlines: list[str]) -> list[str]:
@@ -68,6 +121,22 @@ def _best_match_url(bullet: str, items: list[dict]) -> str:
         if score > best_score:
             best_score, best_url = score, item["url"]
     return best_url if best_score >= 0.25 else ""
+
+
+def _best_match_item(bullet: str, items: list[dict]) -> dict:
+    """Return the best-matching item dict (or empty dict) for source attribution."""
+    words = {w.lower() for w in re.findall(r'\b\w{4,}\b', bullet)}
+    if not words:
+        return {}
+    best_score, best_item = 0.0, {}
+    for item in items:
+        title_words = {w.lower() for w in re.findall(r'\b\w{4,}\b', item["title"])}
+        if not title_words:
+            continue
+        score = len(words & title_words) / len(words)
+        if score > best_score:
+            best_score, best_item = score, item
+    return best_item if best_score >= 0.25 else {}
 
 
 def _load_news_keywords() -> dict:
@@ -142,7 +211,7 @@ def get_trigger_news_context(triggered_keys: set[str], env: dict) -> str:
 
 
 def get_news_brief(env: dict) -> list[dict]:
-    """Return list of {text, url} dicts. Returns [] when triage is off or key is missing."""
+    """Return list of {text, url, source} dicts. Returns [] when triage is off or key is missing."""
     if env.get("ENABLE_NEWS_TRIAGE", "true").lower() != "true":
         return []
     api_key = env.get("ANTHROPIC_API_KEY", "")
@@ -156,7 +225,9 @@ def get_news_brief(env: dict) -> list[dict]:
     all_titles = [i["title"] for i in items]
     relevant_titles = _filter_relevant(all_titles)
     relevant_items = [i for i in items if i["title"] in set(relevant_titles)]
-    hl_text = "\n".join(f"- {t}" for t in relevant_titles[:30])
+    hl_text = "\n".join(
+        f"- [{i['source']}] {i['title']}" for i in relevant_items[:30]
+    )
 
     try:
         import anthropic
@@ -175,7 +246,15 @@ def get_news_brief(env: dict) -> list[dict]:
             if line.strip() and line.strip()[0] in "•-*"
         ]
         if bullets:
-            return [{"text": b, "url": _best_match_url(b, relevant_items)} for b in bullets[:6]]
-        return [{"text": text, "url": ""}]
+            result = []
+            for b in bullets[:6]:
+                matched = _best_match_item(b, relevant_items)
+                result.append({
+                    "text": b,
+                    "url": matched.get("url", ""),
+                    "source": matched.get("source", ""),
+                })
+            return result
+        return [{"text": text, "url": "", "source": ""}]
     except Exception as exc:
-        return [{"text": f"News triage unavailable: {exc}", "url": ""}]
+        return [{"text": f"News triage unavailable: {exc}", "url": "", "source": ""}]

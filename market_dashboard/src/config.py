@@ -12,6 +12,10 @@ Call validate_config() from run_dashboard.py before any data fetching.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
+import yaml
+
 
 class ConfigError(Exception):
     """Raised when weights.yaml, thresholds.yaml, or scoring.py have drifted."""
@@ -43,6 +47,35 @@ _VALID_SOURCE_TYPES = frozenset({"yfinance", "fred", "computed", "manual"})
 _VALID_TRANSFORMS = frozenset({"realized_vol_series", "yoy_series"})
 
 
+_VALID_NEWS_CATEGORIES = frozenset({"official", "wire", "publisher"})
+
+
+def _validate_news_feeds() -> None:
+    path = Path("config/news_feeds.yaml")
+    if not path.exists():
+        return
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    feeds = data.get("feeds", [])
+    if not feeds:
+        raise ConfigError("config/news_feeds.yaml has no 'feeds' entries.")
+    for i, f in enumerate(feeds):
+        for k in ("name", "url", "category", "max_items"):
+            if k not in f:
+                raise ConfigError(
+                    f"news_feeds.yaml entry {i} missing field '{k}'."
+                )
+        if f["category"] not in _VALID_NEWS_CATEGORIES:
+            raise ConfigError(
+                f"news_feeds.yaml entry '{f['name']}' has invalid category "
+                f"'{f['category']}' — must be one of {sorted(_VALID_NEWS_CATEGORIES)}."
+            )
+        if not isinstance(f["max_items"], int) or f["max_items"] < 1:
+            raise ConfigError(
+                f"news_feeds.yaml entry '{f['name']}' has invalid max_items "
+                f"{f['max_items']!r} — must be a positive int."
+            )
+
+
 def validate_config(weights: dict, thresholds: dict,
                     computed_handlers: "frozenset[str] | None" = None) -> None:
     """
@@ -58,6 +91,7 @@ def validate_config(weights: dict, thresholds: dict,
     _validate_threshold_keys(weights, thresholds)
     _validate_sources(weights, computed_handlers or frozenset())
     _validate_regime_weights(weights)
+    _validate_news_feeds()
 
 
 def _validate_bucket_count(weights: dict) -> None:

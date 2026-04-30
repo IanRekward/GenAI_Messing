@@ -1017,12 +1017,18 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         for item in news:
             text = item["text"]
             url = item.get("url", "")
+            source = item.get("source", "")
+            src_label = (
+                f'<span style="font-size:.72rem;color:#6e7681;font-weight:500;'
+                f'margin-right:5px">{source}:</span>'
+                if source else ""
+            )
             if url:
                 li_parts.append(
-                    f'<li><a href="{url}" target="_blank" rel="noopener">{text}</a></li>'
+                    f'<li>{src_label}<a href="{url}" target="_blank" rel="noopener">{text}</a></li>'
                 )
             else:
-                li_parts.append(f"<li>{text}</li>")
+                li_parts.append(f"<li>{src_label}{text}</li>")
         news_html = f"""
 <div class="card">
   <h2>Overnight News Brief</h2>
