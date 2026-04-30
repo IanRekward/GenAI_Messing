@@ -129,38 +129,55 @@ SUBSET_END   = "2017-12-31"
 
 # Earliest date each derived series becomes usable (need enough prior data for vol/YoY windows)
 _AVAIL: dict[str, str] = {
-    "sofr_spread": "2018-04-03",    # SOFR launched April 2018
-    "eem_vol":     "2004-04-01",    # EEM listed 2003; need 1yr price history for 21-day rolling vol
-    "usd_index":   "2006-01-04",    # FRED DTWEXBGS starts Jan 2006
-    "euro_hy_oas": "1998-01-02",    # ICE BofA Euro HY OAS from 1997/98
-    "em_corp_oas": "1998-01-02",    # ICE BofA EM Corp OAS from 1997/98
-    "breakeven_5y":"2003-01-03",    # T5YIE starts Jan 2003
+    "sofr_spread":             "2018-04-03",  # SOFR launched April 2018
+    "eem_vol":                 "2004-04-01",  # EEM listed 2003; need 1yr for 21-day rolling vol
+    "usd_index":               "2006-01-04",  # FRED DTWEXBGS starts Jan 2006
+    "euro_hy_oas":             "1998-01-02",  # ICE BofA Euro HY OAS from 1997/98
+    "em_corp_oas":             "1998-01-02",  # ICE BofA EM Corp OAS from 1997/98
+    "breakeven_5y":            "2003-01-03",  # T5YIE starts Jan 2003
+    "vix_term_structure":      "2008-04-01",  # VIX3M (^VIX3M) launched April 2008
+    "treasury_auction_stress": "2008-01-01",  # TreasuryDirect API reliable from ~2008
 }
 
-# Manual indicators: always 0 in historical backtest (no historical series)
-_MANUAL = {"repo_stress", "aaii_bull_bear", "iran_trigger"}
+# Manual indicators: always neutral (0/50/0) in historical backtest — no historical series.
+# cnn_fear_greed: no pre-2022 data available via API; scored neutral.
+_MANUAL = {"repo_stress", "iran_trigger", "cnn_fear_greed"}
+
+_BT_SECTOR_ETFS = [
+    "XLY", "XLC", "XLK", "XLE", "XLV",
+    "XLI", "XLF", "XLB", "XLRE", "XLU", "XLP",
+]
 
 # Map from indicator key → derived series key in the fetched dict
 _IND_TO_SERIES: dict[str, str] = {
-    "vix":          "vix_price",
-    "sp500_1m_vol": "sp500_1m_vol",
-    "hy_oas":       "hy_oas",
-    "ig_oas":       "ig_oas",
-    "yield_curve":  "yield_curve",
-    "ten_year":     "tnx_price",
-    "nfci":         "nfci",
-    "stlfsi":       "stlfsi",
-    "breakeven_5y": "breakeven_5y",
-    "cpi_yoy":      "cpi_yoy",
-    "sofr_spread":  "sofr_spread",
-    "wti_crude":    "wti_price",
-    "oil_vol":      "oil_vol",
-    "jobless_claims": "jobless_claims",
-    "unemployment": "unemployment",
-    "usd_index":    "usd_index",
-    "euro_hy_oas":  "euro_hy_oas",
-    "em_corp_oas":  "em_corp_oas",
-    "eem_vol":      "eem_vol",
+    "vix":                    "vix_price",
+    "sp500_1m_vol":           "sp500_1m_vol",
+    "hy_oas":                 "hy_oas",
+    "ig_oas":                 "ig_oas",
+    "yield_curve":            "yield_curve",
+    "ten_year":               "tnx_price",
+    "nfci":                   "nfci",
+    "stlfsi":                 "stlfsi",
+    "breakeven_5y":           "breakeven_5y",
+    "cpi_yoy":                "cpi_yoy",
+    "sofr_spread":            "sofr_spread",
+    "wti_crude":              "wti_price",
+    "jobless_claims":         "jobless_claims",
+    "unemployment":           "unemployment",
+    "usd_index":              "usd_index",
+    "euro_hy_oas":            "euro_hy_oas",
+    "em_corp_oas":            "em_corp_oas",
+    "eem_vol":                "eem_vol",
+    # Brief 21A — previously missing from backtest
+    "vix_term_structure":     "vix_term_structure",
+    "move_index":             "move_index",
+    "treasury_auction_stress":"treasury_auction_stress",
+    "sector_breadth":         "sector_breadth",
+    "spx_200dma_distance":    "spx_200dma_distance",
+    # Brief 19 — commodities diversification
+    "crack_spread_321":       "crack_spread_321",
+    "natgas":                 "natgas",
+    "copper_gold_ratio":      "copper_gold_ratio",
 }
 
 
@@ -210,23 +227,64 @@ def _fetch_raw(env: dict) -> dict[str, pd.Series]:
     _fred("euro_hy_oas",   "BAMLHE00EHYIOAS")
     _fred("em_corp_oas",   "BAMLEMCBPIOAS")
     _yf("eem_price",       "EEM")
+    # Brief 21A — previously missing indicators
+    _yf("vix3m_price",     "^VIX3M")
+    _yf("move_index",      "^MOVE")
+    for _ticker in _BT_SECTOR_ETFS:
+        _yf(f"sector_{_ticker}", _ticker)
+    # Brief 19 — commodities diversification
+    _yf("rbob_price",      "RB=F")
+    _yf("ulsd_price",      "HO=F")
+    _yf("natgas_price",    "NG=F")
+    _yf("copper_price",    "HG=F")
+    _yf("gold_price",      "GC=F")
 
     return out
 
 
-def _build_derived(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
+def _bt_compute_auction_stress(
+    r10: list[dict], r30: list[dict]
+) -> tuple[float, pd.Series]:
+    """Build auction stress time series from historical TreasuryDirect results."""
+    def _zs(values: list[float]) -> list[float]:
+        if len(values) < 2:
+            return [0.0] * len(values)
+        arr = np.array(values, dtype=float)
+        std = float(arr.std())
+        if std == 0:
+            return [0.0] * len(values)
+        return list((arr - arr.mean()) / std)
+
+    def _stress_s(results: list[dict]) -> pd.Series:
+        if len(results) < 5:
+            return pd.Series(dtype=float)
+        dates = pd.to_datetime([r["date"] for r in results])
+        stress = [
+            -0.4 * b - 0.4 * i + 0.2 * d_
+            for b, i, d_ in zip(
+                _zs([r["bid_to_cover"] for r in results]),
+                _zs([r["indirect_pct"] for r in results]),
+                _zs([r["dealer_pct"]   for r in results]),
+            )
+        ]
+        return pd.Series(stress, index=dates)
+
+    s10, s30 = _stress_s(r10), _stress_s(r30)
+    if s10.empty and s30.empty:
+        raise RuntimeError("treasury_auction_stress: insufficient auction data")
+    combined = pd.concat([s10, s30]).groupby(level=0).mean().sort_index()
+    return float(combined.iloc[-1]), combined
+
+
+def _build_derived(raw: dict[str, pd.Series], env: dict) -> dict[str, pd.Series]:
     """
-    Build derived series (realized vol, YoY pct change, SOFR spread) from raw.
-    These are computed over the full history so the inner 10-year slice sees
-    correctly-derived values without repeating the derivation at every date.
+    Build derived series from raw fetched data. Computed over the full history
+    so each point-in-time 10-year slice sees correctly-derived values.
     """
     d = dict(raw)
 
     if "sp500_price" in raw:
         d["sp500_1m_vol"] = ind.realized_vol_series(raw["sp500_price"])
-
-    if "wti_price" in raw:
-        d["oil_vol"] = ind.realized_vol_series(raw["wti_price"])
 
     if "eem_price" in raw:
         d["eem_vol"] = ind.realized_vol_series(raw["eem_price"])
@@ -238,6 +296,58 @@ def _build_derived(raw: dict[str, pd.Series]) -> dict[str, pd.Series]:
         combined = pd.concat([raw["sofr"].rename("sofr"), raw["effr"].rename("effr")], axis=1)
         combined = combined.ffill().dropna()
         d["sofr_spread"] = (combined["sofr"] - combined["effr"]) * 100
+
+    # VIX term structure: VIX / VIX3M ratio
+    if "vix_price" in raw and "vix3m_price" in raw:
+        ts = pd.concat(
+            [raw["vix_price"].rename("vix"), raw["vix3m_price"].rename("vix3m")],
+            axis=1,
+        ).ffill().dropna()
+        d["vix_term_structure"] = ts["vix"] / ts["vix3m"]
+
+    # SPX % distance from 200-day MA
+    if "sp500_price" in raw:
+        sp = raw["sp500_price"]
+        ma200 = sp.rolling(200).mean().dropna()
+        d["spx_200dma_distance"] = ((sp.reindex(ma200.index) - ma200) / ma200 * 100).dropna()
+
+    # Sector breadth: % of sector ETFs below their 200-day MA
+    sector_keys = [k for k in raw if k.startswith("sector_")]
+    if len(sector_keys) >= 5:
+        sector_df = pd.DataFrame({k.replace("sector_", ""): raw[k] for k in sector_keys})
+        ma200_s = sector_df.rolling(200).mean()
+        below_ma = (sector_df < ma200_s).fillna(False)
+        n_avail = (~sector_df.isna()).sum(axis=1).clip(lower=1)
+        d["sector_breadth"] = (below_ma.sum(axis=1) / n_avail * 100).dropna()
+
+    # Treasury auction stress (fetch higher count for full backtest history)
+    try:
+        r10 = _live_fetch.fetch_treasury_auction_results("Note", "10-Year", env, count=300)
+        r30 = _live_fetch.fetch_treasury_auction_results("Bond", "30-Year", env, count=300)
+        if r10 or r30:
+            _, d["treasury_auction_stress"] = _bt_compute_auction_stress(r10, r30)
+    except Exception as exc:
+        warnings.warn(f"backtest: treasury_auction_stress: {exc}")
+
+    # 3-2-1 crack spread ($/bbl)
+    if "wti_price" in raw and "rbob_price" in raw and "ulsd_price" in raw:
+        cs = pd.concat(
+            [raw["wti_price"].rename("wti"), raw["rbob_price"].rename("rbob"), raw["ulsd_price"].rename("ulsd")],
+            axis=1,
+        ).dropna()
+        d["crack_spread_321"] = (2 * cs["rbob"] * 42 + cs["ulsd"] * 42) / 3 - cs["wti"]
+
+    # Natural gas YoY
+    if "natgas_price" in raw:
+        d["natgas"] = ind.yoy_series(raw["natgas_price"])
+
+    # Copper / gold ratio
+    if "copper_price" in raw and "gold_price" in raw:
+        cg = pd.concat(
+            [raw["copper_price"].rename("copper"), raw["gold_price"].rename("gold")],
+            axis=1,
+        ).dropna()
+        d["copper_gold_ratio"] = cg["copper"] / cg["gold"]
 
     # vix_price is already the VIX level; no derivation needed
     d["vix_price"] = raw.get("vix_price", pd.Series(dtype=float))
@@ -345,7 +455,7 @@ def run_backtest(
         print(f"  Fetching all raw series (this may use cache)...")
 
     raw = _fetch_raw(env)
-    derived = _build_derived(raw)
+    derived = _build_derived(raw, env)
 
     dates = pd.date_range(start=start_date, end=end_date, freq=freq)
     records = []
