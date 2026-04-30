@@ -15,7 +15,7 @@ from src.history import (
 )
 from src.indicator_detail import build_indicator_detail
 from src.analogs import find_analog
-from src.scoring import _band_from_score
+from src.indicators import band_from_score as _band_from_score
 
 OUTPUT_DIR = Path("output")
 
@@ -768,8 +768,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     regime_adj_label = scoring.get("composite_regime_adj_label", "")
     regime_adj_html = ""
     if regime_adj is not None and abs(regime_adj - composite) >= 3:
-        _band_fn = lambda s: "red" if s >= 70 else "orange" if s >= 50 else "yellow" if s >= 30 else "green"
-        adj_band = _band_fn(regime_adj)
+        adj_band = _band_from_score(regime_adj)
         adj_color = _color(adj_band)
         adj_tip = tooltips.get("regime_adjusted", {}).get("tip", "")
         inner_adj = f"{regime_adj:.0f}"

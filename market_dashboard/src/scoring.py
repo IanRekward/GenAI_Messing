@@ -262,13 +262,7 @@ def _compute_spx_200dma_distance(env: dict, years: int) -> tuple[float, pd.Serie
 
 
 def _band_from_score(score: float) -> str:
-    if score >= 70:
-        return "red"
-    if score >= 50:
-        return "orange"
-    if score >= 30:
-        return "yellow"
-    return "green"
+    return ind.band_from_score(score)
 
 
 def _apply_regime_weights(

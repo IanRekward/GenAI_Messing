@@ -39,3 +39,17 @@ def realized_vol_series(price_series: pd.Series, window: int = 21) -> pd.Series:
 def yoy_series(level_series: pd.Series) -> pd.Series:
     """Year-over-year % change, using pandas 12-period pct_change on a monthly series."""
     return (level_series.pct_change(12) * 100).dropna()
+
+
+BAND_THRESHOLDS: dict[str, int] = {"yellow": 30, "orange": 50, "red": 70}
+
+
+def band_from_score(score: float) -> str:
+    """Map a 0–100 stress score to a band label (green/yellow/orange/red)."""
+    if score >= 70:
+        return "red"
+    if score >= 50:
+        return "orange"
+    if score >= 30:
+        return "yellow"
+    return "green"

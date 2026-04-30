@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src.indicators import band_from_score
+
 warnings.filterwarnings("ignore")
 
 
@@ -314,11 +316,7 @@ def _section_events(signal_df: pd.DataFrame) -> str:
         # Score at event
         nearest = avail.index[avail.index.get_indexer([peak_ts], method="nearest")[0]]
         score_at = avail.loc[nearest]
-        band = (
-            "red" if score_at >= 70 else
-            "orange" if score_at >= 50 else
-            "yellow" if score_at >= 30 else "green"
-        )
+        band = band_from_score(score_at)
         badge_color = {"red": "#f85149", "orange": "#d29922", "yellow": "#e3b341", "green": "#3fb950"}[band]
 
         # Lead time: first time composite >= 50 before the event
