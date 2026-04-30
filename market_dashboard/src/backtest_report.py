@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from src.indicators import band_from_score
+from src.indicators import band_from_score, BAND_COLOR as _BAND_COLOR
 
 warnings.filterwarnings("ignore")
 
@@ -45,10 +45,10 @@ th{text-align:left;padding:6px 8px;color:#8b949e;font-weight:600;border-bottom:2
 td{padding:5px 8px;border-bottom:1px solid #21262d;vertical-align:middle}
 td.num{text-align:right;font-variant-numeric:tabular-nums;font-size:.82rem}
 tr:last-child td{border-bottom:none}
-.pos{color:#3fb950} .neg{color:#f85149} .neu{color:#8b949e} .warn{color:#d29922}
+.pos{color:#22cc44} .neg{color:#ff4444} .neu{color:#8b949e} .warn{color:#ff8800}
 .badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:.72rem;font-weight:700;text-transform:uppercase}
-.flag-weak{background:#2d1b1b;color:#f85149} .flag-unstable{background:#2d2400;color:#d29922}
-.flag-ok{background:#0d2e14;color:#3fb950}
+.flag-weak{background:#2d1b1b;color:#ff4444} .flag-unstable{background:#2d2400;color:#ff8800}
+.flag-ok{background:#0d2e14;color:#22cc44}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
 .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
 .svg-wrap{overflow-x:auto}
@@ -93,7 +93,7 @@ def _roc_svg(curves: dict[str, tuple[np.ndarray, np.ndarray, float]],
     """
     pad = 40
     pw, ph = width - pad - 16, height - pad - 16
-    colors = ["#58a6ff", "#3fb950", "#d29922", "#f85149"]
+    colors = ["#58a6ff", "#22cc44", "#ff8800", "#ff4444"]
     lines = []
 
     # diagonal (random baseline)
@@ -317,7 +317,7 @@ def _section_events(signal_df: pd.DataFrame) -> str:
         nearest = avail.index[avail.index.get_indexer([peak_ts], method="nearest")[0]]
         score_at = avail.loc[nearest]
         band = band_from_score(score_at)
-        badge_color = {"red": "#f85149", "orange": "#d29922", "yellow": "#e3b341", "green": "#3fb950"}[band]
+        badge_color = _BAND_COLOR[band]
 
         # Lead time: first time composite >= 50 before the event
         pre_window = avail.loc[:peak_ts]
@@ -404,7 +404,7 @@ def _year_ic_svg(per_year_df: pd.DataFrame, width: int = 560, height: int = 160)
         ic = row["ic"]
         x = pad_l + i * (pw // n)
         bar_h = int(abs(ic) / ic_range * ph)
-        color = "#3fb950" if ic > 0 else "#f85149"
+        color = _BAND_COLOR["green"] if ic > 0 else _BAND_COLOR["red"]
         y = zero_y - bar_h if ic > 0 else zero_y
         rects.append(f'<rect x="{x}" y="{y}" width="{bar_w}" height="{bar_h}" fill="{color}" opacity="0.8"/>')
         # year label (every 2nd to avoid crowding)

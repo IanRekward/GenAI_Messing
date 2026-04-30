@@ -11,10 +11,10 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from src.indicators import BAND_COLOR as _BAND_COLOR
+
 DATA_DIR = Path("data")
 HISTORY_FILE = DATA_DIR / "history.csv"
-
-_BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
 
 def _weights_hash() -> str:

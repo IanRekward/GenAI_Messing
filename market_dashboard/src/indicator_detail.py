@@ -6,6 +6,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+from src.indicators import BAND_COLOR as _BAND_COLOR
+
 _THRESH_COLOR = {"yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
 
@@ -118,8 +120,7 @@ def build_indicator_detail(
     pct = ind_result.get("percentile")
     band = ind_result.get("band", "green")
 
-    band_colors = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
-    bc = band_colors.get(band, "#8b949e")
+    bc = _BAND_COLOR.get(band, "#8b949e")
 
     if ind_result.get("manual") or series_data is None:
         chart_html = (

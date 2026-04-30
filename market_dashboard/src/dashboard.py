@@ -15,12 +15,9 @@ from src.history import (
 )
 from src.indicator_detail import build_indicator_detail
 from src.analogs import find_analog
-from src.indicators import band_from_score as _band_from_score
+from src.indicators import band_from_score as _band_from_score, BAND_COLOR as _BAND_COLOR, BAND_BG as _BAND_BG
 
 OUTPUT_DIR = Path("output")
-
-_BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
-_BAND_BG = {"green": "#0d2e14", "yellow": "#2e2800", "orange": "#2e1600", "red": "#2e0d0d"}
 
 _CSS = """
 *{box-sizing:border-box;margin:0;padding:0}
