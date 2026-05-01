@@ -101,42 +101,25 @@ to summarize → `get_news_brief` returns `[]`.
    section: `python run_dashboard.py --no-cache --no-alerts --quiet`
    then open `output/dashboard.html` in a browser. Is the "Overnight
    News Brief" section present and populated, or empty?
-2. If empty, instrument the four RSS feeds — quick Python REPL:
+2. If empty, check `data/alert_log.jsonl` for `news_feed_failure` entries —
+   `_log_feed_failure()` (added in Brief 20) logs each dead feed by name.
+   To manually probe all 13 feeds:
    ```python
-   import feedparser
-   for url in [
-       "https://feeds.reuters.com/reuters/businessNews",
-       "https://feeds.marketwatch.com/marketwatch/realtimeheadlines/",
-       "https://finance.yahoo.com/rss/topstories",
-       "https://www.wsj.com/xml/rss/3_7085.xml",
-   ]:
-       f = feedparser.parse(url)
-       print(url, "→", len(f.entries), "entries")
+   import yaml, feedparser
+   feeds = yaml.safe_load(open("config/news_feeds.yaml").read())["feeds"]
+   for f in feeds:
+       p = feedparser.parse(f["url"])
+       print(f["name"], "→", len(p.entries), "entries")
    ```
-   Any feed returning 0 entries is the (or a) culprit.
-3. Check `.env` for `ENABLE_NEWS_TRIAGE` — if it's `false` or missing,
-   the brief is intentionally skipped. Default should be `true` (or
-   unset, which `news.py` treats as `true`).
+3. Check `.env` for `ENABLE_NEWS_TRIAGE` — if `false`, brief is intentionally
+   skipped. Default (unset) is treated as `true`.
 4. Check `ANTHROPIC_API_KEY` is still valid — if Haiku auth fails,
    `get_news_brief` returns `[]` silently.
-5. Inspect `data/cache/` for any news-related cache file — if one is
-   minutes old but empty, the cache is masking a fetch failure.
 
-**Likely fix:** **Brief 20** in [ROADMAP.md](ROADMAP.md#brief-20--expand-free-wire-service-news-coverage)
-already addresses this directly:
-- expands feeds from 4 to ≥8 (so a single feed death isn't fatal),
-- moves feed list to `config/news_feeds.yaml` (no code change to swap a
-  dead feed),
-- adds `_log_feed_failure()` writing to `alert_log.jsonl` so silent
-  failures become observable,
-- adds source attribution end-to-end (Ian can see *which* feed each
-  headline came from in the dashboard).
-
-**Recommendation:** diagnose with the steps above to confirm root cause
-*today*, then prioritise shipping Brief 20 as the durable fix. If it's
-specifically interpretation (b) — Ian wants news in the daily heartbeat
-itself — open a separate small brief for that (heartbeat enrichment
-is a 30-min change in `src/alerts.py:send_heartbeat`).
+**Note:** Brief 20 shipped (2026-04-29) — feeds are now in `config/news_feeds.yaml`
+(13 feeds, 6 official + 7 publisher) with `_log_feed_failure()` logging. If
+interpretation (b) — Ian wants news in the daily heartbeat itself — that's a
+separate 30-min change in `src/alerts.py:send_heartbeat`.
 
 ---
 
@@ -228,12 +211,12 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   regime_weights: block in weights.yaml (Option A conservative multipliers, enabled=false). _apply_regime_weights() in scoring.py: computes both composite_naive and composite_regime_weighted every run. Dashboard shows "Regime preview: XX (disabled)" side-by-side with composite. Flip enabled: true after review. 3 new tests, 195/195 passing.
 
 - [x] **Brief 20 — Expand free wire-service news coverage** *(shipped 2026-04-29 — commit f9b1001)*
-  9 feeds live: 4 official (Fed, Fed Speeches, ECB, Treasury) + 5 publisher
-  (MarketWatch, Yahoo, Bloomberg, CNBC, FT Alphaville). Reuters and AP have fully
-  abandoned free public RSS. Jaccard dedup, source attribution in dashboard and
-  Haiku prompt, feed-health logging, `_validate_news_feeds()` in startup chain.
-  205/205 tests. Fixed pre-existing `test_remediation_skipped_on_clean_run` failure
-  (weekly FRED series legitimately stale — test was asserting wrong condition).
+  Feed list in `config/news_feeds.yaml` (not hardcoded). 13 feeds live as of 2026-05-01:
+  6 official (Fed, Fed Speeches, ECB, Treasury, BIS Speeches, FSB) + 7 publisher
+  (MarketWatch, Yahoo, Bloomberg, CNBC, FT Alphaville, WSJ Economy, FT Global Economy).
+  Reuters and AP have no free individual-tier path. Jaccard dedup, source attribution
+  in dashboard and Haiku prompt, feed-health logging, `_validate_news_feeds()` in
+  startup chain. 219/219 tests.
 
 - [x] **Brief 19 — Commodities & Energy bucket diversification** *(shipped 2026-04-29 — commit 86be640)*
   Full brief in [ROADMAP.md](ROADMAP.md#brief-19--commodities--energy-bucket-diversification).
@@ -261,28 +244,13 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   via `data/manual_news.json` for Ian's existing WSJ/FT subscriptions)
   remains available as a follow-on if needed.
 
-- [ ] **Research — find free/reliable Reuters, WSJ, and FT feed alternatives**
-  *(Ian's ask 2026-04-29 — research task, not execution)*
-  Reuters and AP have pulled their free RSS feeds entirely. WSJ free RSS returns
-  empty (paywall redirect). None of these were recoverable in Brief 20 testing.
-  Before designing Brief 20B, investigate what legitimately-accessible options
-  exist:
-  - **Reuters:** Does the Reuters news agency publish a free API or RSS at any
-    tier? Does Reuters Connect have a developer/trial tier? Does Refinitiv/LSEG
-    publish anything accessible to individual subscribers?
-  - **WSJ:** Ian has a WSJ subscription. Does WSJ offer RSS feeds behind login
-    (email-based RSS, subscriber RSS)? Is there a "My Account → RSS" feature?
-  - **Financial Times:** Does FT offer subscriber RSS (FT already has FT Alphaville
-    free RSS which is in Brief 20's feed list; does a paid FT subscription unlock
-    broader feeds)? FT has had a developer API in the past.
-  - **Bloomberg:** Bloomberg Terminal subscribers get a feed; Bloomberg Markets RSS
-    (already in Brief 20) is the free surface. Anything else at the non-Terminal tier?
-  - **AP Newsroom:** AP offers paid API access (AP Content API). What's the pricing
-    and whether it's viable for a personal project?
-  Decision criteria: free or very low-cost (< $50/month), reliable (official API
-  or subscriber RSS rather than scraping), and providing genuinely early/primary
-  content rather than just aggregating what we already have. Do not start
-  implementation until research is complete and Ian approves an approach.
+- [x] **Research — find free/reliable Reuters, WSJ, and FT feed alternatives** *(complete 2026-05-01)*
+  Findings shipped as 4 new feeds in `config/news_feeds.yaml` (now 13 total: 6 official + 7 publisher).
+  - **WSJ:** Old `wsj.com/xml/rss/` URLs are dead. `feeds.content.dowjones.io/public/rss/socialeconomyfeed` is live, no auth. Added as publisher.
+  - **FT:** Free RSS at `ft.com/global-economy?format=rss` — official, no auth. Added as publisher.
+  - **BIS Speeches:** `bis.org/doclist/cbspeeches.rss` aggregates global CB speeches (Fed/ECB/BOE) before wire services. Added as official.
+  - **FSB:** `fsb.org/wordpress/content_type/press-releases/feed/` — G20 macroprudential releases. Added as official.
+  - **Reuters/AP/Bloomberg beyond existing:** No viable individual-tier path. Reuters LSEG API $500–$10K+/month institutional; AP requires sales contact (likely $10K+/year); Bloomberg nothing between free Markets RSS and $28K/year Terminal. Dead ends confirmed.
 
 - [ ] **Portfolio integration** *(user scope call required)*
   Fidelity API or CSV of position holdings for personalized recommendations. Ian needs to decide: (a) Fidelity API vs CSV input, (b) fields needed (symbol, quantity, cost basis?), (c) position-level alerts vs high-level commentary. Not an Opus or Sonnet task until Ian answers these.
