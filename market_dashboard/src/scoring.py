@@ -12,6 +12,7 @@ import yaml
 
 from src import fetch, indicators as ind
 from src.fetch import StaleCacheFallback
+from src.history import classify_vix_regime
 
 
 def load_weights(path: str) -> dict:
@@ -333,7 +334,6 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     bucket_results: dict = {}
     errors: list[str] = []
     stale_indicators: list[str] = []
-    _vix_series_for_regime: pd.Series | None = None
 
     short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
     short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
@@ -377,9 +377,6 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                 weighted_sum_short += score * iweight
                 weight_used += iweight
                 continue
-
-            if bkey == "equity_volatility" and ikey == "vix" and series is not None:
-                _vix_series_for_regime = series
 
             # Success path (live or stale-cache fallback)
             if not stale_cache_msg:
@@ -453,15 +450,15 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         else 50.0
     )
 
-    # VIX regime classification (Brief 10A — read-only, no scoring change)
-    from src.history import classify_vix_regime
+    # VIX regime classification — fetch directly so no bucket key is hardcoded
     regime_info: dict = {}
-    if _vix_series_for_regime is not None:
-        try:
-            prev_regime = _load_prev_regime()
-            regime_info = classify_vix_regime(_vix_series_for_regime, prev_regime)
-        except Exception as exc:
-            errors.append(f"vix_regime: {exc}")
+    try:
+        vix_series = fetch.fetch_yfinance_series(
+            "^VIX", env, years=int(env.get("HISTORY_YEARS", 10))
+        )
+        regime_info = classify_vix_regime(vix_series, _load_prev_regime())
+    except Exception as exc:
+        errors.append(f"vix_regime: {exc}")
 
     # Brief 10C — regime-weighted composite
     composite_naive = composite
