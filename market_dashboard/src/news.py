@@ -5,6 +5,7 @@ Set ENABLE_NEWS_TRIAGE=false in .env to skip entirely.
 from __future__ import annotations
 
 import re
+from datetime import datetime
 from pathlib import Path
 
 import feedparser
@@ -28,6 +29,17 @@ _SYSTEM = (
 )
 
 _CATEGORY_RANK = {"official": 0, "wire": 1, "publisher": 2}
+
+
+def _format_pub_date(parsed_time) -> str:
+    """Convert a time.struct_time to 'Apr 30' style. Returns '' if unavailable."""
+    if not parsed_time:
+        return ""
+    try:
+        dt = datetime(*parsed_time[:6])
+        return f"{dt.strftime('%b')} {dt.day}"
+    except Exception:
+        return ""
 
 
 def _load_news_feeds() -> list[dict]:
@@ -89,12 +101,14 @@ def _pull_headlines() -> list[dict]:
             for entry in parsed.entries[:feed["max_items"]]:
                 title = entry.get("title", "").strip()
                 link = entry.get("link", "").strip()
+                parsed_time = entry.get("published_parsed") or entry.get("updated_parsed")
                 if title:
                     items.append({
                         "title": title,
                         "url": link,
                         "source": feed["name"],
                         "category": feed["category"],
+                        "published": _format_pub_date(parsed_time),
                     })
         except Exception as exc:
             _log_feed_failure(feed["name"], str(exc))
@@ -253,8 +267,9 @@ def get_news_brief(env: dict) -> list[dict]:
                     "text": b,
                     "url": matched.get("url", ""),
                     "source": matched.get("source", ""),
+                    "published": matched.get("published", ""),
                 })
             return result
-        return [{"text": text, "url": "", "source": ""}]
+        return [{"text": text, "url": "", "source": "", "published": ""}]
     except Exception as exc:
         return [{"text": f"News triage unavailable: {exc}", "url": "", "source": ""}]

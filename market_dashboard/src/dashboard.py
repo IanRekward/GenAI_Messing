@@ -980,10 +980,12 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             text = item["text"]
             url = item.get("url", "")
             source = item.get("source", "")
+            published = item.get("published", "")
+            meta = " · ".join(filter(None, [source, published]))
             src_label = (
                 f'<span style="font-size:.72rem;color:#6e7681;font-weight:500;'
-                f'margin-right:5px">{source}:</span>'
-                if source else ""
+                f'margin-right:5px">{meta}:</span>'
+                if meta else ""
             )
             if url:
                 li_parts.append(
