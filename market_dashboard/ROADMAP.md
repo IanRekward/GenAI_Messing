@@ -3161,3 +3161,264 @@ of the report, both default-collapsed.
 - A third "investor view" register. Two registers cover the realistic
   audience (Ian himself, plus anyone he might show this to). More
   registers = more drift over time as the report's content evolves.
+
+---
+
+## Brief 23 — G3: Layman narrative suggests household action
+
+**Dependencies:** None. All wiring already exists.
+
+**State of the world before this brief:** A surprisingly large fraction
+of G3 is already shipped. `src/narrative.py` already (a) generates both
+expert and layman registers in a single Haiku call, (b) parses them from a
+JSON schema, (c) caches them together to `data/cache/narrative.json`, and
+(d) returns both as a tuple. `src/dashboard.py:1034–1058` already renders
+the AI Narrative Summary card with a "Plain English" toggle button, both
+text blocks (expert visible, layman `display:none`), and a working
+`toggleNarrative()` JS function (line 1113). `tests/test_narrative.py`
+already exercises both registers through cache + Haiku-call paths.
+
+**The actual gap.** Three small things, only one of which is a real
+design call:
+
+1. **Tone of the layman register is wrong for what Ian wants.** The
+   current `_SYSTEM` prompt (`narrative.py:76–86`) explicitly forbids
+   action: *"what (if anything) a cautious non-expert should be aware of
+   — not what to do"* and *"No investment advice in either version."*
+   Ian's call (2026-05-01): the layman register should suggest action.
+   The expert register stays observational.
+
+2. **Toggle resets on page reload.** No localStorage persistence — every
+   refresh sends Ian back to expert view even if he last selected layman.
+
+3. **Footer disclaimer needs nuance.** Currently *"AI-generated summary
+   (Claude) · not financial advice."* That phrasing is fine but the
+   layman block specifically now contains action prompts; the disclaimer
+   should be visible in *both* views, not just under the expert block,
+   and should be a hair stronger.
+
+**Design decisions — locked:**
+
+1. **Action level is household financial behavior, never specific
+   securities.** Examples of acceptable action language: *"some people
+   in this situation might review their emergency cash buffer," "a
+   cautious household might delay large new financial commitments this
+   week," "no action is typically warranted at this level — file it
+   away."* Examples of unacceptable: *"consider trimming equity
+   exposure to 50%," "rotate into defensive sectors," "buy gold."*
+
+   **Rationale:** the dashboard publishes to GitHub Pages, technically
+   public. Asset-allocation specificity invites investment-advice
+   regulatory questions and trips the "AI told me to" failure mode that
+   the disclaimer can't really cover. Household-behavior level is
+   semantically what Ian wants ("what should a normal person do about
+   this?") and stays clear of that line.
+
+2. **Action language is band-calibrated.** Different bands warrant
+   different intensities. Haiku gets four explicit examples in the
+   prompt (one per band) so the layman text varies appropriately rather
+   than always sounding the same alarm. See prompt below.
+
+3. **Frame action as conditional, not imperative.** *"Some people might
+   consider X"* / *"a cautious household might X"* — never *"you
+   should X"* or *"do X."* This matches the existing dashboard tone
+   ("help me think") without abandoning Ian's call.
+
+4. **Expert register stays observational.** Ian himself reads the expert
+   block and CLAUDE.md's locked rule applies: help-me-think, never
+   tell-me-what-to-do. Only the layman register changes.
+
+   > **Note for future models:** this asymmetry is intentional. The
+   > "never tell me what to do" rule from CLAUDE.md applies to the
+   > *expert* register (which Ian reads) and the dashboard's overall
+   > stance. The *layman* register is for over-the-shoulder readers and
+   > Ian's own occasional "step back" use; for that audience he has
+   > explicitly authorized prescriptive endings, household-level only.
+   > Don't quietly revert this prompt to "no advice in either version"
+   > on a future cleanup pass — that would re-create the gap this brief
+   > closed.
+
+5. **localStorage key is `dashboardNarrativeRegister`** with values
+   `'expert'` (default) or `'layman'`. Read on page load, write on
+   toggle. Namespaced so it doesn't collide with anything Ian might add
+   later.
+
+6. **No new tests for the prompt content itself.** The system prompt is
+   instruction text, not assertable behavior; testing it would mean
+   asserting against Haiku output, which is brittle. The existing
+   integration tests already cover both-register parsing. *Do* add one
+   small test that the localStorage init JS is present in rendered HTML.
+
+**Files to change:**
+
+1. **`src/narrative.py`** — replace the `_SYSTEM` constant with the
+   prompt below.
+
+2. **`src/dashboard.py`** — three small edits:
+
+   (a) Update `toggleNarrative()` to write to localStorage on switch.
+
+   (b) Add an init block in the existing `(function(){...})()` IIFE near
+       line 1128 that reads `dashboardNarrativeRegister` and applies the
+       saved choice on load.
+
+   (c) Move the disclaimer from inside the narrative card to render once
+       below *both* blocks (it currently sits after the expert div but is
+       outside the toggle, so it's already visible in both views — but
+       update its wording per the new prompt below).
+
+3. **`tests/test_dashboard.py`** (or wherever the dashboard render
+   tests live — Sonnet pick the right file) — one test that the
+   rendered HTML contains the literal string `'dashboardNarrativeRegister'`
+   so the persistence wiring can't silently get deleted.
+
+**The new `_SYSTEM` constant — paste verbatim:**
+
+```python
+_SYSTEM = (
+    "You are writing a daily market stress narrative in two registers. "
+    "Respond ONLY with valid JSON matching this schema exactly: "
+    "{\"expert\": \"...\", \"layman\": \"...\"}. "
+    "\n\n"
+    "EXPERT REGISTER (2–4 sentences): for a finance professional. Cover "
+    "composite level, key drivers, momentum direction. Use jargon directly "
+    "(OAS, basis points, percentile, regime, etc.). Tone: precise, neutral, "
+    "observational. NO recommendations, NO suggestions of what to do. "
+    "Describe the situation; do not prescribe action."
+    "\n\n"
+    "LAYMAN REGISTER (3–5 sentences): for an intelligent generalist with no "
+    "finance background. Plain English only — no jargon, no acronyms, no "
+    "ticker symbols. Three parts in order: (1) what the score means in "
+    "everyday terms, (2) which areas of the market are under stress and why "
+    "that might matter to a household, (3) ONE concrete household-level "
+    "action a cautious non-expert might consider given the current band. "
+    "\n\n"
+    "Action language must be CONDITIONAL ('some people might consider', "
+    "'a cautious household might', 'no action is typically warranted') — "
+    "NEVER imperative ('you should', 'do X', 'sell'). Action must be at "
+    "the household financial behavior level (cash buffer, emergency fund, "
+    "timing of large purchases, news attentiveness). NEVER suggest specific "
+    "securities, sectors, asset allocations, percentages, or portfolio "
+    "moves. NEVER mention buying or selling stocks, bonds, gold, or any "
+    "named instrument."
+    "\n\n"
+    "Calibrate the action to the band:\n"
+    "- green (composite < 30): 'no action typically warranted at this "
+    "level — markets are calm; this is normal background weather.'\n"
+    "- yellow (30–50): 'some people might choose to read more market news "
+    "this week than usual — stress is elevated but not alarming.'\n"
+    "- orange (50–70): 'a cautious household might review their emergency "
+    "cash buffer and hold off on major new financial commitments until "
+    "the picture clarifies.'\n"
+    "- red (≥70): 'this is a moment when many cautious households tighten "
+    "their belts — keep cash on hand, defer large discretionary spending, "
+    "and stay informed.' "
+)
+```
+
+**localStorage JS — paste verbatim into `dashboard.py`:**
+
+Replace the existing `toggleNarrative()` function with:
+
+```javascript
+function toggleNarrative() {
+  var expert = document.getElementById('narr-expert');
+  var layman = document.getElementById('narr-layman');
+  var btn = document.getElementById('narr-toggle');
+  if (!expert || !layman || !btn) return;
+  var nowLayman = (layman.style.display === 'none');
+  if (nowLayman) {
+    expert.style.display = 'none';
+    layman.style.display = '';
+    btn.textContent = 'Expert ▾';
+    try { localStorage.setItem('dashboardNarrativeRegister', 'layman'); } catch (e) {}
+  } else {
+    expert.style.display = '';
+    layman.style.display = 'none';
+    btn.textContent = 'Plain English ▾';
+    try { localStorage.setItem('dashboardNarrativeRegister', 'expert'); } catch (e) {}
+  }
+}
+```
+
+Add this to the existing IIFE (the `(function() { ... })();` block that
+already handles the automation banner near line 1128):
+
+```javascript
+try {
+  var saved = localStorage.getItem('dashboardNarrativeRegister');
+  if (saved === 'layman') {
+    var expert = document.getElementById('narr-expert');
+    var layman = document.getElementById('narr-layman');
+    var btn = document.getElementById('narr-toggle');
+    if (expert && layman && btn) {
+      expert.style.display = 'none';
+      layman.style.display = '';
+      btn.textContent = 'Expert ▾';
+    }
+  }
+} catch (e) {}
+```
+
+**Disclaimer wording update:**
+
+Replace the existing footer line in the narrative card from:
+
+```
+AI-generated summary (Claude) · not financial advice
+```
+
+to:
+
+```
+AI-generated · for orientation only · not financial advice · not a substitute for your own judgment
+```
+
+**Edge cases:**
+
+1. **Cache invalidation.** Existing caches (`data/cache/narrative.json`)
+   on disk will contain the old observational layman text. Solution:
+   bump `_CACHE_HOURS` *briefly is wrong* — just delete the file once
+   when this ships. Sonnet should add a one-liner near top of
+   `_read_cache()` that returns empty if the cached layman text starts
+   with the literal phrase `"What this means"` or any of the old
+   observational lead-ins — actually, simplest: add a `_CACHE_VERSION`
+   sentinel field to the cache JSON (`{"v": 2, "narrative": ..., ...}`)
+   and treat any cache without `v: 2` as invalid. This survives future
+   prompt revisions cleanly.
+
+2. **Haiku returns malformed JSON.** Existing fallback (`narrative.py:122`)
+   sets `expert = raw, layman = ""`. With layman empty, the existing
+   render-path at `dashboard.py:1039` already hides the toggle button.
+   No new handling needed.
+
+3. **Haiku ignores band-calibration and writes generic action.** This
+   is a prompt-quality risk, not a code risk. Acceptable on first ship;
+   if Ian sees mis-calibrated layman text in real bands, iterate the
+   prompt then.
+
+4. **localStorage unavailable** (private mode, old browser). Wrapped in
+   `try/catch`; toggle still works in-session, just doesn't persist.
+
+**Success criteria:**
+
+- `python run_dashboard.py --no-cache --no-alerts --quiet` runs, loads
+  the dashboard, both registers appear, toggle works.
+- Toggling to "Plain English" then refreshing the page leaves the layman
+  view active.
+- Layman text on a current run includes a household-level action prompt
+  (visual check; not asserted in tests).
+- All 219 tests still pass; new test for `dashboardNarrativeRegister`
+  presence in rendered HTML passes.
+- `data/cache/narrative.json` is regenerated cleanly after the cache
+  versioning change (delete-once or auto-invalidated).
+
+**Non-goals:**
+
+- Asset-allocation suggestions in the layman register. Hard line.
+- A third "intermediate" register (informed-but-not-pro). Two is enough.
+- Per-bucket plain-English narratives. Out of scope; would balloon
+  Haiku token use and create N×2 prompts to maintain.
+- Server-side rendering of the user's last choice. localStorage is
+  sufficient for a single-user dashboard; the dashboard is rebuilt fresh
+  every morning anyway.

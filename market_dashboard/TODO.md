@@ -282,14 +282,18 @@ preserve Ian's numbering when committing so the trail back to this list is clear
     how to read the current band, what to do (or not do) with the number.
     Calibrate to Ian's stated use — "help me think, never tell me what to do."
 
-- [ ] **G3 — Plain-English toggle on the AI narrative / summary**
-  Identify the section (likely the Haiku-generated narrative paragraph).
-  - Give it an explicit heading.
-  - Add a toggle that flips between current text and a simpler layman version
-    ("what is happening, why it matters, what a non-pro should do with it").
-  - Source of layman text: ask Haiku for **both registers in one call** so
-    they stay paired and we pay one round-trip. Cache to disk like other
-    Haiku output.
+- [ ] 🅾️ **G3 — Layman narrative suggests household action** *(Brief 23 in ROADMAP.md — Opus design pass complete 2026-05-01, ready for Sonnet)*
+  Surprise: most of G3 is already shipped (both registers generated, JSON-parsed,
+  cached, toggle button + JS in place). The real gap was the layman prompt
+  forbidding action — Ian's call (2026-05-01) is to flip that. Brief 23 covers:
+  (1) new `_SYSTEM` prompt (verbatim in brief) with band-calibrated household-level
+  action language; (2) localStorage persistence of toggle choice; (3) cache
+  versioning so old observational layman text doesn't survive the prompt change;
+  (4) disclaimer wording update; (5) one regression test.
+  **Locked:** action level is household financial behavior only (cash buffer,
+  emergency fund, timing of large purchases) — never specific securities,
+  sectors, or asset allocations. Expert register stays observational per
+  CLAUDE.md. Asymmetry is intentional and documented in brief.
 
 - [x] **G4 — Reorder: swap Overnight News Brief ↔ Historical Analogies** *(shipped 2026-04-29)*
   News section now renders after bucket grid; analogies card renders directly after AI narrative.
