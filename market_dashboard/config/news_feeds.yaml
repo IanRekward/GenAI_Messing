@@ -25,6 +25,14 @@ feeds:
     url: "https://home.treasury.gov/rss.xml"
     category: official
     max_items: 12
+  - name: "BIS Central Bankers' Speeches"
+    url: "https://www.bis.org/doclist/cbspeeches.rss"
+    category: official
+    max_items: 10
+  - name: "FSB Press Releases"
+    url: "https://www.fsb.org/wordpress/content_type/press-releases/feed/"
+    category: official
+    max_items: 8
 
   # --- Publisher ---
   - name: "MarketWatch"
@@ -47,3 +55,11 @@ feeds:
     url: "https://www.cnbc.com/id/100003114/device/rss/rss.html"
     category: publisher
     max_items: 8
+  - name: "WSJ Economy"
+    url: "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed"
+    category: publisher
+    max_items: 10
+  - name: "FT Global Economy"
+    url: "https://www.ft.com/global-economy?format=rss"
+    category: publisher
+    max_items: 10
