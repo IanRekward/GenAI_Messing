@@ -12,16 +12,13 @@ Output DataFrames are saved to output/backtest_full.csv and output/backtest_subs
 """
 from __future__ import annotations
 
-import json
 import os
-import time
 import warnings
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
-import requests
 import yfinance as yf
 import yaml
 
@@ -30,95 +27,10 @@ from src import fetch as _live_fetch
 from src.history import classify_vix_regime
 
 # ---------------------------------------------------------------------------
-# Backtest-specific cache
-# Separate from the live cache so 26-year fetches don't overwrite live 10-year data.
-# Cache TTL for backtest data: 7 days (historical data doesn't change often).
-# ---------------------------------------------------------------------------
-
-_BT_CACHE_DIR = Path("data/cache/backtest")
-_BT_CACHE_TTL_HOURS = 168   # 7 days
-
-
-def _bt_cache_path(kind: str, key: str) -> Path:
-    _BT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return _BT_CACHE_DIR / f"{kind}_{key}_{FETCH_YEARS}y.json"
-
-
-def _bt_cache_valid(path: Path) -> bool:
-    return path.exists() and (time.time() - path.stat().st_mtime) < _BT_CACHE_TTL_HOURS * 3600
-
-
-def _bt_read_cache(path: Path) -> pd.Series:
-    with open(path) as f:
-        d = json.load(f)
-    return pd.Series(d["values"], index=pd.to_datetime(d["dates"]))
-
-
-def _bt_write_cache(path: Path, series: pd.Series) -> None:
-    with open(path, "w") as f:
-        json.dump(
-            {
-                "dates": [d.strftime("%Y-%m-%d") for d in series.index],
-                "values": [float(v) for v in series.values],
-            },
-            f,
-        )
-
-
-def _bt_fred(series_id: str, env: dict) -> pd.Series:
-    cpath = _bt_cache_path("fred", series_id)
-    if _bt_cache_valid(cpath):
-        return _bt_read_cache(cpath)
-
-    api_key = env.get("FRED_API_KEY", "")
-    if not api_key or api_key.startswith("your_"):
-        raise RuntimeError("FRED_API_KEY not configured in .env")
-
-    from datetime import datetime, timedelta
-    start = (datetime.today() - timedelta(days=FETCH_YEARS * 365 + 60)).strftime("%Y-%m-%d")
-    params = {
-        "series_id": series_id,
-        "api_key": api_key,
-        "file_type": "json",
-        "observation_start": start,
-        "sort_order": "asc",
-        "limit": 10000,
-    }
-    resp = requests.get("https://api.stlouisfed.org/fred/series/observations", params=params, timeout=30)
-    resp.raise_for_status()
-    obs = resp.json().get("observations", [])
-    dates, values = [], []
-    for o in obs:
-        if o["value"] != ".":
-            dates.append(o["date"])
-            values.append(float(o["value"]))
-    if not dates:
-        raise RuntimeError(f"FRED returned no data for {series_id}")
-    series = pd.Series(values, index=pd.to_datetime(dates))
-    _bt_write_cache(cpath, series)
-    return series
-
-
-def _bt_yf(ticker: str, env: dict) -> pd.Series:
-    safe = ticker.replace("^", "X").replace("=", "_")
-    cpath = _bt_cache_path("yf", safe)
-    if _bt_cache_valid(cpath):
-        return _bt_read_cache(cpath)
-
-    from datetime import datetime, timedelta
-    start = (datetime.today() - timedelta(days=FETCH_YEARS * 365 + 60)).strftime("%Y-%m-%d")
-    df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
-    if df.empty:
-        raise RuntimeError(f"Yahoo Finance returned no data for {ticker}")
-    series = df["Close"].squeeze().dropna()
-    series.index = pd.to_datetime(series.index)
-    _bt_write_cache(cpath, series)
-    return series
-
-
-# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
+
+_BT_CACHE_TTL_HOURS = 168   # 7 days — backtest history rarely changes
 
 WINDOW_YEARS = 10
 FETCH_YEARS = 26        # fetch enough history so the earliest backtest dates have a full window
@@ -192,15 +104,17 @@ def _fetch_raw(env: dict) -> dict[str, pd.Series]:
     """
     out: dict[str, pd.Series] = {}
 
+    _bt_kwargs = {"years": FETCH_YEARS, "cache_subdir": "backtest", "cache_hours": _BT_CACHE_TTL_HOURS}
+
     def _fred(key: str, series_id: str) -> None:
         try:
-            out[key] = _bt_fred(series_id, env)
+            out[key] = _live_fetch.fetch_fred_series(series_id, env, **_bt_kwargs)
         except Exception as exc:
             warnings.warn(f"backtest: could not fetch {key} ({series_id}): {exc}")
 
     def _yf(key: str, ticker: str) -> None:
         try:
-            out[key] = _bt_yf(ticker, env)
+            out[key] = _live_fetch.fetch_yfinance_series(ticker, env, **_bt_kwargs)
         except Exception as exc:
             warnings.warn(f"backtest: could not fetch {key} ({ticker}): {exc}")
 

@@ -66,9 +66,10 @@ def load_manual_overrides() -> dict:
     return result
 
 
-def _cache_path(key: str) -> Path:
-    CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return CACHE_DIR / f"{key}.json"
+def _cache_path(key: str, cache_subdir: str = "") -> Path:
+    d = CACHE_DIR / cache_subdir if cache_subdir else CACHE_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    return d / f"{key}.json"
 
 
 def _cache_valid(path: Path, cache_hours: float) -> bool:
@@ -94,11 +95,12 @@ def _write_cache(path: Path, series: pd.Series) -> None:
         )
 
 
-def fetch_fred_series(series_id: str, env: dict, years: int = 10) -> pd.Series:
+def fetch_fred_series(series_id: str, env: dict, years: int = 10,
+                      cache_subdir: str = "", cache_hours: float | None = None) -> pd.Series:
     """Return a pandas Series of FRED observations indexed by date."""
-    cache_hours = float(env.get("CACHE_HOURS", 12))
-    cpath = _cache_path(f"fred_{series_id}")
-    if _cache_valid(cpath, cache_hours):
+    eff_hours = cache_hours if cache_hours is not None else float(env.get("CACHE_HOURS", 12))
+    cpath = _cache_path(f"fred_{series_id}", cache_subdir)
+    if _cache_valid(cpath, eff_hours):
         return _read_cache(cpath)
 
     api_key = env.get("FRED_API_KEY", "")
@@ -221,12 +223,13 @@ def check_series_staleness(key: str, series: pd.Series | None, cadence_cfg: dict
     return None
 
 
-def fetch_yfinance_series(ticker: str, env: dict, years: int = 10) -> pd.Series:
+def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
+                          cache_subdir: str = "", cache_hours: float | None = None) -> pd.Series:
     """Return a pandas Series of daily close prices from Yahoo Finance."""
-    cache_hours = float(env.get("CACHE_HOURS", 12))
+    eff_hours = cache_hours if cache_hours is not None else float(env.get("CACHE_HOURS", 12))
     safe = ticker.replace("^", "X").replace("=", "_")
-    cpath = _cache_path(f"yf_{safe}")
-    if _cache_valid(cpath, cache_hours):
+    cpath = _cache_path(f"yf_{safe}", cache_subdir)
+    if _cache_valid(cpath, eff_hours):
         return _read_cache(cpath)
 
     start = (datetime.today() - timedelta(days=years * 365 + 60)).strftime("%Y-%m-%d")
