@@ -162,7 +162,8 @@ Sonnet starts.
 - [x] 🅾️ **Codebase optimization pass** — Opus design pass complete 2026-04-29.
   Produced **Brief 21** (in [ROADMAP.md](ROADMAP.md#brief-21--codebase-optimization-pass)) — 9 prioritized items split across P0/P1/P2 tiers with effort estimates totaling ~3.5–4 hours. Recommended commit order: 21A (backtest indicator gap) → 21B (band-from-score consolidation) → 21C (color palette unification) → 21D (fetch dedup) → 21F (VIX series capture) → 21G (deferred imports) → 21E (yaml loader helper) → 21H/21I (small wins). Sonnet to execute as separate commits per item.
 
-- [x] **Model explainer section in backtest report** — Opus content drafted 2026-04-29 as **Brief 22** in [ROADMAP.md](ROADMAP.md#brief-22--backtest-model-explainer-expert--plain-english). Both registers (~400 words each) provided as ready-to-paste HTML in a `_section_explainer()` function. Sonnet wires into `src/backtest_report.py:generate_report` above the first `_run_and_render` call.
+- [x] **Brief 22 — Model explainer section in backtest report** *(shipped 2026-04-29)*
+  `_section_explainer()` wired into `src/backtest_report.py:generate_report`. Both expert and plain-English registers in collapsible `<details>` blocks.
 
 ### Phase A — Verify & clean (30–60 min)
 
@@ -322,18 +323,13 @@ preserve Ian's numbering when committing so the trail back to this list is clear
     they stay paired and we pay one round-trip. Cache to disk like other
     Haiku output.
 
-- [ ] **G4 — Reorder: swap Overnight News Brief ↔ Historical Analogies**
-  In `dashboard.py`, swap render order of these two sections. Verify with
-  `python run_dashboard.py --no-cache --no-alerts --quiet` that section order
-  is correct and layout doesn't break.
+- [x] **G4 — Reorder: swap Overnight News Brief ↔ Historical Analogies** *(shipped 2026-04-29)*
+  News section now renders after bucket grid; analogies card renders directly after AI narrative.
 
-- [ ] **G5 — Restore clickable links in Overnight News Brief**
-  Ian recalls headlines were clickable previously. Verify in `dashboard.py`
-  / `news.py` whether headlines are wrapped in `<a href>`. If not clickable:
-  (a) confirm the RSS feed exposes URLs, (b) thread URL through to rendered
-  HTML. If clickable but not visibly so: add styling (underline + hover).
+- [x] **G5 — Restore clickable links in Overnight News Brief** *(already shipped — confirmed 2026-04-29)*
+  Headlines were already wrapped in `<a href>` via `best_match_url` in `news.py`. No change needed.
 
-- [ ] **G6 — Indicator Detail enrichment: advanced + layman interpretations** *(Brief 18 — content drafted 2026-04-29, ready for Sonnet wiring)*
+- [x] **G6 — Indicator Detail enrichment: advanced + layman interpretations** *(Brief 18 — shipped 2026-04-29)*
   Content delivered: `config/indicator_explainers.yaml` is authored with
   advanced + layman + model_role entries for all 27 active indicators plus
   3 staged for Brief 19 (crack_spread_321 / natgas / copper_gold_ratio).
@@ -357,11 +353,11 @@ preserve Ian's numbering when committing so the trail back to this list is clear
   > Brief 19 does NOT need to add them. See Brief 19's file step 6 in
   > ROADMAP.md.
 
-- [ ] **G7 — Name the buckets section**
-  The container section housing Equity Volatility, Credit Spreads, Rates &
-  Yield Curve, etc. has no top-level heading (or only a generic one). Add an
-  explicit heading — e.g. "BUCKETS — 11 SIGNAL CATEGORIES" — matched to the
-  typographic weight of other section headers (REVIEW PROMPTS, etc.).
+- [x] **G7 — Name the buckets section** *(shipped 2026-04-29)*
+  Section heading added at `.9rem` to match REVIEW PROMPTS typographic weight.
+
+- [x] **As-of dates on Overnight News Brief** *(shipped 2026-04-29)*
+  `news.py` captures `published_parsed`/`updated_parsed` from feedparser; renders as "Source · Apr 30:" label on each bullet.
 
 ---
 
