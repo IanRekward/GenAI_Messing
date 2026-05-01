@@ -247,20 +247,13 @@ def _calendar_indicator_badge(label: str) -> str:
     """Return an indicator badge or 'not in model' tag for a calendar event label."""
     label_lower = label.lower()
     for keyword, ind_key, bucket_label in _CALENDAR_INDICATOR_MAP:
-        if keyword.lower() in label_lower:
-            if ind_key:
-                return (
-                    f'<span style="font-size:.68rem;color:#4d9de0;'
-                    f'background:#0d2030;padding:1px 5px;border-radius:3px;'
-                    f'margin-left:6px;white-space:nowrap">'
-                    f'→ {ind_key} ({bucket_label})</span>'
-                )
-            else:
-                return (
-                    f'<span style="font-size:.68rem;color:#484f58;'
-                    f'background:#161b22;padding:1px 5px;border-radius:3px;'
-                    f'margin-left:6px">not in model</span>'
-                )
+        if keyword.lower() in label_lower and ind_key:
+            return (
+                f'<span style="font-size:.68rem;color:#4d9de0;'
+                f'background:#0d2030;padding:1px 5px;border-radius:3px;'
+                f'margin-left:6px;white-space:nowrap">'
+                f'→ {ind_key} ({bucket_label})</span>'
+            )
     return (
         f'<span style="font-size:.68rem;color:#484f58;'
         f'background:#161b22;padding:1px 5px;border-radius:3px;'
