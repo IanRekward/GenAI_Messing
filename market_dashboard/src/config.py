@@ -12,6 +12,7 @@ Call validate_config() from run_dashboard.py before any data fetching.
 """
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
 import yaml
@@ -76,6 +77,27 @@ def _validate_news_feeds() -> None:
             )
 
 
+def _validate_indicator_explainers(weights: dict) -> None:
+    p = Path("config/indicator_explainers.yaml")
+    if not p.exists():
+        warnings.warn("config/indicator_explainers.yaml not found — indicator explainers will not render.", stacklevel=3)
+        return
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        explainers = data.get("indicators", {})
+    except Exception as exc:
+        warnings.warn(f"Could not load indicator_explainers.yaml: {exc}", stacklevel=3)
+        return
+    for bkey, bcfg in weights.get("buckets", {}).items():
+        for ikey in bcfg.get("indicators", {}):
+            if ikey not in explainers:
+                warnings.warn(
+                    f"Indicator '{ikey}' (bucket '{bkey}') has no entry in "
+                    f"config/indicator_explainers.yaml — explainer will show placeholder.",
+                    stacklevel=3,
+                )
+
+
 def validate_config(weights: dict, thresholds: dict,
                     computed_handlers: "frozenset[str] | None" = None) -> None:
     """
@@ -92,6 +114,7 @@ def validate_config(weights: dict, thresholds: dict,
     _validate_sources(weights, computed_handlers or frozenset())
     _validate_regime_weights(weights)
     _validate_news_feeds()
+    _validate_indicator_explainers(weights)
 
 
 def _validate_bucket_count(weights: dict) -> None:

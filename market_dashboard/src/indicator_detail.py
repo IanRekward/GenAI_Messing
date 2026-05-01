@@ -4,9 +4,59 @@ Used by dashboard.py to build the collapsible "Indicator Details" section.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
+import yaml
 
 from src.indicators import BAND_COLOR as _BAND_COLOR
+
+_EXPLAINERS: dict | None = None
+
+
+def _load_explainers() -> dict:
+    global _EXPLAINERS
+    if _EXPLAINERS is None:
+        p = Path("config/indicator_explainers.yaml")
+        try:
+            _EXPLAINERS = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("indicators", {}) if p.exists() else {}
+        except Exception:
+            _EXPLAINERS = {}
+    return _EXPLAINERS
+
+
+def _explainer_html(ikey: str) -> str:
+    ex = _load_explainers().get(ikey)
+    if not ex:
+        return '<p style="font-size:.78rem;color:#6e7681;margin-top:10px;font-style:italic">(explainer coming soon)</p>'
+    advanced = str(ex.get("advanced", "")).strip()
+    layman = str(ex.get("layman", "")).strip()
+    model_role = str(ex.get("model_role", "")).strip()
+    parts = '<div style="margin-top:14px;border-top:1px solid #21262d;padding-top:10px">'
+    if advanced:
+        parts += (
+            '<details style="margin-bottom:6px">'
+            '<summary style="cursor:pointer;font-size:.8rem;font-weight:600;'
+            'color:#4d9de0;list-style:none">What this measures — practitioners</summary>'
+            f'<p style="font-size:.82rem;color:#c9d1d9;line-height:1.55;'
+            f'margin-top:6px;padding:0 0 4px 8px">{advanced}</p>'
+            '</details>'
+        )
+    if layman:
+        parts += (
+            '<details>'
+            '<summary style="cursor:pointer;font-size:.8rem;font-weight:600;'
+            'color:#4d9de0;list-style:none">Plain English</summary>'
+            f'<p style="font-size:.82rem;color:#c9d1d9;line-height:1.55;'
+            f'margin-top:6px;padding:0 0 4px 8px">{layman}</p>'
+            '</details>'
+        )
+    if model_role:
+        parts += (
+            f'<p style="font-size:.72rem;color:#6e7681;margin-top:8px">{model_role}</p>'
+        )
+    parts += '</div>'
+    return parts
 
 _THRESH_COLOR = {"yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 
@@ -172,5 +222,6 @@ def build_indicator_detail(
         f'<div id="{ikey}_detail" style="padding-top:6px">'
         f"{chart_html}"
         f"{stats_html}"
+        f"{_explainer_html(ikey)}"
         f"</div>"
     )
