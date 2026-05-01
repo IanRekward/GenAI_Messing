@@ -437,6 +437,163 @@ def _year_ic_svg(per_year_df: pd.DataFrame, width: int = 560, height: int = 160)
 
 
 # ---------------------------------------------------------------------------
+# Explainer sections (Brief 22)
+# ---------------------------------------------------------------------------
+
+def _section_explainer() -> str:
+    """Two collapsible sections explaining the report. Insert above headline table."""
+    return """
+<div class="card" style="border-left:3px solid #58a6ff;background:#0d1f2e">
+<details>
+<summary style="cursor:pointer;font-size:1rem;font-weight:600;color:#e6edf3">
+Methodology and caveats — for finance / stats readers
+<span style="color:#8b949e;font-size:.85rem;font-weight:400;margin-left:8px">click to expand</span>
+</summary>
+<div style="margin-top:14px;line-height:1.65;font-size:.92rem">
+
+<p><b>What this report measures.</b> Each row is a Spearman rank correlation
+(IC) between the model's composite stress score on date T and a
+forward-looking outcome over the subsequent 1–6 months — primarily peak
+S&amp;P 500 drawdown, secondarily HY OAS widening and a multi-asset stress
+index. Spearman is preferred over Pearson because the composite is bounded
+[0, 100] and outcome distributions are heavy-tailed; rank correlation is
+robust to both.</p>
+
+<p><b>Reading the IC table.</b> An IC of <b>0.15+</b> is considered strong
+for a daily-frequency macro stress signal — it is the threshold above
+which institutional risk teams typically take a signal seriously. <b>0.05
+to 0.15</b> is detectable signal that's worth keeping but not strong on
+its own. <b>Below 0.05</b> is statistically indistinguishable from noise
+at this sample size, even if the headline number is positive. The 95%
+confidence intervals are computed via block bootstrap with quarterly
+blocks (63 business days) to preserve autocorrelation — they will be
+substantially wider than naive bootstrap CIs and that is correct. If a CI
+crosses zero, the IC is not significantly different from random.</p>
+
+<p><b>Why these specific targets.</b> Forward SPX drawdown is the headline
+because it is what the user actually cares about — capital preservation —
+and because drawdown distributions are non-Gaussian in ways that the
+composite is designed to anticipate. HY widening and the multi-asset
+stress index are sanity checks: a real stress signal should predict all
+three, not just one. If the composite hits SPX drawdowns but misses HY
+widening, that's a hint the signal is overfit to equity vol. The
+benchmark columns (VIX alone, HY OAS alone, NFCI, 3-factor average) test
+whether the composite adds anything over its own components — if VIX
+alone matches the composite, the other 25 indicators are dead weight.</p>
+
+<p><b>Regime stratification.</b> The single-number IC averages across
+calm and stress periods, which can hide regime-dependent performance. The
+regime-stratified table breaks IC out by VIX tercile (bottom third =
+calm, top third = stress). A model with strong stress-regime IC and weak
+calm-regime IC is <i>better</i> than one with uniform mediocre IC — calm-period
+noise is harmless because the user does nothing on calm days. Conversely,
+strong calm-regime IC and weak stress-regime IC is the worst pattern: the
+model is most confident exactly when it shouldn't be.</p>
+
+<p><b>Known limitations.</b> (1) <b>No look-ahead bias is structural</b> —
+each date T uses only data from [T&minus;10y, T] for percentile computation —
+but indicator <i>selection</i> is post-hoc, chosen with the benefit of
+knowing 2008 / 2020 / 2022 happened. The 2000–2017 subset model exists
+specifically to test out-of-sample. (2) <b>Survivorship</b> — indicators
+in the current model are ones that survived discretionary review. Failed
+prior candidates are not preserved, so the headline IC is biased upward.
+(3) <b>Manual indicators</b> (<code>repo_stress</code>, <code>iran_trigger</code>) are always
+zero historically because no historical series exists; this slightly
+deflates pre-2018 composite levels. (4) <b>FRED licensing</b> — ICE BofA
+OAS series are limited to ~3 years on the FRED API regardless of
+requested start date; the engine handles this by skipping unavailable
+indicators and renormalizing bucket weights, so the pre-2018 subset model
+is structurally smaller than the post-2018 full model.</p>
+
+<p><b>Recalibration cycle.</b> Bucket weights and indicator weights are
+re-tuned via <code>src/recalibrate.py</code>, which applies a 2&times;2 matrix
+on each indicator's pre-2016 and post-2016 IC. Strong/strong &rarr; keep;
+strong/weak &rarr; reduce 4&times;; weak/strong &rarr; keep (new signal); weak/weak &rarr;
+drop. Re-running this requires both backtest CSVs to be fresh. The
+checkpoint cadence is documented in the project TODO.</p>
+
+</div>
+</details>
+</div>
+
+<div class="card" style="border-left:3px solid #58a6ff;background:#0d1f2e">
+<details>
+<summary style="cursor:pointer;font-size:1rem;font-weight:600;color:#e6edf3">
+What does this report actually mean? — for non-specialists
+<span style="color:#8b949e;font-size:.85rem;font-weight:400;margin-left:8px">click to expand</span>
+</summary>
+<div style="margin-top:14px;line-height:1.65;font-size:.92rem">
+
+<p><b>The big picture.</b> The dashboard you saw is a kind of weather
+station for financial markets. It reads 26 different gauges every day —
+stock-market jumpiness, the cost of borrowing for risky companies, how
+worried investors are, what the Federal Reserve is signaling, oil prices,
+unemployment numbers, and so on — and combines them into one summary
+number from 0 to 100. Higher means more market stress; lower means
+calmer. This report is the answer to a fair question: "is that summary
+number actually any good?"</p>
+
+<p><b>The way we test it.</b> We replay history. Imagine pretending it's
+March 1, 2008. We compute the dashboard's stress score using <i>only</i>
+the data that existed on that date — no peeking ahead. Then we look at
+what the stock market actually did over the following weeks and months
+and ask: when the score was high back then, did bad things tend to
+follow? When the score was low, did the market mostly behave? We do this
+every business day going back to 2000 (for the older subset) and 2018
+(for the newer full model), and we measure how reliably high scores
+preceded losses. That measurement — the "IC" you see throughout the
+report — is essentially "how often was the dashboard right, on a scale
+where 0 means useless and higher means more useful."</p>
+
+<p><b>What counts as good.</b> Forecasting markets is hard, and you
+should be deeply skeptical of anyone who claims a perfect score. For
+this kind of broad early-warning gauge, an IC above 0.15 is genuinely
+good news — it means the signal is meaningfully better than guessing,
+even if it's far from a crystal ball. Between 0.05 and 0.15 is "real but
+modest" — useful in combination with other information, not on its own.
+Below 0.05 is essentially noise. The colored badges next to each row in
+the IC tables tell you which bucket each row falls into.</p>
+
+<p><b>Why it's not a crystal ball.</b> Three honest limits to bear in
+mind. <b>First</b>, the model was built knowing what crises happened
+between 2008 and today, so it's been quietly tuned in hindsight to catch
+those events. The 2000–2017 subset is included specifically to check
+that the model still works on a period the designers didn't optimize for
+— but even there, the choice of which gauges to include benefits from
+hindsight. <b>Second</b>, future crises will not look exactly like past
+ones. The 2008 crisis and the 2020 COVID crash and the 2022 inflation
+shock all triggered different gauges in different orders. A new kind of
+crisis — say, an AI-driven flash crash, or a sovereign-debt episode in a
+country we don't track — could move markets without our gauges seeing it.
+<b>Third</b>, the dashboard tells you when stress is rising. It does not
+tell you what to do about it. A high score is a prompt to think
+carefully about your situation, not an instruction to sell.</p>
+
+<p><b>Reading the rest of this report.</b> The "headline" table at the
+top shows the model's score against three different definitions of "bad
+outcome" — biggest stock drop, biggest credit-market widening, and an
+overall stress index. The tables further down break performance out by
+indicator (which gauges are pulling weight, which aren't), by VIX tercile
+(does the model work better when markets are already nervous, or when
+they're calm?), and by year (was 2017 a fluke or representative?). The
+ROC curves are a different way of asking the same question — they show
+how often the model gives a true alarm vs a false alarm at different
+sensitivity settings. The event case studies pick specific historical
+crises and show what the model said in advance and during them.</p>
+
+<p><b>The bottom line.</b> If you take only one thing away: this report
+exists so the model is not a black box. It tells you, with numbers and
+caveats, where the model is reliable and where it isn't. The dashboard's
+job is to help its user think more carefully about market risk, not to
+replace that thinking — and this report is the receipts.</p>
+
+</div>
+</details>
+</div>
+"""
+
+
+# ---------------------------------------------------------------------------
 # Full report assembly
 # ---------------------------------------------------------------------------
 
@@ -490,6 +647,7 @@ def generate_report(
         html += _section_events(signal_df)
         return html
 
+    sections.append(_section_explainer())
     html_full = _run_and_render(df_full, "Full Model (2018 &ndash; present)")
     sections.append(html_full)
 
