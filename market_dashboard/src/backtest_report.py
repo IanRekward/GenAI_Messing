@@ -21,6 +21,12 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src import fetch as _fetch
+from src.backtest import run_standard_backtests, FETCH_YEARS
+from src.evaluation import (
+    run_full_evaluation, build_forward_drawdown, build_binary_events,
+    headline_table, indicator_ic_table, roc_pr_metrics,
+)
 from src.indicators import band_from_score, BAND_COLOR as _BAND_COLOR
 
 warnings.filterwarnings("ignore")
@@ -147,7 +153,6 @@ def _roc_svg(curves: dict[str, tuple[np.ndarray, np.ndarray, float]],
 # ---------------------------------------------------------------------------
 
 def _section_headline(results: dict, run_label: str) -> str:
-    from src.evaluation import headline_table
     df = headline_table(results)
     if df.empty:
         return "<p class='note'>No data.</p>"
@@ -187,7 +192,6 @@ def _section_headline(results: dict, run_label: str) -> str:
 # ---------------------------------------------------------------------------
 
 def _section_indicator_ic(signal_df: pd.DataFrame, target: pd.Series, label: str) -> str:
-    from src.evaluation import indicator_ic_table
     df = indicator_ic_table(signal_df, target)
     if df.empty:
         return ""
@@ -233,7 +237,6 @@ def _section_roc(composite: pd.Series, vix_pct: pd.Series | None,
     if len(common_c) > 20 and events.loc[common_c].sum() > 2:
         fpr, tpr, _ = roc_curve(events.loc[common_c].values,
                                  composite.loc[common_c].values)
-        from src.evaluation import roc_pr_metrics
         auc_val = roc_pr_metrics(composite, events).get("roc_auc", np.nan)
         curves["Composite"] = (fpr, tpr, auc_val)
 
@@ -446,10 +449,6 @@ def generate_report(
     nfci: pd.Series | None,
     output_path: str = "output/backtest_report.html",
 ) -> None:
-    from src.evaluation import (
-        run_full_evaluation, build_forward_drawdown, indicator_ic_table, headline_table
-    )
-
     sections = []
 
     def _run_and_render(signal_df: pd.DataFrame, label: str) -> str:
@@ -468,7 +467,6 @@ def generate_report(
 
         # Events
         hy_aligned = hy_oas.reindex(composite.index, method="ffill") if (hy_oas is not None and len(hy_oas) > 50) else None
-        from src.evaluation import build_binary_events
         events_df = build_binary_events(spx_aligned, hy_aligned)
 
         html = f"<h2>{label}</h2>"
@@ -540,9 +538,6 @@ def run(weights_path: str = "config/weights.yaml", output_path: str = "output/ba
     load_dotenv()
     env = dict(os.environ)
 
-    from src.backtest import run_standard_backtests, _bt_fred, _bt_yf, FETCH_YEARS
-    from src.evaluation import run_full_evaluation
-
     weights = yaml.safe_load(open(weights_path))
 
     # Load or run backtests
@@ -563,14 +558,15 @@ def run(weights_path: str = "config/weights.yaml", output_path: str = "output/ba
 
     # Fetch target series
     print("Fetching target series...")
-    spx  = _bt_yf("^GSPC", env)
-    vix  = _bt_yf("^VIX", env)
+    _bt_kw = {"years": FETCH_YEARS, "cache_subdir": "backtest", "cache_hours": 168.0}
+    spx = _fetch.fetch_yfinance_series("^GSPC", env, **_bt_kw)
+    vix = _fetch.fetch_yfinance_series("^VIX", env, **_bt_kw)
     try:
-        hy_oas = _bt_fred("BAMLH0A0HYM2", env)
+        hy_oas = _fetch.fetch_fred_series("BAMLH0A0HYM2", env, **_bt_kw)
     except Exception:
         hy_oas = None
     try:
-        nfci = _bt_fred("NFCI", env)
+        nfci = _fetch.fetch_fred_series("NFCI", env, **_bt_kw)
     except Exception:
         nfci = None
 

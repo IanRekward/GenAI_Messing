@@ -122,26 +122,23 @@ def _fmt_momentum(mom: dict, band_color: str) -> str:
     )
 
 
-def _load_events() -> list:
-    path = Path("config/events.yaml")
-    if not path.exists():
-        return []
+def _load_yaml(path: str, key: str | None = None, default=None):
+    p = Path(path)
+    if not p.exists():
+        return default if default is not None else {}
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data.get("events", []) if data else []
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return data.get(key, default if default is not None else {}) if key else data
     except Exception:
-        return []
+        return default if default is not None else {}
+
+
+def _load_events() -> list:
+    return _load_yaml("config/events.yaml", "events", [])
 
 
 def _load_review_prompts() -> dict:
-    path = Path("config/review_prompts.yaml")
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return (data or {}).get("bands", {})
-    except Exception:
-        return {}
+    return _load_yaml("config/review_prompts.yaml", "bands")
 
 
 def _build_review_card(band: str, shock_type: str) -> str:
@@ -200,14 +197,7 @@ def _build_review_card(band: str, shock_type: str) -> str:
 
 
 def _load_tooltips() -> dict:
-    path = Path("config/tooltips.yaml")
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data or {}
-    except Exception:
-        return {}
+    return _load_yaml("config/tooltips.yaml")
 
 
 def _tip(text: str, tip_str: str, tag: str = "span") -> str:
@@ -222,23 +212,13 @@ def _tip(text: str, tip_str: str, tag: str = "span") -> str:
 
 
 def _load_thresholds() -> dict:
-    path = Path("config/thresholds.yaml")
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return data.get("indicators", {}) if data else {}
-    except Exception:
-        return {}
+    return _load_yaml("config/thresholds.yaml", "indicators")
 
 
 def _load_ind_weights() -> dict[str, dict[str, float]]:
     """Return {bkey: {ikey: float}} pulled live from config/weights.yaml."""
-    path = Path("config/weights.yaml")
-    if not path.exists():
-        return {}
+    data = _load_yaml("config/weights.yaml")
     try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         return {
             bkey: {ikey: float(icfg["weight"]) for ikey, icfg in bcfg.get("indicators", {}).items()}
             for bkey, bcfg in data.get("buckets", {}).items()
@@ -322,14 +302,7 @@ def _build_calendar_card(events: list) -> str:
 
 
 def _load_escalation_paths() -> dict:
-    path = Path("config/escalation_paths.yaml")
-    if not path.exists():
-        return {}
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-        return (data or {}).get("buckets", {})
-    except Exception:
-        return {}
+    return _load_yaml("config/escalation_paths.yaml", "buckets")
 
 
 def _build_escalation_card(scoring: dict) -> str:

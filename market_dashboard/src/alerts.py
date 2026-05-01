@@ -9,12 +9,14 @@ import smtplib
 from datetime import date, datetime
 from email.mime.text import MIMEText
 from pathlib import Path
-from typing import TYPE_CHECKING
-
+import pandas as pd
 import requests
 
-if TYPE_CHECKING:
-    import pandas as pd
+from src.history import (
+    compute_composite_momentum, cross_bucket_correlation,
+    correlation_regime, classify_shock_type,
+)
+from src.news import get_trigger_news_context
 
 DATA_DIR = Path("data")
 STATE_FILE = DATA_DIR / "alert_state.json"
@@ -313,9 +315,8 @@ def _indicator_label(scoring: dict, ref: str) -> str:
     return scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {}).get("label", ikey)
 
 
-def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None) -> int:
+def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -> int:
     """Build alert messages, dispatch, and persist state. Returns count sent."""
-    from src.history import compute_composite_momentum, cross_bucket_correlation, correlation_regime
     prev = _load_state()
     messages: list[str] = []
     alert_types: list[str] = []
@@ -485,7 +486,6 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
         return 0
 
     # ── Shock classification (temporal regime + stress source) ────────────
-    from src.history import classify_shock_type
     temporal = classify_shock_type(history, scoring) if history is not None else "insufficient"
     source = identify_stress_source(scoring)
     source_label = source[0] if source else None
@@ -511,7 +511,6 @@ def send_alerts(scoring: dict, env: dict, history: "pd.DataFrame | None" = None)
             if ind.get("band") in ("red", "orange"):
                 triggered_keys.add(ik)
     try:
-        from src.news import get_trigger_news_context
         news_ctx = get_trigger_news_context(triggered_keys, env)
         if news_ctx:
             body += f"\n\nNews context:\n{news_ctx}"
@@ -564,7 +563,6 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
     velocity_str = ""
     movers_str = ""
     if history is not None and not history.empty:
-        from src.history import compute_composite_momentum
         h = history.copy()
         h["timestamp"] = pd.to_datetime(h["timestamp"])
         cutoff = pd.Timestamp.today() - pd.Timedelta(days=7)

@@ -457,6 +457,11 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             "^VIX", env, years=int(env.get("HISTORY_YEARS", 10))
         )
         regime_info = classify_vix_regime(vix_series, _load_prev_regime())
+    except StaleCacheFallback as stale:
+        try:
+            regime_info = classify_vix_regime(stale.series, _load_prev_regime())
+        except Exception as exc:
+            errors.append(f"vix_regime: {exc}")
     except Exception as exc:
         errors.append(f"vix_regime: {exc}")
 
