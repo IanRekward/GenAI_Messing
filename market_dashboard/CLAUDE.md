@@ -332,6 +332,14 @@ These were debated and decided. Treat them as constraints, not starting points.
   `python run_dashboard.py --publish --heartbeat --quiet`
 - If automation breaks, diagnose in order: `powercfg /waketimers` (admin),
   `schtasks /query /tn "Market Dashboard Wake"`, `powercfg /lastwake`.
+- **Battery flags must stay false on a laptop.** Both tasks need
+  `DisallowStartIfOnBatteries=false` and `StopIfGoingOnBatteries=false`. With
+  the defaults true, the wake task is silently skipped on battery and only
+  `NumberOfMissedRuns` reveals it (not `LastTaskResult`). Verify with
+  `(Get-ScheduledTask -TaskName 'Market Dashboard Wake').Settings`. Modifying
+  these requires admin (the task's `RunLevel` is `HighestAvailable`); use
+  `Set-ScheduledTask` from an elevated shell. Also set `StartWhenAvailable=true`
+  so a missed run catches up rather than waiting until the next day.
 - Lock screen on wake is expected — tasks run in locked session, Pushover fires
   without any user input.
 
