@@ -16,7 +16,19 @@ THESES_LOG = BASE / "data" / "theses.jsonl"
 
 
 def main() -> None:
-    result = generate(UNIVERSE, THRESHOLDS)
+    THESES_LOG.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        result = generate(UNIVERSE, THRESHOLDS)
+    except Exception as exc:
+        print(f"ERROR: {exc}")
+        with open(THESES_LOG, "a") as f:
+            f.write(json.dumps({
+                "signal": False,
+                "error": str(exc),
+                "as_of": datetime.now(timezone.utc).isoformat(),
+            }) + "\n")
+        return
 
     if result:
         print(result["thesis"])
@@ -26,7 +38,6 @@ def main() -> None:
         print("No sector rotation signal today.")
         result = {"signal": False, "as_of": datetime.now(timezone.utc).isoformat()}
 
-    THESES_LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(THESES_LOG, "a") as f:
         f.write(json.dumps(result) + "\n")
 

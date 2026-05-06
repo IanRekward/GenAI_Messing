@@ -29,8 +29,7 @@ def generate(universe_path: Path, thresholds_path: Path) -> dict | None:
     lookback = f"{int(ma_window * 1.6) + 10}d"
     raw = yf.download(tickers, period=lookback, auto_adjust=True, progress=False)
 
-    closes: pd.DataFrame = raw["Close"] if "Close" in raw.columns else raw.xs("Close", axis=1, level=0)
-    closes = closes.dropna(how="all")
+    closes: pd.DataFrame = raw["Close"].dropna(how="all")
 
     if len(closes) < ma_window + 1:
         raise RuntimeError(f"Only {len(closes)} rows of data — need {ma_window + 1}")
@@ -66,7 +65,7 @@ def generate(universe_path: Path, thresholds_path: Path) -> dict | None:
 
     thesis = (
         f"{buy_ticker} ({buy_name}) {buy_pct:+.1f}% vs "
-        f"{sell_ticker} ({sell_name}) {sell_pct:+.1f}% over 5 days. "
+        f"{sell_ticker} ({sell_name}) {sell_pct:+.1f}% over {mom_window} days. "
         f"Spread: {spread_pct:.1f}%. "
         f"Signal: rotate 5-10% from {sell_ticker} -> {buy_ticker}. "
         f"Hold {hold_days}-{hold_days + 2} days. "
