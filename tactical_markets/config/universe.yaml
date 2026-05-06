@@ -1,0 +1,15 @@
+sectors:
+  - XLK   # Technology
+  - XLF   # Financials
+  - XLE   # Energy
+  - XLI   # Industrials
+  - XLV   # Health Care
+  - XLY   # Consumer Discretionary
+  - XLC   # Communication Services
+  - XLU   # Utilities
+  - XLRE  # Real Estate
+
+broad:
+  - IWM   # Russell 2000
+  - QQQ   # Nasdaq 100
+  - SPY   # S&P 500

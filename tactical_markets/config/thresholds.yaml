@@ -1,0 +1,4 @@
+spread_pct: 1.5       # minimum top-bottom 5d momentum gap to publish
+momentum_window: 5    # trading days for momentum calculation
+ma_window: 20         # days for trend-confirmation MA
+hold_days: 5          # lower bound of suggested hold window (upper = hold_days + 2)
