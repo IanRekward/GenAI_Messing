@@ -123,14 +123,8 @@ separate 30-min change in `src/alerts.py:send_heartbeat`.
 
 ---
 
-## Tactical Markets (In Planning, Hopper Until Market Stress Dashboard Ships)
-
-**Two companion tool briefs drafted and committed (2026-04-27):**
-- `tactical_markets/ROADMAP_SIGNAL_GENERATION.md` — overnight repricing + sector rotation dashboard (6:30 AM premarket signals)
-- `tactical_markets_trading/ROADMAP_ALPACA_INTEGRATION.md` — Alpaca paper trading integration + validation loop (Phase 1–3)
-- `tactical_markets/RESEARCH_SUMMARY.md` — research grounding (2000–2026 empirical findings)
-
-**Status:** Specs locked in, research-backed, not yet coded. Remain in hopper until Market Stress Dashboard is complete and all Phase G items shipped. Target start: after 2026-05-30 regime-weights review checkpoint.
+**Tactical Markets companion projects** are now sibling repos with their own backlogs:
+[../tactical_markets/TODO.md](../tactical_markets/TODO.md), [../tactical_markets_trading/TODO.md](../tactical_markets_trading/TODO.md). They remain in hopper until Market Stress Dashboard is complete and all Phase G items ship.
 
 ---
 
