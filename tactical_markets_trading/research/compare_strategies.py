@@ -31,8 +31,10 @@ END = None  # today
 INITIAL_NAV = 100_000.0
 TRADING_DAYS_PER_YEAR = 252
 
+# Live signal universe — must match tactical_markets/config/universe.yaml exactly
+LIVE_SIGNAL_UNIVERSE = ["XLK", "XLF", "XLE", "XLI", "XLV", "XLY", "XLC", "XLU", "XLRE", "IWM", "QQQ", "SPY"]
+# Larger sector universe for the monthly-rebalance comparison (more tickers, more diversification)
 SECTORS = ["XLK", "XLF", "XLE", "XLV", "XLI", "XLY", "XLP", "XLU", "XLB"]
-BROAD = ["SPY", "QQQ", "IWM"]
 DUAL_MOMO = ["SPY", "VEU", "BIL"]
 SIXTY_FORTY = ["SPY", "TLT"]
 TIMESERIES_BASKET = ["SPY", "QQQ", "IWM", "GLD", "TLT", "VNQ"]
@@ -185,64 +187,109 @@ def strat_btc_stress_overlay(prices: pd.DataFrame, ma_window: int = 200) -> pd.S
     return INITIAL_NAV * (1 + strat_ret).cumprod()
 
 
-def strat_sector_5day_rotation(prices: pd.DataFrame, spread_threshold: float = 0.015, hold_days: int = 5) -> pd.Series:
-    """Backtest of the live strategy: each day, 5-day momentum rank, 1.5%+ spread,
-       buy winner with 10% of capital, hold 5 trading days. Up to 5 concurrent positions."""
-    sectors_df = prices[SECTORS].dropna()
-    momentum_5d = sectors_df.pct_change(5)
+def _run_rotation_backtest(
+    prices: pd.DataFrame,
+    universe: list[str],
+    momentum_window: int,
+    hold_days: int,
+    spread_threshold: float = 0.015,
+    ma_window: int = 20,
+    max_positions: int = 5,
+    position_size: float = 0.10,
+    trend_filter_ticker: str | None = None,
+    trend_filter_ma: int = 200,
+) -> pd.Series:
+    """Generic rotation backtest matching live signal logic exactly:
+       - Each day, rank universe by `momentum_window`-day momentum
+       - If (winner momentum - loser momentum) >= spread_threshold AND winner > its `ma_window`-day MA,
+         AND (optional) trend_filter_ticker is above its trend_filter_ma:
+         buy winner with `position_size` of capital, hold `hold_days` trading days
+       - Up to `max_positions` concurrent. Skip if winner already held."""
+    available = [t for t in universe if t in prices.columns]
+    df = prices[available].dropna(how="all")
 
-    nav = pd.Series(INITIAL_NAV, index=sectors_df.index)
+    momentum = df.pct_change(momentum_window)
+    ma = df.rolling(ma_window).mean()
+
+    trend_in_market = None
+    if trend_filter_ticker and trend_filter_ticker in prices.columns:
+        tf = prices[trend_filter_ticker].dropna()
+        tf_ma = tf.rolling(trend_filter_ma).mean()
+        trend_in_market = (tf > tf_ma).reindex(df.index).fillna(False)
+
+    nav = pd.Series(INITIAL_NAV, index=df.index)
     cash = INITIAL_NAV
-    positions = []  # list of dicts: {ticker, entry_date, entry_price, qty, exit_date}
-    position_size = 0.10
+    positions = []
 
-    for i, date in enumerate(sectors_df.index):
-        if i < 20:
+    warmup = max(ma_window, trend_filter_ma if trend_filter_ticker else 0) + momentum_window
+    for i, date in enumerate(df.index):
+        if i < warmup:
             nav.iloc[i] = cash
             continue
 
-        # Exit any positions whose hold has expired
+        # Exit positions past their hold window
         still_open = []
         for p in positions:
-            if i >= sectors_df.index.get_loc(p["exit_date"]):
-                exit_price = sectors_df.loc[date, p["ticker"]]
-                cash += p["qty"] * exit_price
+            if i >= df.index.get_loc(p["exit_date"]):
+                cash += p["qty"] * df.loc[date, p["ticker"]]
             else:
                 still_open.append(p)
         positions = still_open
 
-        # New signal evaluation
-        if len(positions) < 5:
-            row = momentum_5d.loc[date].dropna()
+        # Trend filter gate (skip new entries if macro trend is off)
+        trend_ok = True if trend_in_market is None else bool(trend_in_market.loc[date])
+
+        if trend_ok and len(positions) < max_positions:
+            row = momentum.loc[date].dropna()
             if len(row) >= 2:
                 winner = row.idxmax()
                 loser = row.idxmin()
                 spread = row[winner] - row[loser]
                 if spread >= spread_threshold:
-                    # 20-day MA filter on winner
-                    ma20 = sectors_df[winner].rolling(20).mean().loc[date]
-                    if sectors_df.loc[date, winner] > ma20:
-                        # Already holding this winner? skip
-                        if not any(p["ticker"] == winner for p in positions):
-                            entry_price = sectors_df.loc[date, winner]
+                    winner_price = df.loc[date, winner]
+                    winner_ma = ma.loc[date, winner]
+                    if winner_price > winner_ma:
+                        held = {p["ticker"] for p in positions}
+                        if winner not in held:
                             trade_size = INITIAL_NAV * position_size
-                            qty = trade_size / entry_price
                             if cash >= trade_size:
+                                qty = trade_size / winner_price
                                 cash -= trade_size
-                                exit_idx = min(i + hold_days, len(sectors_df) - 1)
+                                exit_idx = min(i + hold_days, len(df) - 1)
                                 positions.append({
                                     "ticker": winner,
                                     "entry_date": date,
-                                    "entry_price": entry_price,
+                                    "entry_price": winner_price,
                                     "qty": qty,
-                                    "exit_date": sectors_df.index[exit_idx],
+                                    "exit_date": df.index[exit_idx],
                                 })
 
-        # Mark to market
-        position_value = sum(p["qty"] * sectors_df.loc[date, p["ticker"]] for p in positions)
+        position_value = sum(p["qty"] * df.loc[date, p["ticker"]] for p in positions)
         nav.loc[date] = cash + position_value
 
     return nav
+
+
+def strat_sector_5day_rotation_live(prices: pd.DataFrame) -> pd.Series:
+    """Exactly matches tactical_markets/src/sector_rotation.py: 12-ticker universe (9 sectors + IWM/QQQ/SPY),
+       5-day momentum, 1.5% spread, 20d MA filter, 5-day hold, up to 5 concurrent."""
+    return _run_rotation_backtest(prices, LIVE_SIGNAL_UNIVERSE, momentum_window=5, hold_days=5)
+
+
+def strat_sector_5day_with_trend_filter(prices: pd.DataFrame) -> pd.Series:
+    """Live strategy + macro trend gate: only enter when SPY > 200d MA."""
+    return _run_rotation_backtest(
+        prices, LIVE_SIGNAL_UNIVERSE, momentum_window=5, hold_days=5,
+        trend_filter_ticker="SPY", trend_filter_ma=200,
+    )
+
+
+def strat_sector_monthly_match_live(prices: pd.DataFrame) -> pd.Series:
+    """Same logic as live (same universe, same rules) but at the timeframe research validates:
+       63-day (~3-month) momentum, 21-day (~1-month) hold."""
+    return _run_rotation_backtest(
+        prices, LIVE_SIGNAL_UNIVERSE, momentum_window=63, hold_days=21, spread_threshold=0.03,
+    )
 
 
 # ---------- Metrics ----------
@@ -274,11 +321,78 @@ def metrics(nav: pd.Series) -> dict:
     }
 
 
+# ---------- Stress-period analysis ----------
+
+STRESS_PERIODS = [
+    ("2018 Q4 Selloff",     "2018-10-01", "2018-12-24"),
+    ("COVID Crash",         "2020-02-19", "2020-03-23"),
+    ("2022 Bear Market",    "2022-01-04", "2022-10-12"),
+]
+
+
+def stress_window_metrics(nav: pd.Series, start: str, end: str) -> dict:
+    window = nav.loc[start:end].dropna()
+    if len(window) < 2:
+        return {"return_pct": None, "max_dd_pct": None}
+    total_return = (window.iloc[-1] / window.iloc[0]) - 1
+    running_max = window.cummax()
+    drawdown = (window - running_max) / running_max
+    return {
+        "return_pct": round(total_return * 100, 2),
+        "max_dd_pct": round(drawdown.min() * 100, 2),
+    }
+
+
+def write_markdown_report(strategies: dict, summary: pd.DataFrame, output_path: Path) -> None:
+    lines = []
+    lines.append("# Strategy Comparison Report")
+    lines.append("")
+    lines.append(f"Generated: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M')}")
+    first_nav = next(iter(strategies.values()))
+    lines.append(f"Backtest window: {first_nav.index[0].date()} to {first_nav.index[-1].date()}")
+    lines.append("")
+    lines.append("## Summary metrics")
+    lines.append("")
+    lines.append(summary.to_markdown())
+    lines.append("")
+    lines.append("## Performance during stress periods")
+    lines.append("")
+    lines.append("Total return and max drawdown for each strategy *within the window*. Helps see who's robust under fire.")
+    lines.append("")
+    for label, start, end in STRESS_PERIODS:
+        rows = []
+        for name, nav in strategies.items():
+            m = stress_window_metrics(nav, start, end)
+            rows.append({"strategy": name, **m})
+        df = pd.DataFrame(rows).set_index("strategy")
+        lines.append(f"### {label} ({start} → {end})")
+        lines.append("")
+        lines.append(df.to_markdown())
+        lines.append("")
+    lines.append("## NAV at key dates")
+    lines.append("")
+    key_dates = ["2016-12-31", "2018-12-31", "2020-12-31", "2022-12-31", "2024-12-31"]
+    rows = []
+    for name, nav in strategies.items():
+        row = {"strategy": name}
+        for d in key_dates:
+            try:
+                row[d[:7]] = round(nav.asof(pd.Timestamp(d)), 0)
+            except Exception:
+                row[d[:7]] = None
+        row["latest"] = round(nav.iloc[-1], 0)
+        rows.append(row)
+    nav_df = pd.DataFrame(rows).set_index("strategy")
+    lines.append(nav_df.to_markdown())
+    lines.append("")
+    output_path.write_text("\n".join(lines), encoding="utf-8")
+
+
 # ---------- Main ----------
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    universe = sorted(set(SECTORS + BROAD + DUAL_MOMO + SIXTY_FORTY + TIMESERIES_BASKET + CRYPTO + [CASH_PROXY]))
+    universe = sorted(set(LIVE_SIGNAL_UNIVERSE + SECTORS + DUAL_MOMO + SIXTY_FORTY + TIMESERIES_BASKET + CRYPTO + [CASH_PROXY]))
     prices = fetch_prices(universe)
     print(f"Loaded {len(prices)} trading days from {prices.index[0].date()} to {prices.index[-1].date()}")
     print()
@@ -288,8 +402,10 @@ def main():
         "trend_following_spy": strat_trend_following(prices, "SPY"),
         "sixty_forty": strat_sixty_forty(prices),
         "dual_momentum": strat_dual_momentum(prices),
-        "sector_momentum_monthly": strat_sector_momentum_monthly(prices),
-        "sector_rotation_5d_live": strat_sector_5day_rotation(prices),
+        "sector_momentum_top3_monthly": strat_sector_momentum_monthly(prices),
+        "sector_rotation_5d_live": strat_sector_5day_rotation_live(prices),
+        "sector_rotation_5d_trend_filter": strat_sector_5day_with_trend_filter(prices),
+        "sector_rotation_monthly_match_live": strat_sector_monthly_match_live(prices),
         "buy_hold_btc": strat_buy_hold_btc(prices),
         "btc_stress_overlay": strat_btc_stress_overlay(prices),
     }
@@ -307,11 +423,14 @@ def main():
     ]
     summary.to_csv(OUTPUT_DIR / "comparison_summary.csv")
 
+    write_markdown_report(strategies, summary, OUTPUT_DIR / "comparison_report.md")
+
     print("=== Strategy comparison ===")
     print(summary.to_string())
     print()
     print(f"NAV history: {OUTPUT_DIR / 'comparison_nav.csv'}")
     print(f"Summary:     {OUTPUT_DIR / 'comparison_summary.csv'}")
+    print(f"Report:      {OUTPUT_DIR / 'comparison_report.md'}")
 
 
 if __name__ == "__main__":
