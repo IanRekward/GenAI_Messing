@@ -7,6 +7,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import pandas_market_calendars as mcal
+
 from alpaca_connector import trading_client
 
 TRADES_PATH = Path(__file__).resolve().parent.parent / "data" / "trades.jsonl"
@@ -15,13 +17,15 @@ FILL_POLL_TIMEOUT = 60
 
 
 def add_trading_days(dt: datetime, n: int) -> datetime:
-    result = dt
-    added = 0
-    while added < n:
-        result += timedelta(days=1)
-        if result.weekday() < 5:
-            added += 1
-    return result
+    nyse = mcal.get_calendar("NYSE")
+    schedule = nyse.valid_days(
+        start_date=dt.date().isoformat(),
+        end_date=(dt.date() + timedelta(days=n + 14)).isoformat(),
+    )
+    future = [d for d in schedule if d.date() > dt.date()]
+    if len(future) < n:
+        raise RuntimeError(f"insufficient NYSE trading days: needed {n}, got {len(future)}")
+    return datetime.combine(future[n - 1].date(), dt.time(), tzinfo=dt.tzinfo)
 
 
 def wait_for_fill(order_id: str) -> dict:
@@ -36,7 +40,7 @@ def wait_for_fill(order_id: str) -> dict:
                 "fill_time": str(order.filled_at),
             }
         time.sleep(FILL_POLL_INTERVAL)
-    raise RuntimeError(f"Order {order_id} not filled within {FILL_POLL_TIMEOUT}s — market may be closed")
+    raise RuntimeError(f"Order {order_id} not filled within {FILL_POLL_TIMEOUT}s")
 
 
 def log_entry(order_result: dict) -> dict:
@@ -59,21 +63,3 @@ def log_entry(order_result: dict) -> dict:
     with open(TRADES_PATH, "a") as f:
         f.write(json.dumps(record) + "\n")
     return record
-
-
-if __name__ == "__main__":
-    order_result = {
-        "order_id": "55f625e5-d89f-495e-b6c7-e53315feab0a",
-        "symbol": "XLK",
-        "sell_leg": "XLE",
-        "notional": 10_000,
-        "thesis_as_of": "2026-05-08T11:30:05.590776+00:00",
-    }
-    print(f"Polling for fill on {order_result['order_id']}...")
-    try:
-        record = log_entry(order_result)
-        print("Trade logged:")
-        for k, v in record.items():
-            print(f"  {k}: {v}")
-    except RuntimeError as e:
-        print(f"Not logged: {e}")

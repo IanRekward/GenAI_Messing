@@ -7,7 +7,7 @@ $workDir = "C:\Users\rekwa\ian_projects\tactical_markets_trading"
 
 # --- Wake task (wakes the computer 15 min before entry) ---
 $wakeAction   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c exit"
-$wakeTrigger  = New-ScheduledTaskTrigger -Daily -At "09:20AM"
+$wakeTrigger  = New-ScheduledTaskTrigger -Daily -At "08:20AM"
 $wakeSettings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
@@ -30,7 +30,7 @@ $entryAction   = New-ScheduledTaskAction `
     -Argument         "run_trading.py" `
     -WorkingDirectory $workDir
 
-$entryTrigger  = New-ScheduledTaskTrigger -Daily -At "09:35AM"
+$entryTrigger  = New-ScheduledTaskTrigger -Daily -At "08:35AM"
 $entrySettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `
@@ -52,7 +52,7 @@ $exitAction   = New-ScheduledTaskAction `
     -Argument         "src\exit_manager.py" `
     -WorkingDirectory $workDir
 
-$exitTrigger  = New-ScheduledTaskTrigger -Daily -At "09:40AM"
+$exitTrigger  = New-ScheduledTaskTrigger -Daily -At "08:40AM"
 $exitSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `

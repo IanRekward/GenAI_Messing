@@ -10,7 +10,8 @@ from alpaca.trading.requests import MarketOrderRequest
 
 import yfinance as yf
 
-from alpaca_connector import trading_client
+import pushover
+from alpaca_connector import load_env, trading_client
 from trade_logger import TRADES_PATH, wait_for_fill
 
 
@@ -52,11 +53,7 @@ def exit_position(record: dict) -> dict:
     exit_proceeds = fill["fill_price"] * fill["fill_qty"]
     pnl_dollars = round(exit_proceeds - entry_cost, 2)
     pnl_pct = round((exit_proceeds - entry_cost) / entry_cost * 100, 4)
-    entry_time = datetime.fromisoformat(record["entry_time"])
-    exit_time = datetime.fromisoformat(fill["fill_time"])
-    spy_return = get_return_pct("SPY", entry_time, exit_time)
-    sell_leg_return = get_return_pct(record["sell_leg"], entry_time, exit_time)
-    return {
+    closed = {
         **record,
         "exit_order_id": str(order.id),
         "exit_time_actual": fill["fill_time"],
@@ -64,10 +61,18 @@ def exit_position(record: dict) -> dict:
         "exit_fill_qty": fill["fill_qty"],
         "pnl_dollars": pnl_dollars,
         "pnl_pct": pnl_pct,
-        "spy_return_pct": spy_return,
-        "sell_leg_return_pct": sell_leg_return,
+        "spy_return_pct": None,
+        "sell_leg_return_pct": None,
         "status": "closed",
     }
+    try:
+        entry_time = datetime.fromisoformat(record["entry_time"])
+        exit_time = datetime.fromisoformat(fill["fill_time"])
+        closed["spy_return_pct"] = get_return_pct("SPY", entry_time, exit_time)
+        closed["sell_leg_return_pct"] = get_return_pct(record["sell_leg"], entry_time, exit_time)
+    except Exception as e:
+        print(f"  benchmark fetch failed: {e} — record saved without benchmarks")
+    return closed
 
 
 def run_exits():
@@ -78,17 +83,37 @@ def run_exits():
         if record["status"] != "open":
             continue
         exit_due = datetime.fromisoformat(record["exit_time_planned"])
-        if now >= exit_due:
-            print(f"Exiting {record['symbol']} (trade {record['trade_id'][:8]}...)")
+        if now < exit_due:
+            continue
+        print(f"Exiting {record['symbol']} (trade {record['trade_id'][:8]}...)")
+        try:
             records[i] = exit_position(record)
+            save_trades(records)
             exited += 1
-    if exited:
-        save_trades(records)
-        print(f"Exited {exited} position(s). trades.jsonl updated.")
-    else:
+            closed = records[i]
+            spy = closed.get("spy_return_pct")
+            sl = closed.get("sell_leg_return_pct")
+            spy_str = f"{spy:+.2f}%" if spy is not None else "n/a"
+            sl_str = f"{sl:+.2f}%" if sl is not None else "n/a"
+            pushover.send(
+                f"Exited {closed['symbol']} {closed['pnl_pct']:+.2f}%",
+                f"P&L: ${closed['pnl_dollars']} | SPY {spy_str} | {closed['sell_leg']} {sl_str}",
+            )
+        except Exception as e:
+            print(f"  EXIT FAILED for {record['trade_id'][:8]}: {e}")
+            pushover.send(
+                "Tactical Trading EXIT FAILED",
+                f"{record['symbol']} (trade {record['trade_id'][:8]}): {e}",
+            )
+    if not exited:
         print(f"No open positions due for exit ({len(records)} record(s) checked).")
     return exited
 
 
 if __name__ == "__main__":
-    run_exits()
+    load_env()
+    try:
+        run_exits()
+    except Exception as e:
+        pushover.send("Tactical Trading EXIT CRASHED", str(e))
+        raise
