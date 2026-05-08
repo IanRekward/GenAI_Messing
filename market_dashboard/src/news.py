@@ -5,11 +5,13 @@ Set ENABLE_NEWS_TRIAGE=false in .env to skip entirely.
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import feedparser
 import yaml
+
+NEWS_RECENCY_HOURS = 36
 
 WATCHLIST = [
     "fed", "federal reserve", "rate", "inflation", "recession", "credit",
@@ -22,10 +24,11 @@ WATCHLIST = [
 _SYSTEM = (
     "You are a concise financial analyst. Given a list of news headlines, "
     "return exactly 4–5 bullet points (start each with '•') summarising the "
-    "most market-relevant stories. Prefer official-source items (Fed, ECB, "
-    "Treasury, BLS) when summarizing, but include important wire-service and "
-    "publisher stories too. Focus on systemic risk, macro policy, and "
-    "credit/liquidity signals. Skip individual stock moves."
+    "most market-relevant stories from the last 24–36 hours. Prefer "
+    "official-source items (Fed, ECB, Treasury, BLS) when they are recent, "
+    "otherwise lead with the freshest wire/publisher headlines. Focus on "
+    "systemic risk, macro policy, and credit/liquidity signals. Skip "
+    "individual stock moves."
 )
 
 _CATEGORY_RANK = {"official": 0, "wire": 1, "publisher": 2}
@@ -40,6 +43,17 @@ def _format_pub_date(parsed_time) -> str:
         return f"{dt.strftime('%b')} {dt.day}"
     except Exception:
         return ""
+
+
+def _is_recent(parsed_time, hours: int = NEWS_RECENCY_HOURS) -> bool:
+    """True if parsed_time is within `hours` of now, or if no date is available."""
+    if not parsed_time:
+        return True
+    try:
+        pub = datetime(*parsed_time[:6], tzinfo=timezone.utc)
+    except Exception:
+        return True
+    return pub >= datetime.now(timezone.utc) - timedelta(hours=hours)
 
 
 def _load_news_feeds() -> list[dict]:
@@ -102,14 +116,15 @@ def _pull_headlines() -> list[dict]:
                 title = entry.get("title", "").strip()
                 link = entry.get("link", "").strip()
                 parsed_time = entry.get("published_parsed") or entry.get("updated_parsed")
-                if title:
-                    items.append({
-                        "title": title,
-                        "url": link,
-                        "source": feed["name"],
-                        "category": feed["category"],
-                        "published": _format_pub_date(parsed_time),
-                    })
+                if not title or not _is_recent(parsed_time):
+                    continue
+                items.append({
+                    "title": title,
+                    "url": link,
+                    "source": feed["name"],
+                    "category": feed["category"],
+                    "published": _format_pub_date(parsed_time),
+                })
         except Exception as exc:
             _log_feed_failure(feed["name"], str(exc))
             continue
