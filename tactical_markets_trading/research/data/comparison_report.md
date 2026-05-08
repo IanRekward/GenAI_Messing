@@ -1,22 +1,22 @@
 # Strategy Comparison Report
 
-Generated: 2026-05-08 13:12
+Generated: 2026-05-08 13:27
 Backtest window: 2014-01-02 to 2026-05-08
 
 ## Summary metrics
 
 | strategy                           |   years |        final_nav |   cagr_pct |   vol_pct |   sharpe |   max_drawdown_pct |   calmar |   monthly_win_rate_pct |
 |:-----------------------------------|--------:|-----------------:|-----------:|----------:|---------:|-------------------:|---------:|-----------------------:|
-| buy_hold_spy                       |    12.3 | 496419           |      13.86 |     17.25 |     0.84 |             -33.72 |     0.41 |                   69.6 |
-| trend_following_spy                |    12.3 | 326767           |      10.07 |     11.37 |     0.9  |             -19.81 |     0.51 |                   59.5 |
+| buy_hold_spy                       |    12.3 | 496499           |      13.86 |     17.25 |     0.84 |             -33.72 |     0.41 |                   69.6 |
+| trend_following_spy                |    12.3 | 326820           |      10.07 |     11.37 |     0.9  |             -19.81 |     0.51 |                   59.5 |
 | sixty_forty                        |    12.3 | 306053           |       9.48 |     10.89 |     0.89 |             -27.24 |     0.35 |                   65.5 |
-| dual_momentum                      |    12.3 | 250914           |       7.74 |     15.01 |     0.57 |             -33.72 |     0.23 |                   65.5 |
-| sector_momentum_top3_monthly       |    12.3 | 394105           |      11.75 |     17.02 |     0.74 |             -31.38 |     0.37 |                   63.5 |
-| sector_rotation_5d_live            |    12.3 | 122911           |       1.69 |      2.88 |     0.6  |              -5.1  |     0.33 |                   61.5 |
-| sector_rotation_5d_trend_filter    |    12.3 | 113647           |       1.04 |      2.55 |     0.42 |              -5.31 |     0.2  |                   50.7 |
-| sector_rotation_monthly_match_live |    12.3 | 124730           |       1.81 |      3.36 |     0.55 |              -6.95 |     0.26 |                   61.5 |
-| buy_hold_btc                       |    11.6 |      1.75341e+07 |      55.88 |     55.53 |     0.83 |             -83.4  |     0.67 |                   56.4 |
-| btc_stress_overlay                 |    11.6 |      5.71098e+07 |      72.53 |     56.74 |     1.24 |             -69.11 |     1.05 |                   50   |
+| dual_momentum                      |    12.3 | 250794           |       7.73 |     15.01 |     0.57 |             -33.72 |     0.23 |                   66.2 |
+| sector_momentum_top3_monthly       |    12.3 | 394003           |      11.75 |     17.02 |     0.74 |             -31.38 |     0.37 |                   63.5 |
+| sector_rotation_5d_live            |    12.3 | 122914           |       1.69 |      2.88 |     0.6  |              -5.1  |     0.33 |                   61.5 |
+| sector_rotation_5d_trend_filter    |    12.3 | 113651           |       1.04 |      2.55 |     0.42 |              -5.31 |     0.2  |                   50.7 |
+| sector_rotation_monthly_match_live |    12.3 | 124722           |       1.81 |      3.36 |     0.55 |              -6.95 |     0.26 |                   61.5 |
+| buy_hold_btc                       |    11.6 |      1.75528e+07 |      55.9  |     55.53 |     0.83 |             -83.4  |     0.67 |                   56.4 |
+| btc_stress_overlay                 |    11.6 |      5.71708e+07 |      72.54 |     56.74 |     1.24 |             -69.11 |     1.05 |                   50   |
 
 ## Performance during stress periods
 
@@ -71,13 +71,44 @@ Total return and max drawdown for each strategy *within the window*. Helps see w
 
 | strategy                           |   2016-12 |         2018-12 |          2020-12 |          2022-12 |          2024-12 |           latest |
 |:-----------------------------------|----------:|----------------:|-----------------:|-----------------:|-----------------:|-----------------:|
-| buy_hold_spy                       |    129890 | 150861          | 234256           | 246746           | 388813           | 496419           |
-| trend_following_spy                |    114892 | 138840          | 177932           | 194955           | 280949           | 326767           |
+| buy_hold_spy                       |    129890 | 150861          | 234256           | 246746           | 388813           | 496499           |
+| trend_following_spy                |    114892 | 138840          | 177932           | 194954           | 280949           | 326820           |
 | sixty_forty                        |    130646 | 148218          | 224726           | 199008           | 257999           | 306053           |
-| dual_momentum                      |     96613 | 107455          | 124930           | 142157           | 194488           | 250914           |
-| sector_momentum_top3_monthly       |    112929 | 137051          | 217497           | 286383           | 411050           | 394105           |
-| sector_rotation_5d_live            |    103716 | 103456          | 109773           | 116750           | 119222           | 122911           |
-| sector_rotation_5d_trend_filter    |     98356 |  99104          | 101563           | 108268           | 110336           | 113647           |
-| sector_rotation_monthly_match_live |    102087 | 102616          | 107293           | 114001           | 123613           | 124730           |
-| buy_hold_btc                       |    210731 | 818374          |      6.34148e+06 |      3.61825e+06 |      2.04291e+07 |      1.75341e+07 |
-| btc_stress_overlay                 |    349983 |      2.2949e+06 |      2.03439e+07 |      2.40839e+07 |      8.84585e+07 |      5.71098e+07 |
+| dual_momentum                      |     96613 | 107455          | 124930           | 142157           | 194489           | 250794           |
+| sector_momentum_top3_monthly       |    112929 | 137051          | 217497           | 286383           | 411051           | 394003           |
+| sector_rotation_5d_live            |    103716 | 103456          | 109773           | 116750           | 119222           | 122914           |
+| sector_rotation_5d_trend_filter    |     98356 |  99104          | 101563           | 108268           | 110336           | 113651           |
+| sector_rotation_monthly_match_live |    102087 | 102616          | 107293           | 114001           | 123613           | 124722           |
+| buy_hold_btc                       |    210731 | 818374          |      6.34148e+06 |      3.61825e+06 |      2.04291e+07 |      1.75528e+07 |
+| btc_stress_overlay                 |    349983 |      2.2949e+06 |      2.03439e+07 |      2.40839e+07 |      8.84585e+07 |      5.71708e+07 |
+
+## Diagnostics: dual_momentum regime analysis
+
+Dual momentum's 7.74% CAGR (Sharpe 0.57) sits well below Antonacci's published 1974-2014 results (~17% CAGR). This is **regime-dependent, not a bug** — the implementation matches Antonacci's GEM rule (compare SPY 12-mo to T-bills; if SPY wins, hold max of SPY/VEU; else hold cash).
+
+**Decision history (149 months):** {'SPY': 91, 'VEU': 26, 'BIL_riskoff': 20, 'BIL_warmup': 12}.
+
+**Regime transitions and whipsaws:**
+
+| Date | Transition | Prev regime months |
+|---|---|---|
+| 2015-01-31 | CASH → EQUITY | ~12 |
+| 2015-09-30 | EQUITY → CASH | ~8 |
+| 2015-10-31 | CASH → EQUITY | ~1 |
+| 2016-01-31 | EQUITY → CASH | ~3 |
+| 2016-03-31 | CASH → EQUITY | ~2 |
+| 2018-12-31 | EQUITY → CASH | ~33 |
+| 2019-02-28 | CASH → EQUITY | ~1 |
+| 2020-03-31 | EQUITY → CASH | ~13 |
+| 2020-05-31 | CASH → EQUITY | ~2 |
+| 2022-05-31 | EQUITY → CASH | ~24 |
+| 2023-06-30 | CASH → EQUITY | ~13 |
+
+**Key whipsaws in this window:**
+- **2018-12-31:** exited to cash at the bottom of the Q4 selloff; re-entered 2 months later after SPY had already rebounded ~10%. Classic 12-month-lookback V-shape penalty.
+- **2020-03-31:** exited at COVID bottom; re-entered 2 months later after SPY rallied ~30%. Catastrophic whipsaw.
+- **2022-05-31:** correctly anticipated the bear market; stayed in cash 13 months. Strategy working as designed.
+
+**Implication for Phase 2:** dual momentum requires extended drawdowns (1+ year regime transitions) to capture its edge. In our 2014-2026 window, two of three SPY drawdowns were V-shaped, neutralizing the strategy. Antonacci's 1974-2014 backtest included the 2000-2002 dot-com bust and 2007-2009 GFC — both 12+ month drawdowns. Don't read this window as evidence the strategy is broken; read it as evidence the strategy is *regime-conditional*.
+
+Full decision history: [dual_momentum_decisions.csv](dual_momentum_decisions.csv)
