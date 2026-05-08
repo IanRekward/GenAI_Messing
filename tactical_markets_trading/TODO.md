@@ -93,6 +93,15 @@ After Phase 1 freeze, **no new code** until 10+ trades accumulate. Success gate:
 | Stops/targets | None in Phase 1. Add in Phase 2 after seeing real drawdown distribution. |
 | Manual vs automated | Automated entries and exits. Manual approval reintroduces discretionary contamination. |
 
+## Lessons from Phase 1 — inputs to Phase 2 design
+
+Captured here so the next design pass (end of Phase 1 or end-of-freeze review) doesn't lose them. See also memory: `feedback_scheduler_api_testing.md`.
+
+- **Minimize lag between decision and API call.** Polling cycles, sleeps, and multi-step confirmations all create windows for state to drift. For Phase 2 risk management (stops, sizing rules), the path from "decide to exit" to "submit order" should have as few steps as possible. Don't pre-compute decisions and act later — act on what's true at decision time.
+- **Test the scheduled path against the real API before unattended runs.** Day 7's first fire surfaced a partial-fill bug (`wait_for_fill` returned on `filled_at != None`, which Alpaca sets on the first partial fill, not at `status == FILLED`). Logic looked right; behavior was wrong; only the live fire exposed it. Phase 2 changes must include a smoke run against real conditions before being scheduled.
+- **Optimize the polling state machine.** `wait_for_fill` should terminate on the unambiguous *final* state. Terminal failure states (REJECTED, CANCELED, EXPIRED) should fail fast, not eat the full timeout. This is fixed in the Phase 1 hardening pass (commit 58fa2e1) — pattern carries forward to any future Alpaca interaction.
+- **Add a post-fire reconciliation pass.** Compare local trades.jsonl to actual Alpaca positions/orders. Alert on drift. Today we caught it manually; Phase 2 should automate this check after every entry and exit.
+
 ## Cross-project integration
 
 - **`tactical_markets/`** — read-only consumer of `data/theses.jsonl`. No imports.
