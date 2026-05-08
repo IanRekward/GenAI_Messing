@@ -9,7 +9,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import pandas_market_calendars as mcal
 
+from alpaca.trading.enums import OrderStatus
+
 from alpaca_connector import trading_client
+
+TERMINAL_FAILED = {OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIRED}
 
 TRADES_PATH = Path(__file__).resolve().parent.parent / "data" / "trades.jsonl"
 FILL_POLL_INTERVAL = 2
@@ -29,18 +33,24 @@ def add_trading_days(dt: datetime, n: int) -> datetime:
 
 
 def wait_for_fill(order_id: str) -> dict:
+    """Wait for an order to reach OrderStatus.FILLED. Polling on filled_at != None
+    can return on a partial fill — Alpaca updates filled_at and filled_qty incrementally."""
     client = trading_client()
     deadline = time.time() + FILL_POLL_TIMEOUT
+    last_status = None
     while time.time() < deadline:
         order = client.get_order_by_id(order_id)
-        if order.filled_at is not None:
+        last_status = order.status
+        if order.status == OrderStatus.FILLED:
             return {
                 "fill_price": float(order.filled_avg_price),
                 "fill_qty": float(order.filled_qty),
                 "fill_time": str(order.filled_at),
             }
+        if order.status in TERMINAL_FAILED:
+            raise RuntimeError(f"Order {order_id} ended in {order.status} (filled_qty={order.filled_qty})")
         time.sleep(FILL_POLL_INTERVAL)
-    raise RuntimeError(f"Order {order_id} not filled within {FILL_POLL_TIMEOUT}s")
+    raise RuntimeError(f"Order {order_id} not filled within {FILL_POLL_TIMEOUT}s (last status: {last_status})")
 
 
 def log_entry(order_result: dict) -> dict:
