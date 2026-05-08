@@ -4,7 +4,7 @@ Alpaca paper-trading layer that validates [tactical_markets](../tactical_markets
 
 ## Status
 
-**Phase 1 Day 1 complete (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k), [src/alpaca_connector.py](src/alpaca_connector.py) confirmed auth + account fetch. Day 2 onward is locked-brief execution; switch to Sonnet 4.6+ for it.
+**Phase 1 Days 1-7 built + hardened (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k). All code paths in place, all tasks registered with Windows Task Scheduler, hardening pass applied (commit acd618b). First scheduled fires today (entry 8:35 AM CDT, exit 8:40 AM CDT). After two consecutive clean fires, **Phase 1 freeze begins** — no code changes until ~10 trades accumulate.
 
 ## Source documents
 
@@ -46,17 +46,27 @@ Design pass run after `tactical_markets` week-1 ship. The ROADMAP's pair-trade h
 - Market orders sacrifice slippage optimization for execution simplicity.
 - Full automation contaminates "would Ian have actually placed this trade?" but cleanly tests the signal.
 
-## Phase 1 day-by-day
+## Phase 1 day-by-day (all complete 2026-05-08)
 
-- **Day 1 (2026-05-08, complete):** [src/alpaca_connector.py](src/alpaca_connector.py) — `load_env()`, `trading_client()`, `__main__` prints account info. Smoke-tested against paper account.
-- **Day 2:** read most-recent `signal: true` line from `../tactical_markets/data/theses.jsonl`, build a market buy order for `buy` ticker with `notional=10000`, submit, print fill. File: `src/order_builder.py` with inline `__main__` smoke run. Manual trigger only.
-- **Day 3:** trade logging — on entry, append a record to `data/trades.jsonl` with order id, fill price/qty, entry timestamp, intended exit timestamp (entry + 5 trading days using a US market calendar — `pandas_market_calendars` or hand-rolled). File: `src/trade_logger.py`.
-- **Day 4:** exit logic — script reads `data/trades.jsonl`, finds open positions whose exit time has passed, submits market sell for the held qty, appends exit record. File: `src/exit_manager.py`. Manual trigger.
-- **Day 5:** benchmark capture — at exit time, fetch SPY return + loser-leg return over the same window via yfinance, append to exit record. Trade-record schema is now complete.
-- **Day 6:** scheduling — Windows Task Scheduler. Two tasks: entry runs at 9:35 AM ET (5 min after open), exit runs at 9:40 AM ET. Mirror `tactical_markets/setup_task.ps1` battery flags. Holiday handling: skip if no thesis file written that morning.
-- **Day 7:** two consecutive clean scheduler fires (entry + exit). Then freeze.
+- **Day 1 ✅** [src/alpaca_connector.py](src/alpaca_connector.py) — `load_env()`, `trading_client()`, account fetch.
+- **Day 2 ✅** [src/order_builder.py](src/order_builder.py) — read latest `signal: true` from `../tactical_markets/data/theses.jsonl`, submit market buy with `notional=10000`.
+- **Day 3 ✅** [src/trade_logger.py](src/trade_logger.py) — `wait_for_fill` polls Alpaca; appends entry record to `data/trades.jsonl` with NYSE-aware `add_trading_days` for `exit_time_planned`.
+- **Day 4 ✅** [src/exit_manager.py](src/exit_manager.py) — finds open trades past `exit_time_planned`, submits market sell, atomic save (fill-then-benchmark, never raises after fill).
+- **Day 5 ✅** Benchmark capture inside `exit_position` — `spy_return_pct` and `sell_leg_return_pct` via yfinance over the same window. Failures default to `null`, never block close.
+- **Day 6 ✅** [run_trading.py](run_trading.py) (entry orchestration) + [setup_task.ps1](setup_task.ps1) — three Windows Tasks registered: Wake (8:20 AM CDT, WakeToRun), Entry (8:35 AM CDT, runs `run_trading.py`), Exit (8:40 AM CDT, runs `src/exit_manager.py`). Times are 5-10 min after CDT market open (8:30 AM CDT). Battery flags: `DisallowStartIfOnBatteries=False`, `StopIfGoingOnBatteries=False`, `StartWhenAvailable=True`.
+- **Day 7 (in progress):** watch for two consecutive clean fires. First scheduled entry/exit fires today at 8:35/8:40 AM CDT.
 
-After Day 7, **no new code.** Accumulate paper trades passively. Phase 1 success gate: 10+ trades executed end-to-end without rejections or stranded positions.
+### Hardening pass (2026-05-08, Opus 4.7 design review, commit acd618b)
+
+Six structural fixes applied before freeze:
+1. `already_traded` queries Alpaca (positions + open orders), not local file. Local file lags if logging fails; Alpaca is the actual source of truth for whether we have exposure.
+2. `exit_position` is non-raising after the SELL fills. yfinance/network errors leave `spy_return_pct`/`sell_leg_return_pct` as `null` but the close is always persisted.
+3. `add_trading_days` uses NYSE calendar via `pandas_market_calendars` — handles US holidays (Memorial Day verified for entries May 18-22).
+4. [src/pushover.py](src/pushover.py) added — minimal client, mirrors `tactical_markets/src/pushover.py`. Notifications on entry, exit, every failure path. Silently no-ops if env not configured (prints `[pushover not configured]`).
+5. Stale hardcoded `__main__` removed from `trade_logger.py` (was a smoke-test artifact pointing at a now-cancelled order id).
+6. Scheduler timing corrected from 9:35/9:40/9:20 to 8:35/8:40/8:20 (5 min after CDT market open, not 65 min after ET open).
+
+After Phase 1 freeze, **no new code** until 10+ trades accumulate. Success gate: 10+ trades executed end-to-end without rejections or stranded positions.
 
 ## Validation gates
 
@@ -91,5 +101,6 @@ After Day 7, **no new code.** Accumulate paper trades passively. Phase 1 success
 ## Environment
 
 - Own venv at `tactical_markets_trading/.venv/`. Created Day 1 with Python 3.14 (system).
-- Dependencies installed: `alpaca-py`, `python-dotenv`. Add `yfinance`, `pandas-market-calendars` (or equivalent) on Days 4–5.
-- `.env` keys: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_BASE_URL` (the URL is informational only — `paper=True` in code is the actual safety pin). Gitignored via root `.gitignore`.
+- Dependencies installed: `alpaca-py`, `python-dotenv`, `yfinance`, `pandas-market-calendars`, `requests` (transitive).
+- `.env` keys: `ALPACA_API_KEY`, `ALPACA_SECRET_KEY`, `ALPACA_BASE_URL`, `PUSHOVER_TOKEN`, `PUSHOVER_USER`. Gitignored via root `.gitignore`. The `paper=True` flag in `TradingClient` is the actual safety pin against accidentally hitting live markets.
+- Three Windows Scheduled Tasks: `Tactical Trading Wake`, `Tactical Trading Entry`, `Tactical Trading Exit`. Re-register via `PowerShell -ExecutionPolicy Bypass -File .\setup_task.ps1` (uses `-Force` so safe to re-run).
