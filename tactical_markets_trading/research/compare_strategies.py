@@ -39,6 +39,7 @@ DUAL_MOMO = ["SPY", "VEU", "BIL"]
 SIXTY_FORTY = ["SPY", "TLT"]
 TIMESERIES_BASKET = ["SPY", "QQQ", "IWM", "GLD", "TLT", "VNQ"]
 CRYPTO = ["BTC-USD"]
+VIX = ["^VIX"]
 CASH_PROXY = "BIL"
 
 
@@ -198,6 +199,7 @@ def _run_rotation_backtest(
     position_size: float = 0.10,
     trend_filter_ticker: str | None = None,
     trend_filter_ma: int = 200,
+    vix_threshold: float | None = None,
 ) -> pd.Series:
     """Generic rotation backtest matching live signal logic exactly:
        - Each day, rank universe by `momentum_window`-day momentum
@@ -216,6 +218,11 @@ def _run_rotation_backtest(
         tf = prices[trend_filter_ticker].dropna()
         tf_ma = tf.rolling(trend_filter_ma).mean()
         trend_in_market = (tf > tf_ma).reindex(df.index).fillna(False)
+
+    vix_safe = None
+    if vix_threshold is not None and "^VIX" in prices.columns:
+        vix = prices["^VIX"].dropna()
+        vix_safe = (vix < vix_threshold).reindex(df.index).fillna(False)
 
     nav = pd.Series(INITIAL_NAV, index=df.index)
     cash = INITIAL_NAV
@@ -236,10 +243,11 @@ def _run_rotation_backtest(
                 still_open.append(p)
         positions = still_open
 
-        # Trend filter gate (skip new entries if macro trend is off)
+        # Macro filter gates: skip new entries if trend is off OR VIX is elevated
         trend_ok = True if trend_in_market is None else bool(trend_in_market.loc[date])
+        vix_ok = True if vix_safe is None else bool(vix_safe.loc[date])
 
-        if trend_ok and len(positions) < max_positions:
+        if trend_ok and vix_ok and len(positions) < max_positions:
             row = momentum.loc[date].dropna()
             if len(row) >= 2:
                 winner = row.idxmax()
@@ -268,6 +276,36 @@ def _run_rotation_backtest(
         nav.loc[date] = cash + position_value
 
     return nav
+
+
+def strat_vix_overlay_spy(prices: pd.DataFrame, threshold: float = 30) -> pd.Series:
+    """Hold SPY when VIX < threshold, BIL when VIX >= threshold (using yesterday's VIX to avoid lookahead)."""
+    spy = prices["SPY"].dropna()
+    vix = prices["^VIX"].dropna()
+    bil = prices["BIL"].dropna()
+    common = spy.index.intersection(vix.index).intersection(bil.index)
+    spy, vix, bil = spy.loc[common], vix.loc[common], bil.loc[common]
+    in_spy = (vix < threshold).shift(1).fillna(False)
+    spy_ret = spy.pct_change().fillna(0)
+    bil_ret = bil.pct_change().fillna(0)
+    daily_ret = spy_ret.where(in_spy, bil_ret)
+    return INITIAL_NAV * (1 + daily_ret).cumprod()
+
+
+def strat_vix_overlay_spy_30(prices: pd.DataFrame) -> pd.Series:
+    return strat_vix_overlay_spy(prices, threshold=30)
+
+
+def strat_vix_overlay_spy_25(prices: pd.DataFrame) -> pd.Series:
+    return strat_vix_overlay_spy(prices, threshold=25)
+
+
+def strat_sector_rotation_5d_vix_filter(prices: pd.DataFrame) -> pd.Series:
+    """Live signal mechanics + skip new entries when VIX > 25. Existing positions ride out hold window."""
+    return _run_rotation_backtest(
+        prices, LIVE_SIGNAL_UNIVERSE, momentum_window=5, hold_days=5,
+        vix_threshold=25,
+    )
 
 
 def strat_sector_5day_rotation_live(prices: pd.DataFrame) -> pd.Series:
@@ -480,7 +518,7 @@ def write_markdown_report(strategies: dict, summary: pd.DataFrame, output_path: 
 
 def main():
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    universe = sorted(set(LIVE_SIGNAL_UNIVERSE + SECTORS + DUAL_MOMO + SIXTY_FORTY + TIMESERIES_BASKET + CRYPTO + [CASH_PROXY]))
+    universe = sorted(set(LIVE_SIGNAL_UNIVERSE + SECTORS + DUAL_MOMO + SIXTY_FORTY + TIMESERIES_BASKET + CRYPTO + VIX + [CASH_PROXY]))
     prices = fetch_prices(universe)
     print(f"Loaded {len(prices)} trading days from {prices.index[0].date()} to {prices.index[-1].date()}")
     print()
@@ -488,11 +526,14 @@ def main():
     strategies = {
         "buy_hold_spy": strat_buy_hold(prices, "SPY"),
         "trend_following_spy": strat_trend_following(prices, "SPY"),
+        "vix_overlay_spy_30": strat_vix_overlay_spy_30(prices),
+        "vix_overlay_spy_25": strat_vix_overlay_spy_25(prices),
         "sixty_forty": strat_sixty_forty(prices),
         "dual_momentum": strat_dual_momentum(prices),
         "sector_momentum_top3_monthly": strat_sector_momentum_monthly(prices),
         "sector_rotation_5d_live": strat_sector_5day_rotation_live(prices),
         "sector_rotation_5d_trend_filter": strat_sector_5day_with_trend_filter(prices),
+        "sector_rotation_5d_vix_filter": strat_sector_rotation_5d_vix_filter(prices),
         "sector_rotation_monthly_match_live": strat_sector_monthly_match_live(prices),
         "buy_hold_btc": strat_buy_hold_btc(prices),
         "btc_stress_overlay": strat_btc_stress_overlay(prices),
