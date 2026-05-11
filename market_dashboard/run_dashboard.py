@@ -31,7 +31,7 @@ from src.triggers import annotate_results
 from src.news import get_news_brief
 from src.dashboard import write_dashboard
 from src.fetch import load_manual_overrides
-from src.history import log_run, load_history, prune_history
+from src.history import log_run, load_history, prune_history, write_latest_sidecar
 from src.alerts import send_alerts, send_heartbeat, send_weekly_digest, score_past_alerts
 from src.calendar import fetch_upcoming_events
 from src.narrative import generate_narrative
@@ -239,6 +239,9 @@ def main():
                                   narrative_layman=narrative_layman,
                                   env=env,
                                   signal_quality_stats=pm_stats)
+
+    # JSON sidecar for downstream consumers (e.g. tactical_markets_trading)
+    write_latest_sidecar(scoring, shock_type=shock_type)
 
     # Weekly digest (sends automatically on Mondays)
     if not args.no_alerts:
