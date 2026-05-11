@@ -1054,7 +1054,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f'<div id="narr-expert" style="font-size:.88rem;line-height:1.6;color:#c9d1d9">{narrative}</div>'
             f'{layman_div}'
             f'<div style="margin-top:6px;font-size:.72rem;color:#484f58">'
-            f'AI-generated summary (Claude) · not financial advice</div></div>'
+            f'AI-generated · for orientation only · not financial advice · not a substitute for your own judgment</div></div>'
         )
 
     # ── Calendar card ───────────────────────────────────────────────────────
@@ -1115,17 +1115,33 @@ function toggleNarrative() {{
   var layman = document.getElementById('narr-layman');
   var btn = document.getElementById('narr-toggle');
   if (!expert || !layman || !btn) return;
-  if (layman.style.display === 'none') {{
+  var nowLayman = (layman.style.display === 'none');
+  if (nowLayman) {{
     expert.style.display = 'none';
     layman.style.display = '';
     btn.textContent = 'Expert ▾';
+    try {{ localStorage.setItem('dashboardNarrativeRegister', 'layman'); }} catch (e) {{}}
   }} else {{
     expert.style.display = '';
     layman.style.display = 'none';
     btn.textContent = 'Plain English ▾';
+    try {{ localStorage.setItem('dashboardNarrativeRegister', 'expert'); }} catch (e) {{}}
   }}
 }}
 (function() {{
+  try {{
+    var saved = localStorage.getItem('dashboardNarrativeRegister');
+    if (saved === 'layman') {{
+      var expert = document.getElementById('narr-expert');
+      var layman = document.getElementById('narr-layman');
+      var btn = document.getElementById('narr-toggle');
+      if (expert && layman && btn) {{
+        expert.style.display = 'none';
+        layman.style.display = '';
+        btn.textContent = 'Expert ▾';
+      }}
+    }}
+  }} catch (e) {{}}
   var ts = document.body.getAttribute('data-run-ts');
   if (!ts) return;
   var runTime = new Date(ts);

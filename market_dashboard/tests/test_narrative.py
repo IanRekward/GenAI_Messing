@@ -79,7 +79,7 @@ def test_generate_narrative_uses_cache(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cache_file = tmp_path / "data" / "cache" / "narrative.json"
     cache_file.parent.mkdir(parents=True)
-    cache_file.write_text(json.dumps({"narrative": "Cached summary.", "narrative_layman": "Simple version."}))
+    cache_file.write_text(json.dumps({"v": 2, "narrative": "Cached summary.", "narrative_layman": "Simple version."}))
 
     result = generate_narrative(_scoring(), _history_summary(), {"CACHE_HOURS": "12"})
     assert result[0] == "Cached summary."
@@ -125,3 +125,46 @@ def test_generate_narrative_no_cache_bypass_on_zero_cache_hours(tmp_path, monkey
 
     assert result[0] == "Fresh summary."
     assert result[1] == "Fresh simple."
+
+
+# ── dashboard HTML wiring ──────────────────────────────────────────────────────
+
+def test_dashboard_renders_localstorage_key(tmp_path, monkeypatch):
+    """Rendered HTML must contain the localStorage key so persistence can't be silently deleted."""
+    import pandas as pd
+    from src.dashboard import write_dashboard
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "output").mkdir()
+
+    scoring = {
+        "composite": 55.0, "composite_naive": 55.0,
+        "composite_band": "orange", "composite_short": 58.0,
+        "composite_short_band": "orange", "composite_regime_adj": 55.0,
+        "composite_regime_adj_label": "", "regime": "mid",
+        "run_timestamp": "2026-05-11T07:30:00",
+        "red_count": 0, "orange_count": 1, "yellow_count": 2,
+        "stale_indicators": [], "errors": [], "history_years": 10,
+        "buckets": {
+            "equity_volatility": {
+                "label": "Equity Volatility", "weight": 0.13,
+                "score": 55.0, "score_short": 55.0, "band": "orange",
+                "indicators": {
+                    "vix": {
+                        "label": "VIX", "raw": 18.0, "zscore": 0.3,
+                        "percentile": 55.0, "percentile_short": 55.0,
+                        "score": 55.0, "score_short": 55.0,
+                        "band": "orange", "unit": "", "manual": False, "invert": False,
+                    }
+                },
+            }
+        },
+    }
+
+    write_dashboard(
+        scoring, news=[], history=pd.DataFrame(),
+        narrative="Expert text.", narrative_layman="Plain text.",
+    )
+
+    html = (tmp_path / "output" / "dashboard.html").read_text(encoding="utf-8")
+    assert "dashboardNarrativeRegister" in html

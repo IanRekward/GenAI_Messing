@@ -12,15 +12,21 @@ DATA_DIR = Path("data")
 CACHE_DIR = DATA_DIR / "cache"
 _CACHE_FILE = CACHE_DIR / "narrative.json"
 _CACHE_HOURS = 4.0  # regenerate at most every 4 hours
+_CACHE_VERSION = 2
 _MODEL = "claude-haiku-4-5-20251001"
 _MAX_TOKENS = 400
 
 
 def _cache_valid() -> bool:
-    return (
-        _CACHE_FILE.exists()
-        and (time.time() - _CACHE_FILE.stat().st_mtime) < _CACHE_HOURS * 3600
-    )
+    if not _CACHE_FILE.exists():
+        return False
+    if (time.time() - _CACHE_FILE.stat().st_mtime) >= _CACHE_HOURS * 3600:
+        return False
+    try:
+        data = json.load(open(_CACHE_FILE))
+        return data.get("v") == _CACHE_VERSION
+    except Exception:
+        return False
 
 
 def _read_cache() -> tuple[str, str]:
@@ -31,7 +37,7 @@ def _read_cache() -> tuple[str, str]:
 def _write_cache(expert: str, layman: str) -> None:
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     with open(_CACHE_FILE, "w") as f:
-        json.dump({"narrative": expert, "narrative_layman": layman}, f)
+        json.dump({"v": _CACHE_VERSION, "narrative": expert, "narrative_layman": layman}, f)
 
 
 def _build_context(scoring: dict, history_summary: dict) -> str:
@@ -74,15 +80,43 @@ def _build_context(scoring: dict, history_summary: dict) -> str:
 
 
 _SYSTEM = (
-    "You are a concise market risk analyst. "
-    "Given market stress data as JSON, write two short summaries and respond ONLY with valid JSON "
-    "matching this schema exactly: {\"expert\": \"...\", \"layman\": \"...\"}. "
-    "expert: 2–4 sentences for a finance professional. Cover composite level, key drivers, momentum direction. "
-    "Highlight only what is notable or unusual. Tone: precise, neutral, no recommendations. "
-    "layman: 2–4 sentences for someone with no finance background. "
-    "Explain what the score means in everyday terms, which areas of the market are under stress, "
-    "and what (if anything) a cautious non-expert should be aware of — not what to do. "
-    "No jargon, no acronyms. No investment advice in either version."
+    "You are writing a daily market stress narrative in two registers. "
+    "Respond ONLY with valid JSON matching this schema exactly: "
+    "{\"expert\": \"...\", \"layman\": \"...\"}. "
+    "\n\n"
+    "EXPERT REGISTER (2–4 sentences): for a finance professional. Cover "
+    "composite level, key drivers, momentum direction. Use jargon directly "
+    "(OAS, basis points, percentile, regime, etc.). Tone: precise, neutral, "
+    "observational. NO recommendations, NO suggestions of what to do. "
+    "Describe the situation; do not prescribe action."
+    "\n\n"
+    "LAYMAN REGISTER (3–5 sentences): for an intelligent generalist with no "
+    "finance background. Plain English only — no jargon, no acronyms, no "
+    "ticker symbols. Three parts in order: (1) what the score means in "
+    "everyday terms, (2) which areas of the market are under stress and why "
+    "that might matter to a household, (3) ONE concrete household-level "
+    "action a cautious non-expert might consider given the current band. "
+    "\n\n"
+    "Action language must be CONDITIONAL ('some people might consider', "
+    "'a cautious household might', 'no action is typically warranted') — "
+    "NEVER imperative ('you should', 'do X', 'sell'). Action must be at "
+    "the household financial behavior level (cash buffer, emergency fund, "
+    "timing of large purchases, news attentiveness). NEVER suggest specific "
+    "securities, sectors, asset allocations, percentages, or portfolio "
+    "moves. NEVER mention buying or selling stocks, bonds, gold, or any "
+    "named instrument."
+    "\n\n"
+    "Calibrate the action to the band:\n"
+    "- green (composite < 30): 'no action typically warranted at this "
+    "level — markets are calm; this is normal background weather.'\n"
+    "- yellow (30–50): 'some people might choose to read more market news "
+    "this week than usual — stress is elevated but not alarming.'\n"
+    "- orange (50–70): 'a cautious household might review their emergency "
+    "cash buffer and hold off on major new financial commitments until "
+    "the picture clarifies.'\n"
+    "- red (≥70): 'this is a moment when many cautious households tighten "
+    "their belts — keep cash on hand, defer large discretionary spending, "
+    "and stay informed.' "
 )
 
 

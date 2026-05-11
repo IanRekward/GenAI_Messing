@@ -440,13 +440,11 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
 
 ### Phase I — Downstream integration (Sonnet-ready, 2026-05-11)
 
-- [ ] **Brief 24 — JSON sidecar for downstream consumers** *(design locked, ready for Sonnet)*
-  Emit `data/latest.json` after `write_dashboard()` so `tactical_markets_trading`
-  has a stable machine-readable contract instead of reverse-engineering
-  `history.csv`. ~15 LOC + one test file. Full brief in
-  [ROADMAP.md](ROADMAP.md#brief-24--json-sidecar-for-downstream-consumers).
-  Integration brief at `_bmad-output/planning-artifacts/integration-brief-for-tactical-bot.md`
-  documents the shape and rationale.
+- [x] **Brief 24 — JSON sidecar for downstream consumers** *(shipped — commit 2046161)*
+  `data/latest.json` written after each run. `write_latest_sidecar()` in
+  `src/history.py`; wired into `run_dashboard.py` after `write_dashboard()`.
+  Strips `_series` blobs; stamps `schema_version`/`weights_hash`/`code_sha`.
+  6 new tests in `tests/test_sidecar.py`; 236/236 passing.
 
 ### Phase H — Future / low priority (do not start until everything above is done)
 
