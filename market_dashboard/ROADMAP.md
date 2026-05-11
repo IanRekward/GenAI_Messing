@@ -3422,3 +3422,174 @@ AI-generated · for orientation only · not financial advice · not a substitute
 - Server-side rendering of the user's last choice. localStorage is
   sufficient for a single-user dashboard; the dashboard is rebuilt fresh
   every morning anyway.
+
+---
+
+## Brief 24 — JSON sidecar for downstream consumers
+
+**Dependencies:** None. Touches `run_dashboard.py` after the existing
+`write_dashboard()` call; no scoring / alerts / config changes.
+
+**Problem:** The full scoring dict — composite, bands, all 11 buckets, all
+26 indicators with raw/score/percentile/band, regime, shock_type, stale
+list, provenance — is computed every run and lives in memory inside
+`run_dashboard.py:main`. The only persisted outputs today are
+`dashboard.html` (not machine-parseable) and `data/history.csv` (composite
++ bucket scores only — no per-indicator detail, no stale list, no
+shock_type, no regime-adjusted composite). The sibling repo
+`tactical_markets_trading` needs to consume the regime / health view to
+modulate position sizing. With no JSON contract, it would have to either
+reverse-engineer `history.csv` (loses indicator detail) or import
+`src.scoring` and re-fetch (couples the bot's cadence to the dashboard's
+and double-pays for FRED/yfinance). Neither is acceptable long-term.
+
+**Design decision:** Emit `data/latest.json` once per run, after
+`write_dashboard()` returns and after the dashboard-specific augmentations
+to `scoring` (composite_regime_adj, composite_regime_adj_label) have been
+applied. Strip the `_series` blobs (UI-only; large; the bot has no use for
+them). Stamp with `schema_version: 1`, `weights_hash`, and `code_sha` so
+the bot can refuse to trade on an unrecognised hash. Do not couple to
+GitHub Pages publish — the sidecar lives at `data/latest.json` in the
+working dir, same place as `history.csv` and `alert_state.json`. The bot
+reads from there via shared filesystem (both repos live under
+`c:\Users\rekwa\ian_projects\`).
+
+This is intentionally a one-way contract: the dashboard writes, the bot
+reads. The dashboard does NOT need to know the bot exists. No HTTP, no
+queue, no DB — a single JSON file on disk is the simplest thing that
+works and makes failures obvious (stale mtime = automation broken).
+
+**Files to change:**
+
+1. **`src/history.py`** — add a sidecar writer next to `log_run`:
+   ```python
+   SIDECAR_FILE = DATA_DIR / "latest.json"
+   SIDECAR_SCHEMA_VERSION = 1
+
+   def write_latest_sidecar(scoring: dict, shock_type: str | None = None) -> None:
+       """
+       Emit a machine-readable snapshot of the latest run for downstream
+       consumers (e.g. tactical_markets_trading). Strips _series blobs.
+       """
+       import json
+       payload = {
+           "schema_version": SIDECAR_SCHEMA_VERSION,
+           "run_timestamp": scoring["run_timestamp"],
+           "composite": scoring["composite"],
+           "composite_naive": scoring.get("composite_naive"),
+           "composite_regime_weighted": scoring.get("composite_regime_weighted"),
+           "regime_weights_applied": scoring.get("regime_weights_applied", False),
+           "composite_band": scoring["composite_band"],
+           "composite_short": scoring.get("composite_short"),
+           "composite_short_band": scoring.get("composite_short_band"),
+           "composite_regime_adj": scoring.get("composite_regime_adj"),
+           "composite_regime_adj_label": scoring.get("composite_regime_adj_label"),
+           "regime": scoring.get("regime"),
+           "shock_type": shock_type,
+           "red_count": scoring["red_count"],
+           "orange_count": scoring["orange_count"],
+           "yellow_count": scoring["yellow_count"],
+           "stale_indicators": scoring.get("stale_indicators", []),
+           "errors": scoring.get("errors", []),
+           "buckets": _strip_series(scoring["buckets"]),
+           "weights_hash": _weights_hash(),
+           "code_sha": _code_sha(),
+       }
+       DATA_DIR.mkdir(parents=True, exist_ok=True)
+       tmp = SIDECAR_FILE.with_suffix(".json.tmp")
+       tmp.write_text(json.dumps(payload, indent=2, default=str))
+       tmp.replace(SIDECAR_FILE)  # atomic rename so readers never see a half-written file
+
+   def _strip_series(buckets: dict) -> dict:
+       out = {}
+       for bkey, b in buckets.items():
+           out[bkey] = {
+               "label": b["label"], "weight": b["weight"],
+               "score": b["score"], "score_short": b.get("score_short"),
+               "band": b["band"],
+               "indicators": {
+                   ikey: {k: v for k, v in i.items() if k != "_series"}
+                   for ikey, i in b["indicators"].items()
+               },
+           }
+       return out
+   ```
+
+2. **`run_dashboard.py`** — one call, after `write_dashboard()` returns and
+   after `scoring["composite_regime_adj*"]` are set (so the sidecar sees
+   the same scoring dict the dashboard rendered):
+   ```python
+   from src.history import write_latest_sidecar
+   ...
+   output_path = write_dashboard(...)
+   write_latest_sidecar(scoring, shock_type=shock_type)
+   ```
+   Place the call *before* `_publish_to_github`, so a sidecar exists even
+   if publish fails. Place it *after* the `composite_regime_adj` lines
+   (~line 225 today) so those keys are populated.
+
+3. **`tests/test_sidecar.py`** — new test file:
+   - Build a minimal valid `scoring` dict (1 bucket, 1 indicator,
+     include `_series`). Call `write_latest_sidecar`. Assert:
+     - file exists at `data/latest.json`
+     - `json.loads` succeeds
+     - `schema_version == 1`
+     - `weights_hash` is an 8-char hex string (or empty if no weights.yaml in test cwd — handle both)
+     - `_series` keys are absent from indicators
+     - All top-level required keys present (use a constant list).
+   - Run the writer twice in a row and assert the second call doesn't crash and produces a valid file (atomic-rename behavior).
+
+**Edge cases:**
+
+- **Missing optional keys.** `compute_composite` sets all the fields the
+  payload references; the `.get()` calls are belt-and-braces for older
+  scoring dicts in tests. Don't introduce defaults that mask real bugs in
+  the producer.
+- **Partial runs.** If `compute_composite` raised mid-run, `main` would
+  exit before reaching the sidecar — that's correct, we want absence-on-
+  failure so a stale `mtime` signals trouble. Don't add a try/except
+  around the writer call.
+- **Concurrent reads.** The atomic `tmp → replace` rename means a reader
+  either sees the old file or the new file, never a half-written one.
+  This is the *only* concurrency guarantee — readers must still tolerate
+  the file being briefly absent (during the rename window, `replace` is
+  atomic on Windows NTFS for same-volume operations).
+- **`_series` blob size.** Indicators with 10y daily history have ~2,500
+  date+value pairs each × 26 indicators ≈ ~150KB extra if left in. Cheap
+  to strip; expensive for the bot to parse and ignore. Strip them.
+- **`shock_type` parameter.** Currently computed inside `run_dashboard.py`
+  via `classify_shock_type(history, scoring)`. Pass it in rather than
+  re-computing inside the writer — keeps the writer pure and avoids
+  loading history twice.
+
+**Success criteria:**
+
+- `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
+  runs cleanly and produces `data/latest.json`.
+- `python -c "import json; print(sorted(json.load(open('data/latest.json')).keys()))"`
+  shows all top-level keys.
+- `data/latest.json` is < 50KB (sanity check that `_series` stripping
+  worked).
+- `tests/test_sidecar.py` passes; full suite stays green (195/195+).
+- Manual: open `data/latest.json` in an editor, eyeball that bucket /
+  indicator structure matches the in-memory shape documented in
+  `_bmad-output/planning-artifacts/integration-brief-for-tactical-bot.md`.
+
+**Non-goals:**
+
+- Multiple-run history sidecar (history.csv already does this).
+- HTTP / pubsub / queue. File-on-disk is the contract.
+- Bumping schema_version. Only do that when an existing field's meaning
+  changes or a required field is dropped. Adding new optional fields
+  does NOT require a version bump; the bot reads defensively.
+- Documenting the contract in `dashboard.html`. The contract lives in
+  the integration brief and (eventually) a `CHANGELOG.md` section if
+  schema_version ever moves.
+
+**Downstream coordination (out of scope for Sonnet to implement, but
+worth flagging):**
+
+- `tactical_markets_trading` should read `data/latest.json` via an
+  absolute path it knows about, validate `schema_version == 1`,
+  `weights_hash` is in its known-good set, `run_timestamp` < 26h old,
+  `errors` is empty, then act. That code lives in the other repo.
