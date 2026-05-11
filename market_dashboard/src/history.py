@@ -63,6 +63,56 @@ def log_run(scoring: dict) -> None:
     df_combined.to_csv(HISTORY_FILE, index=False)
 
 
+SIDECAR_FILE = DATA_DIR / "latest.json"
+SIDECAR_SCHEMA_VERSION = 1
+
+
+def _strip_series(buckets: dict) -> dict:
+    out = {}
+    for bkey, b in buckets.items():
+        out[bkey] = {
+            "label": b["label"], "weight": b["weight"],
+            "score": b["score"], "score_short": b.get("score_short"),
+            "band": b["band"],
+            "indicators": {
+                ikey: {k: v for k, v in i.items() if k != "_series"}
+                for ikey, i in b["indicators"].items()
+            },
+        }
+    return out
+
+
+def write_latest_sidecar(scoring: dict, shock_type: str | None = None) -> None:
+    import json
+    payload = {
+        "schema_version": SIDECAR_SCHEMA_VERSION,
+        "run_timestamp": scoring["run_timestamp"],
+        "composite": scoring["composite"],
+        "composite_naive": scoring.get("composite_naive"),
+        "composite_regime_weighted": scoring.get("composite_regime_weighted"),
+        "regime_weights_applied": scoring.get("regime_weights_applied", False),
+        "composite_band": scoring["composite_band"],
+        "composite_short": scoring.get("composite_short"),
+        "composite_short_band": scoring.get("composite_short_band"),
+        "composite_regime_adj": scoring.get("composite_regime_adj"),
+        "composite_regime_adj_label": scoring.get("composite_regime_adj_label"),
+        "regime": scoring.get("regime"),
+        "shock_type": shock_type,
+        "red_count": scoring["red_count"],
+        "orange_count": scoring["orange_count"],
+        "yellow_count": scoring["yellow_count"],
+        "stale_indicators": scoring.get("stale_indicators", []),
+        "errors": scoring.get("errors", []),
+        "buckets": _strip_series(scoring["buckets"]),
+        "weights_hash": _weights_hash(),
+        "code_sha": _code_sha(),
+    }
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = SIDECAR_FILE.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(payload, indent=2, default=str))
+    tmp.replace(SIDECAR_FILE)
+
+
 _ARCHIVE_FILE = DATA_DIR / "history_archive.parquet"
 _MAX_HISTORY_DAYS = 730  # ~2 years
 
