@@ -3593,3 +3593,284 @@ worth flagging):**
   absolute path it knows about, validate `schema_version == 1`,
   `weights_hash` is in its known-good set, `run_timestamp` < 26h old,
   `errors` is empty, then act. That code lives in the other repo.
+
+---
+
+## Brief 25 — Phase H: Phone-triggered dashboard refresh via GitHub Actions
+
+**Dependencies:** None. Net-new infrastructure; the existing morning
+automation continues unchanged.
+
+**Problem:** Ian wants to refresh the published dashboard from his phone
+without waiting for the 7:30 AM scheduled run. Use case is mid-day
+curiosity ("what does the composite look like *now*?"), not crisis
+response. Current state: only the 7:30 AM Task Scheduler run publishes —
+the rest of the day Ian sees stale data on the phone-accessed GitHub
+Pages URL.
+
+**Design decision — locked: GitHub Actions `workflow_dispatch` triggered
+from an iOS Shortcut via the GitHub API.** No laptop dependency, no home
+network dependency, runs from cellular trivially, free for this public
+repo, and the existing `.github/workflows/tests.yml` already proves the
+Python runtime works in CI without modification.
+
+The four alternatives Ian's TODO entry listed, and why each loses:
+
+1. **Pushover callback URL → local HTTP listener.** Pushover doesn't
+   have a meaningful callback feature for this — the "supplementary URL"
+   is just a clickable link in the notification, and the Open Client API
+   needs a persistent connection from a running listener. Requires the
+   laptop awake and reachable from cellular (ngrok tunnel or port
+   forward). Solves zero of the wake/network problems.
+
+2. **iOS Shortcut → SSH into laptop.** Requires laptop awake, sshd
+   running, and either port-forwarded SSH from cellular or a relay
+   (Tailscale/ZeroTier). Still doesn't solve the wake problem — Wake-on-
+   LAN over the internet is fragile and needs router-side magic-packet
+   forwarding. Most failure modes of any option.
+
+3. **GitHub Actions `workflow_dispatch`.** ✓ Picked. Detailed below.
+
+4. **ntfy.sh / pub-sub listener.** Same wake problem as options 1 and 2:
+   the laptop must be awake to receive. ntfy itself is fine; the
+   laptop-side dependency isn't.
+
+The wake-on-command problem is the load-bearing constraint. Only option
+3 sidesteps it entirely by not involving the laptop at all.
+
+**Why this is safe additive infrastructure:**
+
+The on-demand workflow only *publishes the dashboard* (and writes
+`data/latest.json`) — it does NOT mutate the canonical state files
+(`history.csv`, `alert_state.json`, `alert_log.jsonl`). The morning
+7:30 AM laptop run remains the single owner of history and alert state.
+On-demand runs are read-only-with-respect-to-history.
+
+**Files to change:**
+
+1. **New `.github/workflows/on-demand-dashboard.yml`:**
+
+   ```yaml
+   name: on-demand-dashboard
+   on:
+     workflow_dispatch:
+   permissions:
+     contents: write
+   jobs:
+     run:
+       runs-on: ubuntu-latest
+       steps:
+         - uses: actions/checkout@v4
+         - uses: actions/setup-python@v5
+           with:
+             python-version: "3.11"
+         - run: pip install -r market_dashboard/requirements.txt
+         - name: Run dashboard (ondemand mode)
+           env:
+             FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+             ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+           run: |
+             cd market_dashboard
+             python run_dashboard.py --ondemand --no-alerts --quiet
+         - name: Commit and push refreshed dashboard
+           run: |
+             git config user.name "github-actions[bot]"
+             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+             cp market_dashboard/output/dashboard.html docs/index.html
+             if [ -f market_dashboard/output/backtest_report.html ]; then
+               cp market_dashboard/output/backtest_report.html docs/backtest_report.html
+             fi
+             git add docs/index.html docs/backtest_report.html
+             if git diff --cached --quiet; then
+               echo "No dashboard changes to publish."
+               exit 0
+             fi
+             git commit -m "On-demand dashboard refresh $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+             git push origin main
+   ```
+
+   Note: the workflow does the publish step itself rather than calling
+   `_publish_to_github()`. The existing function assumes a local
+   `_genai_tmp/` clone; in CI we're already inside the checked-out repo,
+   so directly copying + committing is simpler. Don't try to make
+   `_publish_to_github()` "smart" about both contexts — that's the
+   abstraction trap CLAUDE.md warns about.
+
+2. **`run_dashboard.py` — new `--ondemand` flag.**
+
+   Add to the argparse block:
+   ```python
+   parser.add_argument("--ondemand", action="store_true",
+       help="On-demand refresh: skip history/alert state mutations. "
+            "Use for CI-triggered runs that should not pollute the "
+            "morning automation's canonical state files.")
+   ```
+
+   In `main()`, gate the state-mutating steps on `not args.ondemand`:
+
+   - **Skip `log_run(scoring)` and `prune_history()`** at lines 182–183.
+   - **Skip `send_alerts(scoring, env, history)`** at line 205 (also
+     skip `score_past_alerts(history)` at 196 since alert_log.jsonl
+     won't exist in CI — and even if we mounted it, on-demand runs
+     shouldn't re-score alerts).
+   - **Skip `send_weekly_digest`** at line 248.
+   - **Skip `send_heartbeat`** at line 252.
+
+   Keep running: `compute_composite`, `annotate_results`, remediation,
+   news, narrative, `write_dashboard`, `write_latest_sidecar`.
+
+   When `--ondemand` is set, `load_history(days=90)` will load an empty
+   DataFrame in CI (no history.csv). The dashboard already handles
+   empty-history gracefully (momentum returns all-None, shock_type
+   returns "insufficient", trend chart shows the day-1 placeholder).
+   This is acceptable — the on-demand view is a *current snapshot*, not
+   a historical view. If Ian wants the trend chart populated, he checks
+   in the morning after the 7:30 AM run.
+
+   The `--ondemand` flag implies `--no-alerts` semantically, but the
+   workflow above passes `--no-alerts` explicitly for clarity in CI
+   logs. Don't make `--ondemand` automatically set `--no-alerts` in
+   argparse — keep flags orthogonal.
+
+3. **`tests/test_ondemand.py` (new file)** — one test that with
+   `args.ondemand = True`:
+   - `log_run` is not called
+   - `send_alerts` is not called
+   - `write_dashboard` IS called
+   - `write_latest_sidecar` IS called
+
+   Use `unittest.mock.patch` to spy on each. Run `main()` in a tmp_path
+   chdir with mocked `compute_composite` returning a minimal valid
+   scoring dict so the orchestration runs end-to-end without network
+   calls. Pattern: see `tests/test_remediation.py` for a similar
+   end-to-end harness shape.
+
+**Secrets to add in GitHub repo Settings → Secrets and variables → Actions:**
+
+- `FRED_API_KEY` — required; without it most indicators fall back to
+  cached or empty data.
+- `ANTHROPIC_API_KEY` — for the Haiku narrative call. Without it the
+  narrative card renders empty (existing fallback at
+  `narrative.py:99`). Acceptable degradation.
+
+Not needed: `PUSHOVER_*`, Twilio, `GMAIL_APP_PASSWORD` — those are
+alert-only and on-demand mode skips alerts.
+
+**iOS Shortcut setup (Ian one-time, document only — no code):**
+
+1. Create a GitHub Personal Access Token (fine-scoped):
+   - Repo: `IanRekward/GenAI_Messing`
+   - Permissions: `Actions: Read and write`, `Contents: Read-only`.
+   - Expiration: 1 year (the longest fine-scoped tokens allow). Calendar
+     a renewal.
+
+2. iOS Shortcut steps:
+   - **Get contents of URL**:
+     - URL: `https://api.github.com/repos/IanRekward/GenAI_Messing/actions/workflows/on-demand-dashboard.yml/dispatches`
+     - Method: POST
+     - Headers: `Authorization: Bearer <PAT>`, `Accept: application/vnd.github+json`
+     - Request body (JSON): `{"ref": "main"}`
+   - **Show notification**: "Dashboard refresh queued — ~3 min."
+   - **Wait 180 seconds** (optional; GH Actions cold start ~30s + run
+     ~2 min).
+   - **Open URL**: the GitHub Pages dashboard URL.
+
+   Latency from tap to refreshed page: ~3–4 minutes worst case. That's
+   fine for the stated use case (curiosity, not crisis).
+
+**Edge cases:**
+
+1. **Concurrent run with morning automation.** If Ian taps at 7:31 AM
+   while the laptop's morning run is still in flight, both runs try to
+   push to `docs/index.html`. The CI push will either race-win or get
+   rejected by GitHub on push (non-fast-forward). Two acceptable
+   behaviors:
+   - Let the CI push retry-on-conflict (3 attempts with backoff) using
+     `git pull --rebase` between tries.
+   - Or just let it fail and Ian re-taps. Failure mode is benign.
+
+   Pick the retry approach — adds ~6 lines to the workflow YAML and
+   makes morning-window taps reliable:
+   ```yaml
+   for i in 1 2 3; do
+     git push origin main && break
+     git pull --rebase origin main
+   done
+   ```
+
+2. **PAT expires / revoked.** Shortcut returns 401. Ian sees no refresh
+   and no push notification. Acceptable — annoying but not silent
+   wrong-data. Add a Shortcut step that checks the HTTP response status
+   and shows a different notification on failure.
+
+3. **GH Actions outage.** Tap does nothing. No fallback. The morning
+   automation still runs locally on its own track, so the dashboard
+   isn't lost — it's just stale until 7:30 AM next day. Acceptable for
+   a low-priority feature.
+
+4. **FRED/yfinance rate-limiting from CI IPs.** GitHub Actions runs from
+   AWS IP ranges that some upstream APIs throttle aggressively. FRED in
+   particular has been documented to throttle GH Actions runners. If
+   this bites, the symptom is a dashboard with many indicators in
+   "stale" state. Mitigation if it happens: cache the indicator-fetch
+   layer in a GitHub Actions cache keyed by date, so repeated on-demand
+   taps within a day reuse the morning run's data. Don't pre-emptively
+   build this — wait to see if it's a real problem.
+
+5. **`data/latest.json` written by CI is ephemeral.** It's not pushed
+   back to the repo (only `docs/index.html` is committed), so the
+   trading bot's local `data/latest.json` is unchanged. That's correct:
+   the bot's signal cadence is daily, owned by morning automation. If a
+   future use case requires on-demand sidecar updates for the bot,
+   that's a separate brief.
+
+6. **Empty trend chart on day-1 / empty-history runs.** Dashboard
+   already handles this. Visual check during first deploy.
+
+**Success criteria:**
+
+- `on-demand-dashboard.yml` workflow visible in the repo's Actions tab.
+- Manually triggering it from the GitHub UI runs to completion in
+  under 4 minutes.
+- A commit appears on `main` titled "On-demand dashboard refresh ...".
+- The GitHub Pages URL reflects the refresh (new timestamp on the
+  rendered page).
+- The iOS Shortcut, on tap, returns HTTP 204 from the API and the
+  refresh completes.
+- After the on-demand run, the morning automation runs normally the
+  next day (verify by checking `data/history.csv` mtime advances on
+  the next 7:30 AM run and contains no gaps caused by the on-demand
+  run).
+- `tests/test_ondemand.py` passes; full suite stays green.
+
+**Non-goals:**
+
+- Migrating the morning automation to CI. See "Future consideration"
+  below — that's a separate decision Ian should make explicitly, not
+  smuggle in as part of Phase H.
+- Authentication beyond a PAT in iOS Shortcuts. A real auth layer (e.g.
+  a thin Cloudflare Worker that exchanges a passphrase for a GH API
+  call) is overkill for a single-user tool.
+- Real-time dashboard refresh. The 3–4 minute cycle is fine; trying to
+  optimise further means caching FRED responses in the workflow, which
+  is its own brief.
+- An Android Tasker equivalent. Ian's on iOS; cross-platform isn't a
+  goal here.
+- Removing the local Task Scheduler entries. They keep working in
+  parallel; Phase H is additive.
+
+**Future consideration (separate brief, not part of this one):**
+
+Once Phase H is validated for ~2 weeks, the natural next step is to
+*also* migrate the morning 7:30 AM run to GH Actions (cron schedule),
+retiring the laptop-side Task Scheduler entirely. That addresses TODO
+"Issue 1" (the 9:30 AM misfire from 2026-04-29) at the root —
+laptop-wake fragility goes away when no laptop is involved. The
+migration requires solving the canonical-state question: where does
+`history.csv` live if not on Ian's laptop? Options: commit it back to
+the repo from CI (simple, public — fine since the dashboard is public
+anyway), or move to a small Postgres/Supabase instance (more work, no
+clear benefit at single-user scale). Recommended path when ready:
+commit back to repo, .gitignore the cache files, accept the public
+history as a feature not a bug. Defer this decision until Phase H is
+proven reliable.

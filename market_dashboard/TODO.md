@@ -446,22 +446,24 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
   Strips `_series` blobs; stamps `schema_version`/`weights_hash`/`code_sha`.
   6 new tests in `tests/test_sidecar.py`; 236/236 passing.
 
-### Phase H — Future / low priority (do not start until everything above is done)
+### Phase H — Phone-triggered refresh (Sonnet-ready, 2026-05-11)
 
-- [ ] **Phone-triggered dashboard update + push** *(Ian's ask 2026-04-29)*
-  Ability to kick off a fresh dashboard run and GitHub Pages publish from Ian's
-  phone without opening a laptop. Needs design pass (Opus) before execution.
-  Options to explore:
-  - **Pushover webhook / callback URL** — Pushover supports reply callbacks;
-    could listen on a small local HTTP server (or ngrok tunnel) and trigger
-    `run_dashboard.py --publish` on receipt.
-  - **iOS Shortcut → SSH** — SSH into the laptop from Shortcuts, run the
-    script directly. Requires laptop awake + SSH server running.
-  - **iOS Shortcut → GitHub Actions webhook** — push a trigger to a GH Actions
-    workflow that runs on a cloud runner (no laptop dependency, but needs
-    secrets wired into GH Actions and a hosted runner that can reach FRED/yfinance).
-  - **ntfy.sh or similar self-hosted push** — free pub/sub; phone sends a
-    message, a listener on the laptop fires the run.
-  Decision criteria: reliable wake-on-command (laptop may be sleeping),
-  no ongoing cost, minimal setup, works from cellular not just home wifi.
-  Opus should evaluate the options and lock one in before Sonnet builds it.
+- [ ] 🅾️ **Brief 25 — Phase H: Phone-triggered dashboard refresh via GitHub Actions**
+  *(Opus design pass complete 2026-05-11, ready for Sonnet)*
+  Locked: GitHub Actions `workflow_dispatch` triggered from iOS Shortcut via
+  GitHub API. Defeats the other three options on the wake-on-command
+  constraint — only GH Actions doesn't depend on the laptop being awake or
+  reachable from cellular. Existing `.github/workflows/tests.yml` already
+  proves the Python runtime works in CI.
+
+  Three files to ship: new `.github/workflows/on-demand-dashboard.yml`,
+  new `--ondemand` flag in `run_dashboard.py` (skips state-mutating steps —
+  log_run, alerts, prune, weekly digest, heartbeat — but keeps dashboard
+  write + sidecar), new `tests/test_ondemand.py`. Two GitHub secrets to
+  add: `FRED_API_KEY`, `ANTHROPIC_API_KEY`. Ian-side: one-time iOS Shortcut
+  with a PAT.
+
+  Full brief in [ROADMAP.md](ROADMAP.md#brief-25--phase-h-phone-triggered-dashboard-refresh-via-github-actions).
+  Includes retry-on-push-conflict for races with morning automation, and
+  a "Future consideration" pointing at the natural extension (migrate
+  morning automation to CI too, retiring laptop wake fragility).
