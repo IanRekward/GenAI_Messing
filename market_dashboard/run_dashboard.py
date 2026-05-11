@@ -9,6 +9,8 @@ Optional flags:
     --no-news          Skip the news triage step
     --quiet            Suppress per-step console output
     --publish          Copy dashboard to GitHub Pages repo and push
+    --ondemand         Skip state-mutating steps (history log, alerts, digest,
+                       heartbeat); keeps dashboard write and JSON sidecar
 """
 from __future__ import annotations
 
@@ -108,6 +110,8 @@ def main():
     parser.add_argument("--quiet", action="store_true", help="Less console output")
     parser.add_argument("--publish", action="store_true", help="Push dashboard to GitHub Pages")
     parser.add_argument("--heartbeat", action="store_true", help="Send daily Pushover confirmation for 31 days")
+    parser.add_argument("--ondemand", action="store_true",
+                        help="Skip state-mutating steps (log, alerts, digest, heartbeat)")
     args = parser.parse_args()
 
     # Load env vars from .env
@@ -179,8 +183,9 @@ def main():
     # Log to history (must run AFTER remediation so history.csv reflects fresh data)
     if not args.quiet:
         print("\n[3/5] Logging to history...")
-    log_run(scoring)
-    prune_history()
+    if not args.ondemand:
+        log_run(scoring)
+        prune_history()
     history = load_history(days=90)
 
     # News
@@ -193,20 +198,22 @@ def main():
         print("\n[4/5] News triage skipped (--no-news)")
 
     # Score any past alerts whose T+7/14/30 windows have elapsed
-    score_past_alerts(history)
+    if not args.ondemand:
+        score_past_alerts(history)
 
     from src.alerts import get_postmortem_stats
     pm_stats = get_postmortem_stats(days=60)
 
     # Alerts
-    if not args.no_alerts:
+    if not args.no_alerts and not args.ondemand:
         if not args.quiet:
             print("\n[5/5] Checking alerts...")
         sent = send_alerts(scoring, env, history)
         if not args.quiet and sent == 0:
             print("  No new alerts to send.")
     elif not args.quiet:
-        print("\n[5/5] Alerts skipped (--no-alerts)")
+        reason = "--ondemand" if args.ondemand else "--no-alerts"
+        print(f"\n[5/5] Alerts skipped ({reason})")
 
     # Upcoming macro events for calendar card
     calendar_events: list = []
@@ -244,11 +251,11 @@ def main():
     write_latest_sidecar(scoring, shock_type=shock_type)
 
     # Weekly digest (sends automatically on Mondays)
-    if not args.no_alerts:
+    if not args.no_alerts and not args.ondemand:
         send_weekly_digest(scoring, env, history)
 
     # Heartbeat confirmation for first 31 days
-    if args.heartbeat:
+    if args.heartbeat and not args.ondemand:
         send_heartbeat(scoring, env)
 
     # Optionally publish to GitHub Pages
