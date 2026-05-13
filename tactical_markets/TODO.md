@@ -11,6 +11,7 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 - [ROADMAP_SIGNAL_GENERATION.md](ROADMAP_SIGNAL_GENERATION.md) — full implementation brief: overnight repricing + sector rotation dashboard, 6:30 AM premarket signals
 - [RESEARCH_SUMMARY.md](RESEARCH_SUMMARY.md) — empirical findings (2000–2026) that grounded the signal design
 - [README.md](README.md) — project framing and design principles
+- [_bmad-output/planning-artifacts/bot-integration-asks.md](_bmad-output/planning-artifacts/bot-integration-asks.md) — priority-ordered tasks (M1-M5) the downstream `tactical_markets_trading` bot would like MICRO to consider in the post-freeze design pass. **Read before deciding path (a)/(b)/(c)** — M1 (multi-thesis output) is the highest-leverage ask regardless of which branch you choose.
 
 ## Locked week-1 design (2026-05-05 design session, Opus 4.7)
 

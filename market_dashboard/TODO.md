@@ -41,6 +41,8 @@ Both issues diagnosed and closed.
 **Tactical Markets companion projects** are now sibling repos with their own backlogs:
 [../tactical_markets/TODO.md](../tactical_markets/TODO.md), [../tactical_markets_trading/TODO.md](../tactical_markets_trading/TODO.md). They remain in hopper until Market Stress Dashboard is complete and all Phase G items ship.
 
+**Downstream consumer coordination:** the `tactical_markets_trading` bot has filed three coordination tasks (W1-W3) at [_bmad-output/planning-artifacts/bot-integration-asks.md](_bmad-output/planning-artifacts/bot-integration-asks.md). **W1 (HIGH) directly affects the 2026-05-30 regime-weights review** — without pre-coordination, that recalibration will silently block bot trading. Read before the 5/30 checkpoint.
+
 ---
 
 ## Sonnet's next execution queue
