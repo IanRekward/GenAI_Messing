@@ -1021,14 +1021,17 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     else:
         action_row = review_card + escalation_card
 
-    # ── Errors ──────────────────────────────────────────────────────────────
+    # ── Errors / warnings ───────────────────────────────────────────────────
     errors_html = ""
-    if scoring.get("errors"):
-        errs = "".join(f"<div style='margin-top:4px'>• {e}</div>" for e in scoring["errors"])
+    _errs = scoring.get("errors", [])
+    _warns = scoring.get("warnings", [])
+    if _errs or _warns:
+        _items = [f"<div style='margin-top:4px'>&#9888; {e}</div>" for e in _errs]
+        _items += [f"<div style='margin-top:4px;color:#888'>&#9432; {w}</div>" for w in _warns]
         errors_html = f"""
 <details class="err">
-  <summary>Data fetch errors ({len(scoring['errors'])})</summary>
-  {errs}
+  <summary>Data issues ({len(_errs)} errors, {len(_warns)} warnings)</summary>
+  {"".join(_items)}
 </details>"""
 
     # ── Narrative card (todo 1) ──────────────────────────────────────────────

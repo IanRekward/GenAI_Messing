@@ -27,10 +27,11 @@ def _weights_hash() -> str:
 
 
 def _code_sha() -> str:
-    """Short git HEAD SHA, or empty string if not in a git repo."""
+    """Short git HEAD SHA from the _genai_tmp sibling repo, or empty string."""
+    genai_dir = Path(__file__).resolve().parent.parent.parent / "_genai_tmp"
     try:
         result = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"],
+            ["git", "-C", str(genai_dir), "rev-parse", "--short", "HEAD"],
             capture_output=True, text=True, timeout=5,
         )
         return result.stdout.strip() if result.returncode == 0 else ""
@@ -103,6 +104,7 @@ def write_latest_sidecar(scoring: dict, shock_type: str | None = None) -> None:
         "yellow_count": scoring["yellow_count"],
         "stale_indicators": scoring.get("stale_indicators", []),
         "errors": scoring.get("errors", []),
+        "warnings": scoring.get("warnings", []),
         "buckets": _strip_series(scoring["buckets"]),
         "weights_hash": _weights_hash(),
         "code_sha": _code_sha(),

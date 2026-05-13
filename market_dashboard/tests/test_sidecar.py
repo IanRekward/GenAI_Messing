@@ -12,7 +12,7 @@ REQUIRED_TOP_LEVEL_KEYS = {
     "composite_short", "composite_short_band", "composite_regime_adj",
     "composite_regime_adj_label", "regime", "shock_type",
     "red_count", "orange_count", "yellow_count",
-    "stale_indicators", "errors", "buckets",
+    "stale_indicators", "errors", "warnings", "buckets",
     "weights_hash", "code_sha",
 }
 
@@ -33,6 +33,7 @@ _MINIMAL_SCORING = {
     "yellow_count": 4,
     "stale_indicators": ["cpi_yoy"],
     "errors": [],
+    "warnings": [],
     "buckets": {
         "equity_volatility": {
             "label": "Equity Volatility",
@@ -116,6 +117,29 @@ def test_sidecar_weights_hash_format(tmp_path, monkeypatch):
     payload = json.loads((tmp_path / "data" / "latest.json").read_text())
     wh = payload["weights_hash"]
     assert wh == "" or re.fullmatch(r"[0-9a-f]{8}", wh), f"Unexpected weights_hash: {wh!r}"
+
+
+def test_sidecar_errors_warnings_split(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+
+    scoring = {**_MINIMAL_SCORING, "errors": ["vix: fetch failed"], "warnings": ["STALE: stlfsi — last observation 12d ago"]}
+    write_latest_sidecar(scoring, shock_type=None)
+
+    payload = json.loads((tmp_path / "data" / "latest.json").read_text())
+    assert payload["errors"] == ["vix: fetch failed"]
+    assert payload["warnings"] == ["STALE: stlfsi — last observation 12d ago"]
+
+
+def test_sidecar_code_sha_format(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+
+    write_latest_sidecar(_MINIMAL_SCORING.copy(), shock_type=None)
+
+    payload = json.loads((tmp_path / "data" / "latest.json").read_text())
+    sha = payload["code_sha"]
+    assert sha == "" or re.fullmatch(r"[0-9a-f]{7,}", sha), f"Unexpected code_sha: {sha!r}"
 
 
 def test_sidecar_idempotent(tmp_path, monkeypatch):

@@ -333,6 +333,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     cadence_cfg = fetch.load_cadence_config()
     bucket_results: dict = {}
     errors: list[str] = []
+    warnings: list[str] = []
     stale_indicators: list[str] = []
 
     short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
@@ -355,7 +356,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             except StaleCacheFallback as stale:
                 raw, series = float(stale.series.iloc[-1]), stale.series
                 stale_cache_msg = f"STALE CACHE: {ikey} — {stale}"
-                errors.append(stale_cache_msg)
+                warnings.append(stale_cache_msg)
             except Exception as exc:
                 errors.append(f"{ikey}: {exc}")
                 score = 50.0
@@ -382,7 +383,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             if not stale_cache_msg:
                 staleness_warning = fetch.check_series_staleness(ikey, series, cadence_cfg)
                 if staleness_warning:
-                    errors.append(staleness_warning)
+                    warnings.append(staleness_warning)
                     stale_indicators.append(ikey)
 
             if series is not None and len(series) >= 10:
@@ -494,6 +495,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         "run_timestamp": datetime.now().isoformat(),
         "buckets": bucket_results,
         "errors": errors,
+        "warnings": warnings,
         "stale_indicators": stale_indicators,
     }
     result.update(regime_info)
