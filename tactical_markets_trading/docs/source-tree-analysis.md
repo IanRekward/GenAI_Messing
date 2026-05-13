@@ -76,7 +76,7 @@ The **Entry task** entrypoint, scheduled at 08:35 AM CDT. Flow:
 2. `today_signal()` scans [`tactical_markets/data/theses.jsonl`](../../tactical_markets/data/theses.jsonl), returns the latest `signal: true` record whose `as_of` is today UTC ([run_trading.py:17-25](../run_trading.py#L17-L25)). No signal → exit clean.
 3. `already_traded(symbol)` queries Alpaca for any open position OR open order in `symbol` ([run_trading.py:28-38](../run_trading.py#L28-L38)). **Alpaca is the authoritative source** — local file lags if logging fails.
 4. `submit_order(thesis)` ([src/order_builder.py:26-43](../src/order_builder.py#L26-L43)) submits a `MarketOrderRequest(symbol=buy_leg, notional=$10k, side=BUY, time_in_force=DAY)`.
-5. `log_entry(order_result)` ([src/trade_logger.py:56-75](../src/trade_logger.py#L56-L75)) waits for fill, writes the entry row to `data/trades.jsonl` with NYSE-aware `exit_time_planned = +5 trading days`.
+5. `log_entry(order_result)` ([src/trade_logger.py:56-75](../src/trade_logger.py#L56-L75)) waits for fill, writes the entry row to `data/trades.jsonl` with NYSE-aware `exit_time_planned = +HOLD_DAYS trading days` (HOLD_DAYS=2 as of 2026-05-13).
 6. Pushover notification on success ([run_trading.py:59-62](../run_trading.py#L59-L62)). Any uncaught exception goes through Pushover via the `try/except` at the entrypoint ([run_trading.py:68-71](../run_trading.py#L68-L71)).
 
 ### `src/exit_manager.py` — Exit orchestration
@@ -170,4 +170,4 @@ The `_bmad-output/{implementation,test}-artifacts/` folders exist but are empty 
 - **No database.** Append-only JSONL only.
 - **No API layer.** The bot does not publish endpoints; it only consumes.
 - **No dashboard, no HTML output.** Pushover + stdout only.
-- **No `config/` directory yet.** Constants (`NOTIONAL`, `FILL_POLL_*`, `HOLD_DAYS = 5`) live inline in modules. Phase 2 may externalize them.
+- **No `config/` directory yet.** Constants (`NOTIONAL`, `FILL_POLL_*`, `HOLD_DAYS = 2`) live inline in modules. Phase 2 may externalize them.

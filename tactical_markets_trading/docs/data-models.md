@@ -49,7 +49,7 @@ The Entry task **appends** a new line per signal day (skipped if `already_traded
 | `entry_time` | ISO 8601 timestamp | Alpaca `order.filled_at` | The fill time, not the submission time. |
 | `fill_price` | float | Alpaca `order.filled_avg_price` | The average fill price (notional sizing → fractional shares → there's only one fill). |
 | `fill_qty` | float | Alpaca `order.filled_qty` | Fractional. Computed by Alpaca from `notional / fill_price`. |
-| `exit_time_planned` | string (datetime repr) | `add_trading_days(entry_time, 5)` | NYSE-aware. Note: written via `str(datetime)`, not `.isoformat()`. Parses cleanly with `datetime.fromisoformat()`. |
+| `exit_time_planned` | string (datetime repr) | `add_trading_days(entry_time, HOLD_DAYS)` (HOLD_DAYS=2 as of 2026-05-13) | NYSE-aware. Note: written via `str(datetime)`, not `.isoformat()`. Parses cleanly with `datetime.fromisoformat()`. |
 | `status` | enum `"open"` \| `"closed"` | constant `"open"` at entry | Flipped to `"closed"` by Exit task. |
 
 ### Schema — closed (after Exit task processes)
@@ -214,7 +214,7 @@ These live inline in modules; Phase 2 may externalize to a `config/` directory.
 | Constant | Value | Module | Purpose |
 |---|---|---|---|
 | `NOTIONAL` | `10_000` | [src/order_builder.py:13](../src/order_builder.py#L13) | Per-trade dollar size. |
-| `HOLD_DAYS` (implicit) | `5` | [src/trade_logger.py:70](../src/trade_logger.py#L70) — `add_trading_days(entry_time, 5)` | NYSE trading days held. |
+| `HOLD_DAYS` | `2` (lowered from 5 on 2026-05-13) | [src/trade_logger.py:21](../src/trade_logger.py#L21) — explicit module constant; used in `log_entry` via `add_trading_days(entry_time, HOLD_DAYS)` | NYSE trading days held. |
 | `FILL_POLL_INTERVAL` | `2` (seconds) | [src/trade_logger.py:19](../src/trade_logger.py#L19) | Polling frequency on `wait_for_fill`. |
 | `FILL_POLL_TIMEOUT` | `60` (seconds) | [src/trade_logger.py:20](../src/trade_logger.py#L20) | Max wait before raising. |
 | `TERMINAL_FAILED` | `{REJECTED, CANCELED, EXPIRED}` | [src/trade_logger.py:16](../src/trade_logger.py#L16) | Fail-fast states in `wait_for_fill`. |

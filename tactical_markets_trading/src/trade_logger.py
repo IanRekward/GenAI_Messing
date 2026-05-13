@@ -18,6 +18,7 @@ TERMINAL_FAILED = {OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIR
 TRADES_PATH = Path(__file__).resolve().parent.parent / "data" / "trades.jsonl"
 FILL_POLL_INTERVAL = 2
 FILL_POLL_TIMEOUT = 60
+HOLD_DAYS = 2  # NYSE trading days. Lowered from 5 on 2026-05-13 to speed Phase 1 graduation (pipes-and-signals test).
 
 
 def add_trading_days(dt: datetime, n: int) -> datetime:
@@ -67,7 +68,7 @@ def log_entry(order_result: dict) -> dict:
         "entry_time": fill["fill_time"],
         "fill_price": fill["fill_price"],
         "fill_qty": fill["fill_qty"],
-        "exit_time_planned": str(add_trading_days(entry_time, 5)),
+        "exit_time_planned": str(add_trading_days(entry_time, HOLD_DAYS)),
         "status": "open",
     }
     with open(TRADES_PATH, "a") as f:

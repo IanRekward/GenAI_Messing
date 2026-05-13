@@ -42,7 +42,7 @@ The canonical sources of policy are [TODO.md](../TODO.md) (current status + lock
 - **Long-only momentum.** Read MICRO's `signal: true` thesis, buy the long leg, ignore the sell leg (preserved only as a benchmark ticker at exit). Pair-trade hypothesis is **non-testable under the no-shorts rule** — do not attempt to revive it.
 - **Fixed $10k notional per trade.** Phase 1. No risk-based sizing because there are no stops.
 - **Market orders** at entry AND exit. Slippage optimization is Phase 2.
-- **Hold 5 NYSE trading days.** No stops, no targets.
+- **Hold 2 NYSE trading days** (lowered from 5 on 2026-05-13 to speed Phase 1 graduation as a pipes-and-signals test; Phase 2 will tune). No stops, no targets.
 - **Up to 5 overlapping positions** (steady state ~50% deployed).
 - **`paper=True` flag in [src/alpaca_connector.py:22](../src/alpaca_connector.py#L22) is the safety pin.** Do not remove without explicit user sign-off.
 - **Authoritative idempotency dedup is Alpaca**, not `data/trades.jsonl`. `already_traded(symbol)` queries positions + open orders. Local file lags if logging fails.
@@ -161,5 +161,5 @@ From [TODO.md](../TODO.md) "Lessons from Phase 1":
 
 - **End of Phase 1 (~5 trades):** review trade distribution. Decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
 - **Surprise in results:** if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
-- **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
+- **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 2-trading-day exit math gets weird in practice.
 - **Phase 2 → Phase 3:** writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.

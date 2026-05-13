@@ -24,7 +24,7 @@ Design pass run after `tactical_markets` week-1 ship. The ROADMAP's pair-trade h
 - Trigger: each trading day, if `tactical_markets/data/theses.jsonl` has a `signal: true` line for that day, buy the `buy` ticker only (ignore the `sell` leg).
 - Sizing: fixed **$10k per trade** (10% of account, fractional shares via Alpaca `notional` field). No risk-based sizing in Phase 1.
 - Order type: **market order** at entry, **market order** at exit. Slippage optimization deferred.
-- Exit: market order, **5 trading days after entry**. No stop, no target.
+- Exit: market order, **2 trading days after entry** (lowered from 5 on 2026-05-13 to speed Phase 1 graduation as a pipes-and-signals test; Phase 2 will tune). No stop, no target.
 - Concurrency: up to 5 overlapping positions. Steady state ~50% deployed, ~50% cash.
 - Per-trade logging: entry, fills, exit, P&L — plus two benchmarks at exit time:
   - (a) SPY's return over the same window
@@ -80,7 +80,7 @@ After Phase 1 freeze, **no new code** until 5+ trades accumulate (revised down f
 
 - **End of Phase 1 (~5 trades):** review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
 - **Surprise in results:** if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
-- **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
+- **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 2-trading-day exit math gets weird in practice.
 - **Phase 2 → Phase 3:** writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.
 
 ## Locked rules — do not re-open without explicit user sign-off

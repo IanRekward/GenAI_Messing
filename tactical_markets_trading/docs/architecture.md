@@ -8,7 +8,7 @@ This is the **current-state** architecture document. The forward-looking archite
 
 ## Executive summary
 
-Single-entrypoint batch CLI. Three Windows Scheduled Tasks fire in sequence each weekday morning: **Wake (08:20)** → **Entry (08:35)** → **Exit (08:40)** all CDT. The Entry task reads a tactical thesis from `../tactical_markets/data/theses.jsonl`, submits one market BUY order via Alpaca's paper-trading API, and logs the entry record. The Exit task scans the trade ledger for positions whose 5-trading-day hold window has expired, market-sells them, and captures benchmark returns (SPY + the original thesis's sell-leg) post-fill.
+Single-entrypoint batch CLI. Three Windows Scheduled Tasks fire in sequence each weekday morning: **Wake (08:20)** → **Entry (08:35)** → **Exit (08:40)** all CDT. The Entry task reads a tactical thesis from `../tactical_markets/data/theses.jsonl`, submits one market BUY order via Alpaca's paper-trading API, and logs the entry record. The Exit task scans the trade ledger for positions whose 2-trading-day hold window (HOLD_DAYS, lowered from 5 on 2026-05-13) has expired, market-sells them, and captures benchmark returns (SPY + the original thesis's sell-leg) post-fill.
 
 The architecture is deliberately minimal. There is no signal generation, no risk engine, no portfolio optimizer, no dashboard. The goal is to **prove the simplest possible execution loop works end-to-end**, accumulate ≥5 clean trades, and only then design Phase 2 enrichments (stops, risk-based sizing, MACRO consumption, multi-strategy routing) against real data.
 
@@ -34,7 +34,7 @@ The architecture is deliberately minimal. There is no signal generation, no risk
               ├── log entry to data/trades.jsonl
               │     {trade_id, order_id, symbol, sell_leg, notional, thesis_as_of,
               │      entry_time, fill_price, fill_qty,
-              │      exit_time_planned = +5 NYSE trading days,
+              │      exit_time_planned = +HOLD_DAYS NYSE trading days (HOLD_DAYS=2 as of 2026-05-13),
               │      status: "open"}
               └── Pushover notify (entry / failure)
               ▼
@@ -88,7 +88,7 @@ These were debated and settled in the 2026-05-08 design pass. **Do not re-open w
 | Account | Alpaca paper, $100k, `PA3SOYDP6IP5`. `paper=True` flag in `TradingClient`. | Free, no real capital risk during validation. |
 | Sizing | **Fixed $10k per trade** (10% of account, fractional shares via Alpaca `notional`) | No stops in Phase 1 → can't compute risk-based sizing. Fixed dollar makes per-trade P&L directly comparable. |
 | Order type | **Market orders** at entry AND exit | Slippage optimization deferred. Execution simplicity > marginal bps savings during validation. |
-| Hold | **5 trading days** (NYSE-aware) | Matches the documented sector-rotation mean-reversion window (3-7 days). |
+| Hold | **2 trading days** (NYSE-aware) — lowered from 5 on 2026-05-13 | Phase 1 is "pipes-and-signals" validation, not strategy-performance test. Shorter hold cycles trades faster; Phase 2 will tune hold along with stops. Original 5-day matched MICRO's documented sector-rotation mean-reversion window (3-7 days). |
 | Stops / targets | **None** | Phase 1 characterizes the signal. Stops introduce a confound (where do you set them?) that contaminates validation. After ~5 trades the drawdown distribution will be visible and stops can be sized empirically. |
 | Concurrency | Up to **5 overlapping positions** | Steady state ≈ 50% deployed, 50% cash. Caps over-concentration. |
 | Benchmarks | At exit, capture (a) SPY return and (b) sell-leg ticker return over the same window | (b) lets us reconstruct the pair-trade Sharpe post-hoc, even though we never short. |
@@ -107,7 +107,7 @@ These are also captured in [TODO.md](../TODO.md) "Locked rules" + [_bmad-output/
 
 - Reading one signal/day from MICRO via files-on-disk
 - One market BUY per signal day (long leg only)
-- 5-trading-day hold
+- 2-trading-day hold (lowered from 5 on 2026-05-13)
 - Market SELL at exit
 - Post-fill SPY + sell-leg benchmark capture
 - Append-only trade ledger
@@ -187,7 +187,7 @@ This project sits **downstream** of MICRO and (eventually) MACRO. See [integrati
 | Runtime | Python 3.14 (system; own `.venv/`) | Created Day 1 of Phase 1. |
 | Broker SDK | `alpaca-py` | `TradingClient`, `MarketOrderRequest`, `OrderSide`, `TimeInForce`, `OrderStatus`, `QueryOrderStatus`, `GetOrdersRequest`. |
 | Config / secrets | `python-dotenv` | `.env` at project root. |
-| Calendar | `pandas-market-calendars` | NYSE valid_days for the +5-trading-days exit math. |
+| Calendar | `pandas-market-calendars` | NYSE valid_days for the +HOLD_DAYS exit math (HOLD_DAYS=2 as of 2026-05-13). |
 | Data | `yfinance` | Benchmark return capture at exit time only. Not on the entry path. |
 | HTTP | `requests` | Pushover only. |
 | Scheduling | Windows Task Scheduler (3 tasks) | `setup_task.ps1` registers them. |
@@ -202,7 +202,7 @@ No dependencies on the sibling projects (verified by absence of cross-project Py
 From [TODO.md](../TODO.md) "Design fork points":
 
 - After ~5 clean trades: review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
-- Trading-day calendar edge cases: long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
+- Trading-day calendar edge cases: long weekends, early closes, halts, ETF rebalances. If 2-trading-day exit math gets weird in practice.
 - Surprise in results: if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
 - Phase 2 → Phase 3: writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.
 

@@ -59,7 +59,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 | Phase | Status | Scope |
 |---|---|---|
-| Phase 1 | **BUILT, FROZEN** until ≥5 clean trades (lowered from 10 on 2026-05-13) | Long-only momentum, fixed $10k, no stops, market orders, MICRO-only, 5-day hold |
+| Phase 1 | **BUILT, FROZEN** until ≥5 clean trades (lowered from 10 on 2026-05-13) | Long-only momentum, fixed $10k, no stops, market orders, MICRO-only, 2-day hold (lowered from 5 on 2026-05-13) |
 | Phase 2 | **Target of this document** | Stops + risk-based sizing, MACRO consumption (size-down on red regime), drawdown-distribution-informed sizing, reconciliation, possibly limit orders |
 | Phase 3 | Architectural awareness only — gated on Phase 2 validation + ROE doc | Live capital |
 | Phase 4+ | PRD end-state vision — informs design tradeoffs but not committed scope | Multi-strategy ensemble (11+), regime routing, Tier 2 single stocks, dashboard, full Sharpe-based kill switch, tax CSV export, manual-execute UI question |
