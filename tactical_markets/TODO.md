@@ -4,7 +4,8 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 
 ## Status
 
-**Planning, in hopper.** Specs are locked in and research-backed; no code yet. Holds until Market Stress Dashboard is shipped and Phase G items are complete. Earliest start: after the 2026-05-30 regime-weights review checkpoint.
+**Week-1 live. Two-week freeze active (2026-05-06 → ~2026-05-20).**
+Sector rotation signal shipped and running daily at 6:30 AM ET. Ian reads theses on phone during freeze; no code changes until freeze ends. Post-freeze direction is decided by which of three failure modes shows up (see locked week-1 design below).
 
 ## Source documents
 

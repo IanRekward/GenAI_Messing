@@ -18,6 +18,10 @@ THESES_LOG = BASE / "data" / "theses.jsonl"
 def main() -> None:
     THESES_LOG.parent.mkdir(parents=True, exist_ok=True)
 
+    if datetime.now(timezone.utc).weekday() >= 5:
+        print(f"Weekend — no run.")
+        return
+
     try:
         result = generate(UNIVERSE, THRESHOLDS)
     except Exception as exc:
@@ -34,6 +38,7 @@ def main() -> None:
         print(result["thesis"])
         sent = pushover_send("Tactical Premarket", result["thesis"])
         print(f"Pushover: {'sent' if sent else 'FAILED (check .env)'}")
+        result["pushover_sent"] = sent
     else:
         print("No sector rotation signal today.")
         result = {"signal": False, "as_of": datetime.now(timezone.utc).isoformat()}

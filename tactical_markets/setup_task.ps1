@@ -7,7 +7,7 @@ $workDir = "C:\Users\rekwa\ian_projects\tactical_markets"
 
 # --- Wake task (wakes the computer 10 min before main task) ---
 $wakeAction   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c exit"
-$wakeTrigger  = New-ScheduledTaskTrigger -Daily -At "06:20AM"
+$wakeTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "06:20AM"
 $wakeSettings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
@@ -30,7 +30,7 @@ $mainAction   = New-ScheduledTaskAction `
     -Argument         "run_tactical.py" `
     -WorkingDirectory $workDir
 
-$mainTrigger  = New-ScheduledTaskTrigger -Daily -At "06:30AM"
+$mainTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "06:30AM"
 $mainSettings = New-ScheduledTaskSettingsSet `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `
