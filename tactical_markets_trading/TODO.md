@@ -4,7 +4,9 @@ Alpaca paper-trading layer that validates [tactical_markets](../tactical_markets
 
 ## Status
 
-**Phase 1 Days 1-7 built + hardened (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k). All code paths in place, all tasks registered with Windows Task Scheduler, hardening pass applied (commit acd618b). First scheduled fires today (entry 8:35 AM CDT, exit 8:40 AM CDT). After two consecutive clean fires, **Phase 1 freeze begins** — no code changes until ~10 trades accumulate.
+**Phase 1 Days 1-7 built + hardened (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k). All code paths in place, all tasks registered with Windows Task Scheduler, hardening pass applied (commit acd618b). First scheduled fires 2026-05-08, entry 8:35 AM CDT, exit 8:40 AM CDT. **Phase 1 freeze began 2026-05-08** — no code changes until 10+ clean trades accumulate.
+
+**2026-05-13 freeze unlock:** Single small change applied to lift the cadence bottleneck. After 5 weekday firings, only 1 trade had executed because the original `already_traded(symbol)` check blocked ALL same-symbol re-entries (XLK has been MICRO's persistent winner for 8 days). Replaced with `already_traded_today(symbol)` (intra-day dedup only) + `at_position_limit(5)` (enforce the "up to 5 overlapping positions" design limit from the spec below). Aligns code with the original Phase 1 design intent; does NOT change hypothesis, sizing, hold window, or any other locked rule. Expected effect: ~5x trade cadence; Phase 1 graduation reachable in 3-4 weeks instead of 10+.
 
 ## Source documents
 

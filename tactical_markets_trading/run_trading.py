@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from alpaca.trading.enums import QueryOrderStatus
+from alpaca.trading.enums import OrderSide, QueryOrderStatus
 from alpaca.trading.requests import GetOrdersRequest
 
 import pushover
@@ -25,17 +25,32 @@ def today_signal():
     return last
 
 
-def already_traded(symbol: str) -> bool:
-    """Check Alpaca for any open position OR open buy order in this symbol.
-    Authoritative source — local file can lag if logging fails."""
+def already_traded_today(symbol: str) -> bool:
+    """Did we already submit a buy for this symbol today (UTC)?
+    Prevents intra-day double-fire from scheduler hiccup or manual re-run.
+    Authoritative — uses Alpaca, not local trades.jsonl which can lag."""
     client = trading_client()
-    for p in client.get_all_positions():
-        if p.symbol == symbol:
-            return True
-    for o in client.get_orders(GetOrdersRequest(status=QueryOrderStatus.OPEN)):
-        if o.symbol == symbol:
+    today_start = datetime.combine(
+        datetime.now(timezone.utc).date(),
+        datetime.min.time(),
+        tzinfo=timezone.utc,
+    )
+    request = GetOrdersRequest(
+        status=QueryOrderStatus.ALL,
+        after=today_start,
+        side=OrderSide.BUY,
+    )
+    for order in client.get_orders(request):
+        if order.symbol == symbol:
             return True
     return False
+
+
+def at_position_limit(max_positions: int = 5) -> bool:
+    """Are we at the 5-overlapping-positions design limit per TODO.md?
+    Phase 1 design: up to 5 concurrent positions, steady state ~50% deployed."""
+    client = trading_client()
+    return len(client.get_all_positions()) >= max_positions
 
 
 def main():
@@ -45,8 +60,11 @@ def main():
         return
 
     symbol = thesis["buy"]
-    if already_traded(symbol):
-        print(f"Already have an open position or order in {symbol} — skipping.")
+    if already_traded_today(symbol):
+        print(f"Already submitted a buy for {symbol} today — skipping (intra-day dedup).")
+        return
+    if at_position_limit():
+        print(f"At 5-position concurrency limit — skipping {symbol}.")
         return
 
     print(f"Signal: BUY {symbol} (spread: {thesis['spread_pct']}%, as_of: {thesis['as_of']})")
