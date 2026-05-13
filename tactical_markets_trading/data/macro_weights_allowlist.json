@@ -1,0 +1,8 @@
+{
+  "_comment": "Allow-list of MACRO weights_hash values that this bot trusts for regime data. Story 1b.2 (architecture decision AR12) requires this allow-list. When MACRO ships a recalibration, the new hash will fail validation and block new entries until a human adds it here after review.",
+  "_bootstrap_date": "2026-05-13",
+  "_bootstrap_source": "../market_dashboard/data/latest.json at 2026-05-13T07:45:02 UTC",
+  "allowed_hashes": [
+    "2532e380"
+  ]
+}
