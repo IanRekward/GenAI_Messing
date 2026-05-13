@@ -2,3 +2,11 @@
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+
+# Phase 2 transient runtime state for tactical_markets_trading (Stories 1c.4, 2.2, 3.2)
+# Created at runtime by the bot; not part of source code. trades.jsonl IS tracked
+# (operational audit record); the files below are pure local state.
+tactical_markets_trading/data/account_state.json
+tactical_markets_trading/data/drift_log.jsonl
+tactical_markets_trading/data/graduation_state.json

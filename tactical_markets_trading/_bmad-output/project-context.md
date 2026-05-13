@@ -45,7 +45,7 @@ The canonical sources of policy are [TODO.md](../TODO.md) (current status + lock
 - **Hold 2 NYSE trading days** (lowered from 5 on 2026-05-13 to speed Phase 1 graduation as a pipes-and-signals test; Phase 2 will tune). No stops, no targets.
 - **Up to 5 overlapping positions** (steady state ~50% deployed).
 - **`paper=True` flag in [src/alpaca_connector.py:22](../src/alpaca_connector.py#L22) is the safety pin.** Do not remove without explicit user sign-off.
-- **Authoritative idempotency dedup is Alpaca**, not `data/trades.jsonl`. `already_traded(symbol)` queries positions + open orders. Local file lags if logging fails.
+- **Authoritative idempotency dedup is Alpaca**, not `data/trades.jsonl`. Two functions in `run_trading.py`: `already_traded_today(symbol)` queries Alpaca for today's BUY orders (intra-day dedup); `at_position_limit(max_positions=5)` enforces the "5 overlapping positions" design limit. Both authoritative against local-file drift. **Updated 2026-05-13:** prior `already_traded(symbol)` (which blocked all-time same-symbol re-entries) was replaced to align with the original "5 overlapping positions" design intent — see TODO.md unlock note.
 - **MACRO is NOT consumed in Phase 1.** Phase 2 candidate for size-down logic.
 
 ### Locked rules — do not re-open without explicit user sign-off

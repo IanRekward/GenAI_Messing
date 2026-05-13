@@ -465,7 +465,7 @@ So that scheduled fires never proceed on broken state.
 **When** the script starts
 **Then** it calls `preflight.check_entry()` as the first action after `load_env()`
 **And** if `ok=False`, sends Pushover `"Tactical Trading ABORT: <reason>"` and `sys.exit(1)`
-**And** if `ok=True`, proceeds with existing entry logic (today_signal → already_traded → submit_order → log_entry)
+**And** if `ok=True`, proceeds with existing entry logic (today_signal → already_traded_today → at_position_limit → submit_order → log_entry)
 
 **Given** `src/exit_manager.py` is invoked by the scheduled Exit task
 **When** the script starts
@@ -562,17 +562,28 @@ So that no trade is submitted that would breach 5% / 20% / 25% limits.
 **Given** an existing XLE position worth $4,500 and a proposed XLE buy worth $1,000 on a $100k account
 **When** `check_concentration("XLE", proposed_qty, proposed_price, positions, 100_000)` is called
 **Then** check (a) passes ($1,000 < $5,000)
-**And** check (b) depends on other positions
-**And** check (c) fails ($4,500 + $1,000 = $5,500 < $25,000 OK — wait, that passes); revise example
+**And** check (b) passes ($4,500 + $1,000 = $5,500 < $20,000 open cap)
+**And** check (c) passes ($4,500 + $1,000 = $5,500 < $25,000 per-ticker cap)
+**And** returns `(True, "ok")`
 
-**Given** an existing XLE position worth $24,500 and a proposed XLE buy worth $1,000 on a $100k account
-**When** `check_concentration(...)` is called
-**Then** check (c) fails (`$24,500 + $1,000 = $25,500 > $25,000`)
-**And** the returned reason includes "ticker_concentration"
+**Given** a proposed XLK buy worth $6,000 on a $100k account with no existing positions
+**When** `check_concentration("XLK", qty, price, {}, 100_000)` is called
+**Then** check (a) fails ($6,000 > $5,000 per-trade cap)
+**And** the returned reason includes `"per_trade_concentration"`
+
+**Given** existing positions {SPY: $6k, QQQ: $6k, IWM: $6k} totaling $18k and a proposed XLE buy worth $4,000 on a $100k account
+**When** `check_concentration("XLE", qty, $4000, positions, 100_000)` is called
+**Then** check (a) passes ($4,000 < $5,000)
+**And** check (b) fails ($18,000 + $4,000 = $22,000 > $20,000 open cap)
+**And** the returned reason includes `"open_total_concentration"`
+
+**Given** the per-ticker check (c) is the third in fail-fast order
+**When** the default caps are 5% / 20% / 25%
+**Then** per-ticker is mathematically reachable only when the open-total cap is configured looser than the per-ticker cap (rare; not the default). The check is defensive against future config changes. Test isolation via `max_position_pct`/`max_open_pct`/`max_ticker_pct` parameters covers this case explicitly.
 
 **Given** `tests/test_risk.py` is extended
 **When** the suite executes
-**Then** at least 3 assertions cover this function (per-trade cap, open-total cap, per-ticker cap)
+**Then** at least 3 assertions cover this function (per-trade cap, open-total cap, per-ticker cap with isolated parameters)
 
 ### Story 1c.3: Wire sizing + concentration into Entry orchestration
 

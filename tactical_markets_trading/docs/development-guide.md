@@ -185,7 +185,7 @@ Every commit sequence:
 - **Phase 1 is frozen** until 5+ trades execute cleanly (lowered from 10 on 2026-05-13). No code changes during freeze. The TODO.md "Locked rules" table is the source of truth.
 - **Don't silently downgrade Alpaca errors.** They're a boundary — catch at the entrypoint ([run_trading.py:68-71](../run_trading.py#L68-L71), [src/exit_manager.py:115-119](../src/exit_manager.py#L115-L119)), Pushover the failure, and re-raise so Task Scheduler logs a non-zero exit.
 - **Don't delete or rewrite past `data/trades.jsonl` rows.** Append-only for entries; in-place update only to flip `status: "open" → "closed"`. Historical rows are the validation record.
-- **Authoritative dedup is Alpaca, not the local file.** `already_traded` in [run_trading.py:28-38](../run_trading.py#L28-L38) queries Alpaca's positions + open orders. Don't shortcut to reading `trades.jsonl` — it lags if logging ever fails.
+- **Authoritative dedup is Alpaca, not the local file.** `already_traded_today` (intra-day) + `at_position_limit` (5-position cap) in [run_trading.py:28-53](../run_trading.py#L28-L53) both query Alpaca. Don't shortcut to reading `trades.jsonl` — it lags if logging ever fails. *(Original `already_traded(symbol)` was replaced 2026-05-13 — was over-strict relative to original 5-overlapping-positions design.)*
 
 ---
 

@@ -25,9 +25,12 @@ The architecture is deliberately minimal. There is no signal generation, no risk
               ├── load .env (ALPACA keys, optional PUSHOVER keys)
               ├── read ../tactical_markets/data/theses.jsonl
               │     → today_signal()   filters to today's signal:true record (UTC)
-              ├── already_traded(symbol)?
-              │     query Alpaca for positions + open orders in this symbol
-              │     if yes → skip (idempotency guard, authoritative against local-file drift)
+              ├── already_traded_today(symbol)?
+              │     query Alpaca for today's BUY orders in this symbol
+              │     if yes → skip (intra-day dedup; authoritative against local-file drift)
+              ├── at_position_limit(max_positions=5)?
+              │     query Alpaca for total open positions; cap at 5 per Phase 1 design
+              │     if yes → skip (concurrency limit)
               ├── submit MarketOrderRequest(symbol=buy_leg, notional=$10k, BUY, DAY)
               ├── wait_for_fill(order_id)  — poll every 2s, terminate on FILLED
               │     fail fast on REJECTED/CANCELED/EXPIRED
@@ -55,7 +58,7 @@ The architecture is deliberately minimal. There is no signal generation, no risk
               └── if 0 exits processed, log "no open positions due"
 ```
 
-**Idempotency model:** the Entry task guards against double-buys by querying Alpaca for open positions + open orders in the candidate symbol. The Exit task is idempotent by construction — only `status=="open"` records past `exit_time_planned` get processed; a successful exit flips the row to `closed` and it's skipped on the next run.
+**Idempotency model:** the Entry task guards against double-buys with two Alpaca queries — (a) `already_traded_today(symbol)` looks for today's BUY orders in the symbol (intra-day dedup, catches scheduler hiccup and manual re-run), and (b) `at_position_limit()` caps total open positions at 5 per Phase 1 design. Day-over-day same-symbol stacking IS allowed up to the 5-position cap — that's what the design's "up to 5 overlapping positions, steady state ~50% deployed" intends. The Exit task is idempotent by construction — only `status=="open"` records past `exit_time_planned` get processed; a successful exit flips the row to `closed` and it's skipped on the next run.
 
 **Non-raising close path:** once the SELL has filled, the close record is always persisted to `trades.jsonl`. Benchmark fetches (`yfinance`) run inside a `try/except` after fill and can leave `spy_return_pct` / `sell_leg_return_pct` as `null` without losing the trade record. This is the design from the 2026-05-08 hardening pass.
 
@@ -144,7 +147,8 @@ The [PRD](../_bmad-output/planning-artifacts/prd.md) describes the **end-state v
 | Failure | Detection | Handling |
 |---|---|---|
 | No signal in `theses.jsonl` today | `today_signal()` returns `None` | Exit clean, no order, no Pushover (silent no-op is fine — MICRO already pinged user) |
-| Already have exposure in `buy_leg` | `already_traded(symbol)` returns `True` | Skip, log "Already have an open position…", exit clean |
+| Already submitted a BUY for `buy_leg` today | `already_traded_today(symbol)` returns `True` | Skip, log "Already submitted a buy for X today — skipping (intra-day dedup)", exit clean |
+| At 5-position concurrency limit | `at_position_limit()` returns `True` | Skip, log "At 5-position concurrency limit — skipping X", exit clean |
 | Order REJECTED / CANCELED / EXPIRED | `wait_for_fill` checks `TERMINAL_FAILED` set | Raise `RuntimeError`, caught at top-level, Pushover "ENTRY FAILED" |
 | Order doesn't fill within 60s | `wait_for_fill` timeout | Raise with last status, Pushover "ENTRY FAILED" |
 | Partial fill mid-poll | `wait_for_fill` does NOT return on first partial — only on `OrderStatus.FILLED` | Continues polling; this is the fix from commit `58fa2e1` |
@@ -152,7 +156,7 @@ The [PRD](../_bmad-output/planning-artifacts/prd.md) describes the **end-state v
 | Top-level crash in Entry or Exit | `try/except` at entrypoint | Pushover with the exception message, then re-raise |
 | Pushover not configured | `pushover.send` returns `False` after printing `[pushover not configured]` | Non-fatal; trade still executes |
 | Alpaca connection drops mid-poll | `get_order_by_id` exception | Propagates up; Pushover "ENTRY FAILED" / "EXIT CRASHED" |
-| Local `trades.jsonl` out of sync with Alpaca | `already_traded` queries Alpaca, not the file | Self-correcting at next Entry run |
+| Local `trades.jsonl` out of sync with Alpaca | `already_traded_today` + `at_position_limit` query Alpaca, not the file | Self-correcting at next Entry run |
 | Holiday / early close | NYSE calendar via `pandas_market_calendars` | `add_trading_days` skips non-trading days correctly (Memorial Day verified) |
 
 ---

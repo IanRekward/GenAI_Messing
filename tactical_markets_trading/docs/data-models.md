@@ -18,7 +18,7 @@ status: "open"                       status: "closed"
                                      + benchmarks (may be null)
 ```
 
-The Entry task **appends** a new line per signal day (skipped if `already_traded`). The Exit task **rewrites** the file with all records — open ones untouched, ripe ones flipped to `closed` with exit fields merged in. The file is always small (target ~5 open positions max + accumulating closed history), so full-file rewrites are fine.
+The Entry task **appends** a new line per signal day (skipped if `already_traded_today(symbol)` is true or `at_position_limit()` is true). The Exit task **rewrites** the file with all records — open ones untouched, ripe ones flipped to `closed` with exit fields merged in. The file is always small (target ~5 open positions max + accumulating closed history), so full-file rewrites are fine.
 
 ### Schema — entry (when written by Entry task)
 
@@ -99,7 +99,7 @@ Additional fields:
 
 - **`trade_id` is unique** (UUID4).
 - **`order_id` is unique** within the project's lifetime (Alpaca guarantees).
-- **One record per executed signal day.** The Entry task's `already_traded(symbol)` query is the dedup guard; it queries Alpaca (positions + open orders), not this file. If the file is out of sync with Alpaca, Alpaca wins.
+- **At most one record per symbol per UTC day.** The Entry task's `already_traded_today(symbol)` query (intra-day dedup) plus `at_position_limit()` (5-position cap) are the guards; both query Alpaca, not this file. If the file is out of sync with Alpaca, Alpaca wins. *(Day-over-day same-symbol stacking is permitted up to the 5-position limit, per Phase 1 design.)*
 - **Append-only at entry, in-place update at exit.** No deletes. No reorders.
 - **`status` transitions: only `"open" → "closed"`.** No reverse, no other states.
 - **`fill_qty` is fractional.** Notional sizing produces fractional shares; Alpaca supports them.
@@ -109,7 +109,7 @@ Additional fields:
 ### What this schema is **not**
 
 - **Not a stable downstream contract.** No external consumer reads this file today. There is no schema versioning, no provenance hashes, no `schema_version` field. If a Phase 2 feature adds fields, existing rows won't have them — be defensive when reading old rows.
-- **Not the dedup source of truth.** Alpaca is. See `already_traded` in [run_trading.py:28-38](../run_trading.py#L28-L38).
+- **Not the dedup source of truth.** Alpaca is. See `already_traded_today` + `at_position_limit` in [run_trading.py:28-53](../run_trading.py#L28-L53).
 - **Not transactional.** A crash between writing the entry record and the next Pushover send leaves the record intact (entry succeeded); a crash before the SELL fills leaves the record at `status: "open"` (Exit task will retry on the next firing).
 
 ---

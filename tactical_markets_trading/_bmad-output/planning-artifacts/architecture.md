@@ -622,7 +622,7 @@ This shape is uniform across `preflight.check_entry`, `preflight.check_exit`, `m
 
 ### Idempotency & dedup
 
-- **Alpaca is authoritative for positions and orders.** `already_traded(symbol)` queries Alpaca, not `trades.jsonl`. Same pattern for reconciler.
+- **Alpaca is authoritative for positions and orders.** `already_traded_today(symbol)` + `at_position_limit()` query Alpaca, not `trades.jsonl`. Same pattern for reconciler.
 - **`trades.jsonl` may lag Alpaca** if logging ever fails. Phase 2 reconciler detects drift; never auto-corrects (Phase 2).
 - **Entry task is idempotent** — same signal day, same symbol, no double-buy (Alpaca position+order check).
 - **Exit task is idempotent** — only processes `status == "open"` records past planned exit; closed records skipped.
