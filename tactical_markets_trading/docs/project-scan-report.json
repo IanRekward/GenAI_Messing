@@ -1,0 +1,48 @@
+{
+  "workflow_version": "1.2.0",
+  "timestamps": {
+    "started": "2026-05-13T00:00:00Z",
+    "last_updated": "2026-05-13T00:00:00Z",
+    "completed": "2026-05-13T00:00:00Z"
+  },
+  "mode": "initial_scan",
+  "scan_level": "deep",
+  "project_root": "c:\\Users\\rekwa\\ian_projects\\tactical_markets_trading",
+  "project_knowledge": "c:\\Users\\rekwa\\ian_projects\\tactical_markets_trading\\docs",
+  "repository_type": "monolith",
+  "project_types": [
+    {"part_id": "tactical_markets_trading", "project_type_id": "backend", "display_name": "Python backend service (single-entrypoint batch CLI)"}
+  ],
+  "completed_steps": [
+    {"step": "step_1", "status": "completed", "summary": "Classified as monolith, 1 part, backend project type"},
+    {"step": "step_2", "status": "completed", "summary": "Existing docs: TRADING_INTEGRATION_PLAN.md, ROADMAP_ALPACA_INTEGRATION.md, TODO.md, _bmad-output/planning-artifacts/{prd.md, prd-validation-report.md, FINTECH_TRADING_BOT_REFERENCE_MATERIALS.md, research/...}"},
+    {"step": "step_3", "status": "completed", "summary": "Tech stack: Python 3.14, alpaca-py, pandas-market-calendars, yfinance, python-dotenv, requests"},
+    {"step": "step_4", "status": "completed", "summary": "Conditional scans: no API/UI/DB layer; configs are .env + setup_task.ps1; data via append-only JSONL"},
+    {"step": "step_5", "status": "completed", "summary": "Source tree documented in source-tree-analysis.md"},
+    {"step": "step_6", "status": "completed", "summary": "Dev setup documented in development-guide.md (venv, env vars, Windows Task Scheduler)"},
+    {"step": "step_7", "status": "completed", "summary": "Integration architecture documented (3 sibling projects, Alpaca, Pushover, yfinance)"},
+    {"step": "step_8", "status": "completed", "summary": "Architecture documented for monolith part"},
+    {"step": "step_9", "status": "completed", "summary": "Supporting docs: project-overview, data-models, _bmad-output/project-context"},
+    {"step": "step_10", "status": "completed", "summary": "Master index.md generated"},
+    {"step": "step_11", "status": "completed", "summary": "Validation: no _(To be generated)_ markers; all sections populated"},
+    {"step": "step_12", "status": "completed", "summary": "Workflow complete"}
+  ],
+  "current_step": "completed",
+  "findings": {
+    "project_classification": "monolith, 1 part, Python backend",
+    "technology_stack": "Python 3.14, alpaca-py, yfinance, pandas-market-calendars, python-dotenv, requests; Windows Task Scheduler",
+    "key_files": ["run_trading.py", "src/alpaca_connector.py", "src/order_builder.py", "src/trade_logger.py", "src/exit_manager.py", "src/pushover.py", "setup_task.ps1"]
+  },
+  "outputs_generated": [
+    "docs/project-scan-report.json",
+    "docs/index.md",
+    "docs/project-overview.md",
+    "docs/architecture.md",
+    "docs/source-tree-analysis.md",
+    "docs/data-models.md",
+    "docs/integration-architecture.md",
+    "docs/development-guide.md",
+    "_bmad-output/project-context.md"
+  ],
+  "resume_instructions": "Workflow complete on 2026-05-13. Re-run /bmad-document-project to re-scan or deep-dive."
+}
