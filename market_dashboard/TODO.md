@@ -193,7 +193,7 @@ preserve Ian's numbering when committing so the trail back to this list is clear
     how to read the current band, what to do (or not do) with the number.
     Calibrate to Ian's stated use — "help me think, never tell me what to do."
 
-- [ ] 🅾️ **G3 — Layman narrative suggests household action** *(Brief 23 in ROADMAP.md — Opus design pass complete 2026-05-01, ready for Sonnet)*
+- [x] 🅾️ **G3 — Layman narrative suggests household action** *(shipped — commit 2099f57)*
   Surprise: most of G3 is already shipped (both registers generated, JSON-parsed,
   cached, toggle button + JS in place). The real gap was the layman prompt
   forbidding action — Ian's call (2026-05-01) is to flip that. Brief 23 covers:
@@ -365,22 +365,8 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
 
 ### Phase H — Phone-triggered refresh (Sonnet-ready, 2026-05-11)
 
-- [ ] 🅾️ **Brief 25 — Phase H: Phone-triggered dashboard refresh via GitHub Actions**
-  *(Opus design pass complete 2026-05-11, ready for Sonnet)*
-  Locked: GitHub Actions `workflow_dispatch` triggered from iOS Shortcut via
-  GitHub API. Defeats the other three options on the wake-on-command
-  constraint — only GH Actions doesn't depend on the laptop being awake or
-  reachable from cellular. Existing `.github/workflows/tests.yml` already
-  proves the Python runtime works in CI.
-
-  Three files to ship: new `.github/workflows/on-demand-dashboard.yml`,
-  new `--ondemand` flag in `run_dashboard.py` (skips state-mutating steps —
-  log_run, alerts, prune, weekly digest, heartbeat — but keeps dashboard
-  write + sidecar), new `tests/test_ondemand.py`. Two GitHub secrets to
-  add: `FRED_API_KEY`, `ANTHROPIC_API_KEY`. Ian-side: one-time iOS Shortcut
-  with a PAT.
-
-  Full brief in [ROADMAP.md](ROADMAP.md#brief-25--phase-h-phone-triggered-dashboard-refresh-via-github-actions).
-  Includes retry-on-push-conflict for races with morning automation, and
-  a "Future consideration" pointing at the natural extension (migrate
-  morning automation to CI too, retiring laptop wake fragility).
+- [x] 🅾️ **Brief 25 — Phase H: Phone-triggered dashboard refresh via GitHub Actions** *(shipped — commit 957736b)*
+  `.github/workflows/on-demand-dashboard.yml` live with retry-on-conflict logic.
+  `--ondemand` flag in `run_dashboard.py` skips log_run/prune/alerts/digest/heartbeat.
+  `tests/test_ondemand.py` covers all 5 assertions. Secrets to add in GitHub:
+  `FRED_API_KEY`, `ANTHROPIC_API_KEY`. iOS Shortcut setup in ROADMAP.md Brief 25.
