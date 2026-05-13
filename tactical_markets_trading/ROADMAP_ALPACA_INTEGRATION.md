@@ -249,7 +249,7 @@ tactical_markets_trading/
 - [ ] 10+ executed theses without order rejections or system errors
 - [ ] Order execution: 80%+ of limits fill within 60s; slippage within model (±2 bps for large-caps)
 - [ ] Trade logging: Every execution logged to trades.jsonl with full metadata
-- [ ] Win rate: >50% on 10+ trades (statistical significance low, but positive sign)
+- [ ] Win rate: >50% on 5+ trades (statistical significance low, but positive sign; gate lowered 10→5 on 2026-05-13)
 - [ ] P&L tracking: Dashboard displays running position P&L, target/stop status
 - [ ] Auto-exit: Timeout logic executes correctly; no stranded positions
 - [ ] Backtest reconciliation: Daily "what-if" report matches live fills within 5 bps

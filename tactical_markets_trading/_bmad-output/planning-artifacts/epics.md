@@ -13,7 +13,7 @@ inputDocuments:
   - "docs/data-models.md"
   - "docs/integration-architecture.md"
 scope: 'phase-2-implementation'
-baseline: 'Phase 1 BUILT and FROZEN until 10+ trades; epics herein are Phase 2 forward-looking'
+baseline: 'Phase 1 BUILT and FROZEN until 5+ trades (lowered from 10 on 2026-05-13); epics herein are Phase 2 forward-looking'
 date: '2026-05-13'
 ---
 
@@ -23,7 +23,7 @@ date: '2026-05-13'
 
 This document provides the epic and story breakdown for **Phase 2** of tactical_markets_trading, decomposing requirements from the PRD and Phase 2 architecture into implementable stories.
 
-**Scope:** Phase 2 implementation, layered on top of Phase 1 (BUILT, FROZEN until ≥10 clean trades). Phase 3 (live capital) and Phase 4+ (end-state vision) are acknowledged as future scope but are NOT decomposed into stories here.
+**Scope:** Phase 2 implementation, layered on top of Phase 1 (BUILT, FROZEN until ≥5 clean trades — lowered from 10 on 2026-05-13). Phase 3 (live capital) and Phase 4+ (end-state vision) are acknowledged as future scope but are NOT decomposed into stories here.
 
 ## Requirements Inventory
 

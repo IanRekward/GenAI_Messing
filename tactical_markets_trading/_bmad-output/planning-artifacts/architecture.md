@@ -59,7 +59,7 @@ _This document builds collaboratively through step-by-step discovery. Sections a
 
 | Phase | Status | Scope |
 |---|---|---|
-| Phase 1 | **BUILT, FROZEN** until ≥10 clean trades | Long-only momentum, fixed $10k, no stops, market orders, MICRO-only, 5-day hold |
+| Phase 1 | **BUILT, FROZEN** until ≥5 clean trades (lowered from 10 on 2026-05-13) | Long-only momentum, fixed $10k, no stops, market orders, MICRO-only, 5-day hold |
 | Phase 2 | **Target of this document** | Stops + risk-based sizing, MACRO consumption (size-down on red regime), drawdown-distribution-informed sizing, reconciliation, possibly limit orders |
 | Phase 3 | Architectural awareness only — gated on Phase 2 validation + ROE doc | Live capital |
 | Phase 4+ | PRD end-state vision — informs design tradeoffs but not committed scope | Multi-strategy ensemble (11+), regime routing, Tier 2 single stocks, dashboard, full Sharpe-based kill switch, tax CSV export, manual-execute UI question |
@@ -918,7 +918,7 @@ Every PRD/locked rule cited in this document traces to an authoritative source:
 | Phase 2 graduation criterion defined | ✅ 20+ trades, 2+ stop exits, 1+ MACRO size-down |
 | Hard constraints preserved | ✅ All 6 (no shorts, no cross-sibling imports, files-on-disk, Phase 3 gate, paper=True, audit trail) |
 
-**Implementation can proceed when Phase 1 freeze lifts (≥10 clean Phase 1 trades).**
+**Implementation can proceed when Phase 1 freeze lifts (≥5 clean Phase 1 trades).**
 
 ---
 
@@ -943,7 +943,7 @@ This architecture document captures the **Phase 2 forward-looking design** for `
 
 **Hand-off to implementation:**
 
-When Phase 1 unfreezes (≥10 clean Phase 1 trades), the next steps are:
+When Phase 1 unfreezes (≥5 clean Phase 1 trades), the next steps are:
 
 1. **`bmad-create-epics-and-stories`** — break Phase 2 decisions into implementable stories using this document as input. The "Implementation Sequence" section (MVW Phase 2.0 → Phase 2.1 → Phase 2.2) is the natural epic outline.
 2. **`bmad-check-implementation-readiness`** — verify PRD + architecture + epics are consistent before any code lands.

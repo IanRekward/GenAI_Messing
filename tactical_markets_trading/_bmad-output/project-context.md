@@ -16,7 +16,7 @@ The canonical sources of policy are [TODO.md](../TODO.md) (current status + lock
 
 ## Phase status — read this first
 
-**Phase 1 is BUILT and FROZEN until 10+ trades execute cleanly.** No new code until the freeze lifts. The freeze is enforced for empirical reasons — adding features now contaminates the validation substrate. If a Phase 2-style change feels obvious, stop and surface it; don't ship it.
+**Phase 1 is BUILT and FROZEN until 5+ trades execute cleanly** (lowered from 10 on 2026-05-13 — see TODO.md). No new code until the freeze lifts. The freeze is enforced for empirical reasons — adding features now contaminates the validation substrate. If a Phase 2-style change feels obvious, stop and surface it; don't ship it.
 
 **The PRD describes the end-state vision** (multi-strategy, regime-aware, MACRO+MICRO fusion, dashboard, kill switch, tax export). **Phase 1 is dramatically simpler:** one signal, long-only momentum, fixed $10k, no stops, no MACRO. Treat the PRD as the north star, not Phase 1 scope.
 
@@ -133,7 +133,7 @@ These are also in [TODO.md](../TODO.md) "Locked rules" table — that's the sour
 ## Critical Don't-Miss Rules
 
 - **Do not re-open locked scope.** See the table above. Re-opening requires explicit user sign-off.
-- **Do not ship code during the Phase 1 freeze.** Wait for 10+ clean trades.
+- **Do not ship code during the Phase 1 freeze.** Wait for 5+ clean trades (revised down from 10 on 2026-05-13).
 - **Do not remove `paper=True`** without an explicit user sign-off + the written rules-of-engagement doc.
 - **Do not introduce a tests directory in Phase 1.** Phase 2 may.
 - **Do not consume MACRO in Phase 1.** Phase 2+ candidate.
@@ -159,7 +159,7 @@ From [TODO.md](../TODO.md) "Lessons from Phase 1":
 
 ## Design fork points (hand back to Opus 4.7 when reached)
 
-- **End of Phase 1 (~10 trades):** review trade distribution. Decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
+- **End of Phase 1 (~5 trades):** review trade distribution. Decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
 - **Surprise in results:** if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
 - **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
 - **Phase 2 → Phase 3:** writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.

@@ -19,7 +19,7 @@ status: 'complete'
 **Date:** 2026-05-13
 **Project:** tactical_markets_trading
 **Scope:** Phase 2 implementation readiness (post-Phase-1-freeze)
-**Verdict:** ✅ **READY** — Phase 2 implementation may begin once Phase 1 freeze lifts (≥10 clean Phase 1 trades).
+**Verdict:** ✅ **READY** — Phase 2 implementation may begin once Phase 1 freeze lifts (≥5 clean Phase 1 trades; lowered from 10 on 2026-05-13).
 
 ---
 
@@ -261,7 +261,7 @@ N/A — no database. New `data/*.json` files (`account_state.json`, `macro_weigh
 
 ### Readiness Verdict: ✅ **READY**
 
-Phase 2 implementation may begin when Phase 1 freeze lifts (≥10 clean Phase 1 trades).
+Phase 2 implementation may begin when Phase 1 freeze lifts (≥5 clean Phase 1 trades; lowered from 10 on 2026-05-13).
 
 ### Decision matrix
 
@@ -282,13 +282,13 @@ Phase 2 implementation may begin when Phase 1 freeze lifts (≥10 clean Phase 1 
 
 ### Pre-implementation prerequisites (NOT scope of this report, but blocking)
 
-1. **Phase 1 freeze must lift** before any Phase 2 code lands. Status as of 2026-05-13: per TODO.md, "First scheduled fires today" was 2026-05-08. Whether the freeze has actually accumulated ≥10 clean trades by 2026-05-13 is a separate operational question being investigated.
+1. **Phase 1 freeze must lift** before any Phase 2 code lands. Status as of 2026-05-13: per TODO.md, "First scheduled fires today" was 2026-05-08. Graduation gate lowered from 10 → 5 clean trades on 2026-05-13 after investigation revealed MICRO's persistent XLK signal plus a stricter-than-spec dedup check were stalling Phase 1 at 1 trade. Dedup fix (commit `50e31d5`) + lower gate puts Phase 1 graduation within ~1-2 weeks.
 2. **MACRO `weights_hash` allow-list bootstrap** — Story 1b.2 requires `data/macro_weights_allowlist.json` to exist with at least the current MACRO weights_hash. This is a one-time manual step before Phase 2 entries can run; document this as a Phase 2 launch checklist item.
 
 ### Recommended next actions
 
 1. **Resolve Phase 1 trade-count concern** (operational, not planning) — investigate why only ~1 trade has accumulated after 5 days; may indicate a scheduler/MICRO-signal/execution issue that needs to be addressed before Phase 2 even makes sense.
-2. **Once Phase 1 freeze lifts** (10+ clean trades or operational issues resolved), use `/bmad-create-story` to produce dev-ready story files starting with **Epic 1a Story 1a.1** (pure-function `compute_stop_price` — lowest-risk first commit to validate the new dev flow).
+2. **Once Phase 1 freeze lifts** (5+ clean trades or operational issues resolved), use `/bmad-create-story` to produce dev-ready story files starting with **Epic 1a Story 1a.1** (pure-function `compute_stop_price` — lowest-risk first commit to validate the new dev flow).
 3. **MVW Phase 2.0 ship order** (per architecture and party-mode recommendation):
    - 1a.1 → 1a.2 → 1a.3 → 1a.4 → 1a.5 (broker stops shipped end-to-end first; validate via paper trading)
    - 1b.1 → 1b.2 → 1b.3 (MACRO consumer in place, no wiring yet)

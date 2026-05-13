@@ -1,6 +1,6 @@
 # Architecture
 
-**Generated:** 2026-05-13 (deep scan). Reflects Phase 1 as built — frozen until 10+ trades validate.
+**Generated:** 2026-05-13 (deep scan). Reflects Phase 1 as built — frozen until 5+ trades validate (lowered from 10 on 2026-05-13).
 
 This is the **current-state** architecture document. The forward-looking architecture (Phase 2 risk-management features, MACRO consumption, Phase 3 live capital) is **not** captured here — write it in a separate `architecture-phase-2.md` or via the `bmad-create-architecture` workflow, layered on top of this baseline.
 
@@ -10,7 +10,7 @@ This is the **current-state** architecture document. The forward-looking archite
 
 Single-entrypoint batch CLI. Three Windows Scheduled Tasks fire in sequence each weekday morning: **Wake (08:20)** → **Entry (08:35)** → **Exit (08:40)** all CDT. The Entry task reads a tactical thesis from `../tactical_markets/data/theses.jsonl`, submits one market BUY order via Alpaca's paper-trading API, and logs the entry record. The Exit task scans the trade ledger for positions whose 5-trading-day hold window has expired, market-sells them, and captures benchmark returns (SPY + the original thesis's sell-leg) post-fill.
 
-The architecture is deliberately minimal. There is no signal generation, no risk engine, no portfolio optimizer, no dashboard. The goal is to **prove the simplest possible execution loop works end-to-end**, accumulate ≥10 clean trades, and only then design Phase 2 enrichments (stops, risk-based sizing, MACRO consumption, multi-strategy routing) against real data.
+The architecture is deliberately minimal. There is no signal generation, no risk engine, no portfolio optimizer, no dashboard. The goal is to **prove the simplest possible execution loop works end-to-end**, accumulate ≥5 clean trades, and only then design Phase 2 enrichments (stops, risk-based sizing, MACRO consumption, multi-strategy routing) against real data.
 
 ---
 
@@ -89,7 +89,7 @@ These were debated and settled in the 2026-05-08 design pass. **Do not re-open w
 | Sizing | **Fixed $10k per trade** (10% of account, fractional shares via Alpaca `notional`) | No stops in Phase 1 → can't compute risk-based sizing. Fixed dollar makes per-trade P&L directly comparable. |
 | Order type | **Market orders** at entry AND exit | Slippage optimization deferred. Execution simplicity > marginal bps savings during validation. |
 | Hold | **5 trading days** (NYSE-aware) | Matches the documented sector-rotation mean-reversion window (3-7 days). |
-| Stops / targets | **None** | Phase 1 characterizes the signal. Stops introduce a confound (where do you set them?) that contaminates validation. After ~10 trades the drawdown distribution will be visible and stops can be sized empirically. |
+| Stops / targets | **None** | Phase 1 characterizes the signal. Stops introduce a confound (where do you set them?) that contaminates validation. After ~5 trades the drawdown distribution will be visible and stops can be sized empirically. |
 | Concurrency | Up to **5 overlapping positions** | Steady state ≈ 50% deployed, 50% cash. Caps over-concentration. |
 | Benchmarks | At exit, capture (a) SPY return and (b) sell-leg ticker return over the same window | (b) lets us reconstruct the pair-trade Sharpe post-hoc, even though we never short. |
 | Approval | **Fully automated** (no manual click-to-execute) | Tests the signal, not Rekwa's discretionary judgment. Manual approval reintroduces contamination. |
@@ -201,7 +201,7 @@ No dependencies on the sibling projects (verified by absence of cross-project Py
 
 From [TODO.md](../TODO.md) "Design fork points":
 
-- After ~10 clean trades: review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
+- After ~5 clean trades: review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
 - Trading-day calendar edge cases: long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
 - Surprise in results: if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
 - Phase 2 → Phase 3: writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.

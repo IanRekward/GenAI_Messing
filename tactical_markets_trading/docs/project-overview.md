@@ -1,7 +1,7 @@
 # tactical_markets_trading — Project Overview
 
 **Generated:** 2026-05-13 by `bmad-document-project` (deep scan)
-**Status:** Phase 1 live (paper trading); frozen until 10+ trades execute cleanly.
+**Status:** Phase 1 live (paper trading); frozen until 5+ trades execute cleanly (lowered from 10 on 2026-05-13).
 
 ---
 
@@ -15,7 +15,7 @@ It is the third in a trio of sibling projects:
 |---|---|---|
 | [`market_dashboard`](../../market_dashboard/) | **MACRO** — strategic stress dashboard (11-bucket composite, regime detection) | Production; daily 7:30 AM |
 | [`tactical_markets`](../../tactical_markets/) | **MICRO** — premarket tactical signal generator (sector rotation) | Week-1 live; daily 6:30 AM ET |
-| `tactical_markets_trading` (this) | **EXECUTION** — Alpaca paper-trading layer | Phase 1 live; daily 8:35/8:40 AM CDT; frozen until 10+ trades |
+| `tactical_markets_trading` (this) | **EXECUTION** — Alpaca paper-trading layer | Phase 1 live; daily 8:35/8:40 AM CDT; frozen until 5+ trades |
 
 Integration is **files-on-disk only** — no Python imports across siblings. This project reads `../tactical_markets/data/theses.jsonl` for entry signals. MACRO is **not consumed in Phase 1** (deferred to Phase 2 for regime size-down).
 

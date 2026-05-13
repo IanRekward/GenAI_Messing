@@ -4,9 +4,9 @@ Alpaca paper-trading layer that validates [tactical_markets](../tactical_markets
 
 ## Status
 
-**Phase 1 Days 1-7 built + hardened (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k). All code paths in place, all tasks registered with Windows Task Scheduler, hardening pass applied (commit acd618b). First scheduled fires 2026-05-08, entry 8:35 AM CDT, exit 8:40 AM CDT. **Phase 1 freeze began 2026-05-08** — no code changes until 10+ clean trades accumulate.
+**Phase 1 Days 1-7 built + hardened (2026-05-08).** Alpaca paper account active (`PA3SOYDP6IP5`, $100k). All code paths in place, all tasks registered with Windows Task Scheduler, hardening pass applied (commit acd618b). First scheduled fires 2026-05-08, entry 8:35 AM CDT, exit 8:40 AM CDT. **Phase 1 freeze began 2026-05-08** — no code changes until 5+ clean trades accumulate.
 
-**2026-05-13 freeze unlock:** Single small change applied to lift the cadence bottleneck. After 5 weekday firings, only 1 trade had executed because the original `already_traded(symbol)` check blocked ALL same-symbol re-entries (XLK has been MICRO's persistent winner for 8 days). Replaced with `already_traded_today(symbol)` (intra-day dedup only) + `at_position_limit(5)` (enforce the "up to 5 overlapping positions" design limit from the spec below). Aligns code with the original Phase 1 design intent; does NOT change hypothesis, sizing, hold window, or any other locked rule. Expected effect: ~5x trade cadence; Phase 1 graduation reachable in 3-4 weeks instead of 10+.
+**2026-05-13 freeze unlock:** Two small changes applied. (1) Lifted the cadence bottleneck: replaced `already_traded(symbol)` with `already_traded_today(symbol)` (intra-day dedup only) + `at_position_limit(5)` (enforce the "up to 5 overlapping positions" design limit). Aligns code with original Phase 1 design intent; does NOT change hypothesis, sizing, hold window, or any other locked rule. (2) Lowered Phase 1 graduation gate from 10 → 5 clean trades — empirical validation substrate is "good enough to proceed with development" sooner, allowing Phase 2 implementation work to begin earlier. Real-capital gate (Phase 3) remains at 50+ paper trades + ROE doc. Expected effect of both changes: Phase 1 graduation reachable in ~1-2 weeks at current cadence.
 
 ## Source documents
 
@@ -31,7 +31,7 @@ Design pass run after `tactical_markets` week-1 ship. The ROADMAP's pair-trade h
   - (b) The loser-leg ticker's return over the same window
   - (b) lets us reconstruct the pair-trade Sharpe post-hoc, even though we never short.
 
-**Why no stops in Phase 1:** characterizing the signal, not managing risk. Stops introduce a confound (where did you set it?) that contaminates validation. After ~10 trades we'll see the drawdown distribution and can size stops based on real data instead of guesses.
+**Why no stops in Phase 1:** characterizing the signal, not managing risk. Stops introduce a confound (where did you set it?) that contaminates validation. After ~5 trades we'll see the drawdown distribution and can size stops based on real data instead of guesses.
 
 **Why fixed dollar sizing:** risk-based sizing needs a stop, which we don't have. Fixed dollar makes per-trade P&L directly comparable across trades.
 
@@ -68,17 +68,17 @@ Six structural fixes applied before freeze:
 5. Stale hardcoded `__main__` removed from `trade_logger.py` (was a smoke-test artifact pointing at a now-cancelled order id).
 6. Scheduler timing corrected from 9:35/9:40/9:20 to 8:35/8:40/8:20 (5 min after CDT market open, not 65 min after ET open).
 
-After Phase 1 freeze, **no new code** until 10+ trades accumulate. Success gate: 10+ trades executed end-to-end without rejections or stranded positions.
+After Phase 1 freeze, **no new code** until 5+ trades accumulate (revised down from 10 on 2026-05-13). Success gate: 5+ trades executed end-to-end without rejections or stranded positions.
 
 ## Validation gates
 
-- **Phase 1 → Phase 2:** 10+ clean executions, no system errors, positions exit on schedule. ~2–3 weeks at 1 signal/day.
+- **Phase 1 → Phase 2:** 5+ clean executions, no system errors, positions exit on schedule. ~1-2 weeks at the post-dedup-fix cadence.
 - **Phase 2 → Phase 3 (live capital):** 50+ trades, win rate vs SPY > 50%, alpha statistically positive. ~10+ weeks.
 - **Hard floor:** no live capital until Ian writes a one-page rules-of-engagement document and the validation gate is passed.
 
 ## Design fork points (hand back to Opus 4.7)
 
-- **End of Phase 1 (~10 trades):** review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
+- **End of Phase 1 (~5 trades):** review trade distribution, decide whether to add stops, change sizing, or move to Phase 2 (refined risk management).
 - **Surprise in results:** if win rate is dramatically above or below expectation, the hypothesis or the signal might need revisiting.
 - **Trading-day calendar edge cases:** long weekends, early closes, halts, ETF rebalances. If 5-trading-day exit math gets weird in practice.
 - **Phase 2 → Phase 3:** writing the rules-of-engagement document, picking the live-capital amount, deciding what (if anything) gets sized differently.

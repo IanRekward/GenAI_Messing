@@ -8,7 +8,7 @@ Primary entry point for AI-assisted development on this project.
 - **Type:** monolith
 - **Primary Language:** Python 3.14
 - **Architecture:** single-entrypoint batch CLI, scheduled via Windows Task Scheduler; append-only JSONL persistence
-- **Status:** Phase 1 live; daily 8:35/8:40 AM CDT firings; **FROZEN until 10+ trades validate**
+- **Status:** Phase 1 live; daily 8:35/8:40 AM CDT firings; **FROZEN until 5+ trades validate** (lowered from 10 on 2026-05-13)
 
 ## Quick Reference
 
@@ -61,7 +61,7 @@ These are the two upstream projects this bot integrates with. Their docs define 
 ### For Rekwa (the user)
 
 1. Watch Pushover at 08:35 / 08:40 CDT on weekdays — entry and exit notifications.
-2. After 10+ clean trades, Phase 1 freeze lifts and Phase 2 design opens.
+2. After 5+ clean trades, Phase 1 freeze lifts and Phase 2 design opens.
 3. After 50+ paper trades validated + rules-of-engagement doc written, Phase 3 (live capital) becomes possible.
 
 ## Brownfield PRD note
