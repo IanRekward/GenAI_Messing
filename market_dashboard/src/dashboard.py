@@ -555,13 +555,26 @@ def _build_signal_quality_card(
         f'</div>'
     )
 
+    rerun_btn = (
+        f'<a href="https://github.com/IanRekward/GenAI_Messing/actions/workflows/on-demand-dashboard.yml"'
+        f' target="_blank" rel="noopener"'
+        f' style="font-size:.75rem;color:#8b949e;text-decoration:none;'
+        f'border:1px solid #30363d;border-radius:4px;padding:2px 8px;'
+        f'white-space:nowrap">&#8635; Re-run on GitHub</a>'
+    )
     report_link = ""
     if REPORT_PATH.exists():
         report_link = (
-            f'<div style="text-align:right;margin-top:8px;font-size:.78rem">'
+            f'<div style="display:flex;justify-content:space-between;'
+            f'align-items:center;margin-top:8px;font-size:.78rem">'
+            f'{rerun_btn}'
             f'<a href="backtest_report.html" target="_blank" '
             f'style="color:#58a6ff;text-decoration:none">'
             f'View full backtest report →</a></div>'
+        )
+    else:
+        report_link = (
+            f'<div style="margin-top:8px;font-size:.78rem">{rerun_btn}</div>'
         )
 
     # Data alignment checks
