@@ -3,7 +3,7 @@ HTML dashboard generation.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -131,6 +131,37 @@ def _load_yaml(path: str, key: str | None = None, default=None):
         return data.get(key, default if default is not None else {}) if key else data
     except Exception:
         return default if default is not None else {}
+
+
+_WEEKDAY_MAP = {
+    "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
+    "friday": 4, "saturday": 5, "sunday": 6,
+}
+
+
+def _load_release_schedule() -> dict:
+    return _load_yaml("config/release_schedule.yaml")
+
+
+def _next_release_label(ikey: str, today: date | None = None) -> str:
+    """Return 'next release est. ...' string for a stale indicator with a known schedule."""
+    if today is None:
+        today = date.today()
+    entry = _load_release_schedule().get(ikey)
+    if not entry:
+        return ""
+    cadence = entry.get("cadence", "")
+    if cadence == "weekly":
+        target_wd = _WEEKDAY_MAP.get(entry.get("day", "").lower())
+        if target_wd is None:
+            return ""
+        days_until = (target_wd - today.weekday()) % 7 or 7
+        next_dt = today + timedelta(days=days_until)
+        return f"next release est. {next_dt.strftime('%a %b %d')}"
+    if cadence == "monthly":
+        timing = entry.get("timing", "~monthly")
+        return f"next release est. {timing}"
+    return ""
 
 
 def _load_events() -> list:
@@ -830,23 +861,34 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     stale_keys = set(scoring.get("stale_indicators", []))
     staleness_banner = ""
     if stale_keys:
-        stale_labels = [
-            ind["label"]
+        stale_items = [
+            (ik, ind["label"])
             for bkt in scoring["buckets"].values()
             for ik, ind in bkt["indicators"].items()
             if ik in stale_keys
         ]
-        n = len(stale_labels)
+        n = len(stale_items)
         sev_color = "#ff4444" if n >= 3 else "#ffcc00"
         sev_bg = "#2e0d0d" if n >= 3 else "#2e2800"
-        label_list = ", ".join(stale_labels[:6]) + (" +more" if n > 6 else "")
+        today = date.today()
+        rows_html = ""
+        for ikey, label in stale_items[:6]:
+            next_rel = _next_release_label(ikey, today)
+            rel_html = (
+                f'<span style="color:#6e7681;font-size:.78rem"> — {next_rel}</span>'
+                if next_rel else ""
+            )
+            rows_html += f'<div style="margin:2px 0">&bull; {label}{rel_html}</div>'
+        if n > 6:
+            rows_html += f'<div style="color:#6e7681;font-size:.78rem">+{n - 6} more</div>'
         staleness_banner = (
             f'<div style="background:{sev_bg};border:1px solid {sev_color};'
             f'border-radius:6px;padding:10px 16px;margin-bottom:14px;font-size:.82rem">'
             f'<span style="color:{sev_color};font-weight:700">&#9888; STALE DATA</span>'
             f'<span style="color:#c9d1d9;margin-left:8px">'
-            f'{n} indicator{"s" if n != 1 else ""} may be behind schedule: {label_list}'
-            f"</span></div>"
+            f'{n} indicator{"s" if n != 1 else ""} may be behind schedule:</span>'
+            f'<div style="margin-top:6px;color:#c9d1d9">{rows_html}</div>'
+            f"</div>"
         )
 
     bucket_health_card = _build_bucket_health_card(scoring, history)

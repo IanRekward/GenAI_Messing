@@ -1,0 +1,28 @@
+# Release schedules for indicators that update weekly or monthly.
+# Used to show "next release est. DATE" in the staleness banner.
+# Only include indicators where staleness = publication lag, not a fetch error.
+# Daily-updating series (yfinance, daily FRED) are omitted — stale there = fetch issue.
+
+stlfsi:
+  cadence: weekly
+  day: friday
+
+nfci:
+  cadence: weekly
+  day: friday
+
+jobless_claims:
+  cadence: weekly
+  day: thursday
+
+usd_index:
+  cadence: weekly
+  day: tuesday
+
+cpi_yoy:
+  cadence: monthly
+  timing: "~2nd–3rd Tuesday (BLS)"
+
+unemployment:
+  cadence: monthly
+  timing: "~1st Friday (NFP/BLS)"
