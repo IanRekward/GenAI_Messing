@@ -242,7 +242,7 @@ preserve Ian's numbering when committing so the trail back to this list is clear
 - [x] **As-of dates on Overnight News Brief** *(shipped 2026-04-29)*
   `news.py` captures `published_parsed`/`updated_parsed` from feedparser; renders as "Source · Apr 30:" label on each bullet.
 
-- [ ] **G8 — Dashboard section reorder (Ian, 2026-05-15)** *(Sonnet-ready)*
+- [x] **G8 — Dashboard section reorder (Ian, 2026-05-15)** *(commit 74abba1)*
   Move four sections — **Historical Analogues**, **Cross-bucket correlation**, **Model Calibration**, and **90-day Composite trend** — to where the **Overnight News Brief** currently renders, preserving the listed order. Move **Overnight News Brief** to immediately below the **AI Narrative Summary**. Single-file edit in `src/dashboard.py`; confirm current render sequence first (the existing G4 reorder moved News after the bucket grid and Analogies after the narrative — this supersedes that placement for both). No config / data / test changes expected unless a layout test asserts ordering.
 
 ---
