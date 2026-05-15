@@ -1097,14 +1097,14 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
   </details>
   {action_row}
   {narrative_card}
+  {news_html}
+  {calendar_card}
+  <div style="font-size:.9rem;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Signal Buckets &mdash; 11 Categories</div>
+  <div class="bucket-grid">{buckets_html}</div>
   {analog_card}
   {correlation_card}
   {signal_quality_card}
   {trend_card}
-  {calendar_card}
-  <div style="font-size:.9rem;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px">Signal Buckets &mdash; 11 Categories</div>
-  <div class="bucket-grid">{buckets_html}</div>
-  {news_html}
   <div class="card detail-section">
     <h2 style="margin-bottom:10px">Indicator Details</h2>
     {detail_blocks}
