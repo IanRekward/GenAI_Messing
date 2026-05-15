@@ -140,8 +140,8 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   yoy_series transform, three new threshold blocks, three new tooltips, three
   new tests. Bucket label stays "Commodities & Energy".
 
-- [ ] **Regime-weights review checkpoint** *(due 2026-05-30)*
-  Run `python -m src.recalibrate --regime` and check history.csv for regime distribution and composite vs composite_naive divergence. Decision criteria: (a) at least one high-regime episode where composite_regime > composite_naive and divergence made sense, (b) IC table still shows rates_curve and inflation positive in high regime, (c) no frequent regime flapping. If criteria met, flip `regime_weights.enabled: true` in config/weights.yaml and tell Sonnet to commit.
+- [ ] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(due 2026-05-30 — Brief 26 in ROADMAP.md)*
+  Full procedure in [ROADMAP.md Brief 26](ROADMAP.md#brief-26--regime-weights-review-530--w1-paired-commit-protocol). Bundled with the bot's W1 coordination ask — if the gate passes and `enabled` flips, Part B of the brief is the paired-commit playbook with `tactical_markets_trading/data/macro_weights_allowlist.json`. Decision gate (criteria a/b/c) is unchanged from the original checkpoint; both "flip" and "defer" outcomes are valid. Brief 26 Part B is reusable for any future `weights.yaml` change.
 
 ### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 
@@ -241,6 +241,9 @@ preserve Ian's numbering when committing so the trail back to this list is clear
 
 - [x] **As-of dates on Overnight News Brief** *(shipped 2026-04-29)*
   `news.py` captures `published_parsed`/`updated_parsed` from feedparser; renders as "Source · Apr 30:" label on each bullet.
+
+- [ ] **G8 — Dashboard section reorder (Ian, 2026-05-15)** *(Sonnet-ready)*
+  Move four sections — **Historical Analogues**, **Cross-bucket correlation**, **Model Calibration**, and **90-day Composite trend** — to where the **Overnight News Brief** currently renders, preserving the listed order. Move **Overnight News Brief** to immediately below the **AI Narrative Summary**. Single-file edit in `src/dashboard.py`; confirm current render sequence first (the existing G4 reorder moved News after the bucket grid and Analogies after the narrative — this supersedes that placement for both). No config / data / test changes expected unless a layout test asserts ordering.
 
 ---
 

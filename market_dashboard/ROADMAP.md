@@ -3874,3 +3874,209 @@ clear benefit at single-user scale). Recommended path when ready:
 commit back to repo, .gitignore the cache files, accept the public
 history as a feature not a bug. Defer this decision until Phase H is
 proven reliable.
+
+---
+
+## Brief 26 — Regime-weights review (5/30) + W1 paired-commit protocol
+
+Produced by Opus 4.7 on 2026-05-15. Two deliverables, intentionally bundled:
+(1) the 5/30 regime-weights review decision, (2) a reusable W1 protocol for
+any future `weights_hash` change. The W1 half is generic — copy/paste for
+any subsequent recalibration; the 5/30 half is the first invocation.
+
+### Why bundle them
+
+The 5/30 checkpoint is the first event that exercises the W1 contract with
+the trading bot. Working out the protocol mid-decision is the wrong time;
+locking it in *before* the data review removes one source of pressure on the
+day. The W1 half outlives 5/30 — it's the playbook for every recalibration.
+
+### Locked decisions (do not relitigate on 5/30)
+
+- **Allow-list update lives in the bot repo, not MACRO.** MACRO ships the
+  weights change; the bot's `data/macro_weights_allowlist.json` records the
+  human review. This matches the bot's AR12 ("forces human review when MACRO
+  recalibrates"). MACRO does not modify the bot's allow-list — it provides
+  the hash and the diff summary; Ian (or whoever runs the review) edits the
+  bot file.
+- **Paired commits, not atomic.** The two repos are siblings, not a
+  monorepo. The protocol sequences the commits so the window where MACRO has
+  shipped a new hash but the bot hasn't allow-listed it is minimized — but
+  it is non-zero. The bot is designed to block-not-crash in that window,
+  which is the correct failure mode.
+- **No automation of the bot allow-list.** The human review is the point.
+  Don't script around it.
+- **`weights_hash` is MD5 of the file bytes, first 8 hex chars.** Defined in
+  `src/history.py:_weights_hash()`. Any byte change to `config/weights.yaml`
+  produces a new hash — including whitespace and comments. Treat YAML
+  comment edits as a hash-changing operation.
+
+### Part A — The 5/30 regime-weights review decision
+
+**Trigger:** the 2026-05-30 entry in TODO.md Phase E.
+
+**Steps:**
+
+1. Catch up: `cd /c/Users/rekwa/ian_projects/_genai_tmp && git log --oneline -10`.
+2. Run the report: `python -m src.recalibrate --regime`. This prints a
+   proposed `regime_weights:` YAML block to stdout. Do **not** write it
+   anywhere yet.
+3. Inspect `data/history.csv` for regime distribution since 2026-04-25
+   (when Brief 10A landed). Specifically:
+   - `regime` column populated on every row (sanity check)
+   - At least one stretch where `regime=high` (otherwise we have no
+     evidence the regime layer would have done anything different)
+   - `composite_regime_weighted` vs `composite_naive` divergence on those
+     high-regime rows: is the divergence small (<3 points) and in a
+     defensible direction?
+4. Inspect `output/backtest_report.html` per-regime IC table (Brief 10B
+   wired it). Look for: rates_curve and inflation IC positive in high
+   regime; no bucket flipping sign across regimes (a sign-flip suggests
+   the regime layer is amplifying noise, not signal).
+5. **Decision gate — flip `regime_weights.enabled: true` only if ALL of:**
+   - (a) ≥1 high-regime episode with sensible divergence direction
+   - (b) per-regime IC table shows rates_curve and inflation positive in
+     high regime
+   - (c) `regime` column doesn't flap (≤3 transitions across the May
+     review window — Brief 10A applied 5-day smoothing + 1.0 VIX
+     hysteresis specifically to prevent flapping; if it's still flapping,
+     the classifier needs tightening, not the multipliers)
+6. **If the gate fails:** leave `enabled: false`, note the failing
+   criterion in TODO.md, schedule a re-review (suggest +30 days). No bot
+   coordination needed — hash unchanged.
+7. **If the gate passes:** proceed to Part B (the W1 protocol below) using
+   the proposed YAML block from step 2.
+
+### Part B — W1 paired-commit protocol (reusable for any hash-changing weights edit)
+
+This is the playbook. Save this section; reuse for any future change to
+`config/weights.yaml`. Steps assume you're starting from a clean tree on
+both repos.
+
+1. **Edit `config/weights.yaml` in the primary dir** (`market_dashboard/`).
+   Apply the change. Do not commit yet.
+2. **Compute the new hash** before doing anything else:
+   ```bash
+   cd /c/Users/rekwa/ian_projects/market_dashboard && \
+     python -c "import hashlib; print(hashlib.md5(open('config/weights.yaml','rb').read()).hexdigest()[:8])"
+   ```
+   Save the 8-char string. Call it `NEW_HASH`.
+3. **Capture a one-line diff summary** for the bot's allow-list record.
+   Example: `"5/30 regime review: enabled flipped true; high-regime
+   multipliers unchanged from Option A"`. Keep it under ~100 chars.
+4. **Update the bot's allow-list** at
+   `tactical_markets_trading/data/macro_weights_allowlist.json`. Append
+   `NEW_HASH` to `allowed_hashes[]` and add a sibling structured record
+   keyed by hash. Use this shape (the existing file's `_bootstrap_*`
+   keys are the precedent):
+   ```json
+   {
+     "_comment": "...",
+     "_bootstrap_date": "2026-05-13",
+     "_bootstrap_source": "...",
+     "allowed_hashes": ["2532e380", "<NEW_HASH>"],
+     "review_log": {
+       "<NEW_HASH>": {
+         "added_date": "<YYYY-MM-DD>",
+         "added_by": "<reviewer>",
+         "macro_commit_preview": "<short SHA if known, else 'pending'>",
+         "summary": "<one-line diff summary from step 3>"
+       }
+     }
+   }
+   ```
+   First invocation creates the `review_log` block; subsequent invocations
+   add a new key under it. The bot reads only `allowed_hashes[]` — the
+   `review_log` is human audit context. Do not remove old hashes; the bot
+   may see them in historical `latest.json` files referenced in
+   `trades.jsonl`.
+5. **Sync MACRO changes to `_genai_tmp/`** per CLAUDE.md two-repo workflow:
+   ```bash
+   cp market_dashboard/config/weights.yaml \
+      _genai_tmp/market_dashboard/config/weights.yaml
+   ```
+6. **Run MACRO dry-run** to verify the new hash is what shows up in
+   `latest.json`:
+   ```bash
+   cd /c/Users/rekwa/ian_projects/market_dashboard && \
+     python run_dashboard.py --no-cache --no-news --no-alerts --quiet && \
+     python -c "import json; d=json.load(open('data/latest.json')); print(d['weights_hash'])"
+   ```
+   The printed hash must equal `NEW_HASH`. If not, stop and diagnose
+   before committing anything.
+7. **Commit MACRO first** (the producer of the new hash):
+   ```bash
+   cd /c/Users/rekwa/ian_projects/_genai_tmp && \
+     git add market_dashboard/config/weights.yaml && \
+     git commit -m "market_dashboard: <change description> (weights_hash NEW_HASH)" && \
+     git push origin main
+   ```
+   Including `NEW_HASH` in the commit subject lets the bot allow-list
+   record reference back to the producing commit.
+8. **Commit the bot allow-list second**, immediately:
+   ```bash
+   cd /c/Users/rekwa/ian_projects/_genai_tmp && \
+     git add tactical_markets_trading/data/macro_weights_allowlist.json && \
+     git commit -m "tactical_markets_trading: allow-list weights_hash NEW_HASH (<one-line summary>)" && \
+     git push origin main
+   ```
+9. **Verify the bot won't block.** From the bot side:
+   ```bash
+   cd /c/Users/rekwa/ian_projects/tactical_markets_trading && \
+     python -c "import json; print('<NEW_HASH>' in json.load(open('data/macro_weights_allowlist.json'))['allowed_hashes'])"
+   ```
+   Expected: `True`.
+
+### Skipping the protocol — when NOT to invoke
+
+Not every YAML edit needs the bot dance. Skip the protocol when:
+
+- The change is to a non-weights YAML (thresholds, tooltips, events). The
+  hash MD5s only `config/weights.yaml`.
+- A purely-formatting edit was reverted before commit (hash didn't actually
+  change on disk).
+
+Invoke the protocol when:
+
+- Any byte of `config/weights.yaml` changes (including whitespace or YAML
+  comments — they affect MD5).
+- A new indicator/bucket is added, removed, or reweighted.
+- `regime_weights.enabled` is flipped or any multiplier changes.
+
+### Edge cases
+
+- **Bot hasn't wired MACRO consumption yet (today's state).** Per
+  bot-integration-asks.md, `macro_consumer.py` is committed but not yet
+  in the entry flow. The allow-list update is still required — the bot's
+  Phase 2 wiring will read it the moment it ships. Don't defer.
+- **Two recalibrations in one day.** Run the protocol twice; allow-list
+  accumulates both new hashes. Avoid this if possible by batching.
+- **Hash collision with a prior recalibration** (extremely unlikely with
+  MD5/8 hex). If `NEW_HASH` is already in `allowed_hashes[]`, you've
+  somehow produced byte-identical YAML to a prior version — investigate
+  before pushing. Either you reverted by accident, or there's a real
+  collision to investigate.
+- **CI/laptop drift on hash.** `_weights_hash()` reads the file from the
+  process cwd, so different machines will produce the same hash for the
+  same file bytes. Windows line endings have not been an issue (git's
+  `core.autocrlf` keeps `\n` in the working tree on this repo) — but if
+  a future `latest.json` shows an unexpected hash, check
+  `git diff config/weights.yaml` first.
+
+### Files touched (5/30 invocation, if gate passes)
+
+- `config/weights.yaml` — flip `regime_weights.enabled: true`, possibly
+  refresh multipliers from `recalibrate --regime` output
+- `tactical_markets_trading/data/macro_weights_allowlist.json` — new
+  hash + review_log entry
+- `TODO.md` — mark 5/30 checkpoint complete; link to commit SHA
+
+### Success criteria
+
+- 5/30 review decision recorded in TODO.md (flipped or deferred — both
+  are valid outcomes, the gate is what matters)
+- If flipped: bot allow-list contains the new hash before the next bot
+  run; `latest.json` `weights_hash` matches; no `MacroValidationError`
+  in bot logs on next consumption
+- Protocol section above is reusable verbatim for the next recalibration
+  (no Brief-26-specific assumptions baked in)
