@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -79,13 +80,17 @@ def generate(universe_path: Path, thresholds_path: Path) -> list[dict]:
             f"{buy} above 20d MA (${buy_price:.2f} vs ${buy_ma:.2f}), trend confirmed."
         )
 
+        confidence = round(1 / (1 + math.exp(-(spread_pct - 1.5) / 2.0)), 3)
+
         results.append({
             "signal": True,
+            "signal_type": "sector_rotation",
             "buy": buy,
             "sell": sell,
             "buy_momentum_pct": round(buy_pct, 2),
             "sell_momentum_pct": round(sell_pct, 2),
             "spread_pct": round(spread_pct, 2),
+            "confidence": confidence,
             "buy_price": round(buy_price, 2),
             "buy_ma": round(buy_ma, 2),
             "thesis": thesis,

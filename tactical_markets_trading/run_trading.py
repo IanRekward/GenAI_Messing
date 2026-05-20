@@ -14,15 +14,15 @@ from order_builder import THESES_PATH, submit_order
 from trade_logger import log_entry
 
 
-def today_signal():
+def today_signals() -> list[dict]:
     today = datetime.now(timezone.utc).date()
-    last = None
+    results = []
     with open(THESES_PATH) as f:
         for line in f:
             entry = json.loads(line)
             if entry.get("signal") and datetime.fromisoformat(entry["as_of"]).date() == today:
-                last = entry
-    return last
+                results.append(entry)
+    return results
 
 
 def already_traded_today(symbol: str) -> bool:
@@ -54,30 +54,33 @@ def at_position_limit(max_positions: int = 5) -> bool:
 
 
 def main():
-    thesis = today_signal()
-    if thesis is None:
+    theses = today_signals()
+    if not theses:
         print("No signal for today — no trade.")
         return
 
-    symbol = thesis["buy"]
-    if already_traded_today(symbol):
-        print(f"Already submitted a buy for {symbol} today — skipping (intra-day dedup).")
-        return
-    if at_position_limit():
-        print(f"At 5-position concurrency limit — skipping {symbol}.")
-        return
+    for thesis in theses:
+        symbol = thesis["buy"]
 
-    print(f"Signal: BUY {symbol} (spread: {thesis['spread_pct']}%, as_of: {thesis['as_of']})")
-    order_result = submit_order(thesis)
-    print(f"Order submitted: {order_result['order_id']} status={order_result['status']}")
-    record = log_entry(order_result)
-    print(f"Trade logged: {record['trade_id']}")
-    print(f"  Entry: ${record['fill_price']} x {record['fill_qty']} {record['symbol']}")
-    print(f"  Exit planned: {record['exit_time_planned']}")
-    pushover.send(
-        f"Entered {symbol} ${record['notional']:,}",
-        f"Filled {record['fill_qty']:.4f} @ ${record['fill_price']:.2f} | Spread: {thesis['spread_pct']}% | Exit: {record['exit_time_planned'][:10]}",
-    )
+        if already_traded_today(symbol):
+            print(f"Already submitted a buy for {symbol} today — skipping (intra-day dedup).")
+            continue
+
+        if at_position_limit():
+            print(f"At 5-position concurrency limit — skipping {symbol} and remaining theses.")
+            break
+
+        print(f"Signal: BUY {symbol} (spread: {thesis['spread_pct']}%, as_of: {thesis['as_of']})")
+        order_result = submit_order(thesis)
+        print(f"Order submitted: {order_result['order_id']} status={order_result['status']}")
+        record = log_entry(order_result)
+        print(f"Trade logged: {record['trade_id']}")
+        print(f"  Entry: ${record['fill_price']} x {record['fill_qty']} {record['symbol']}")
+        print(f"  Exit planned: {record['exit_time_planned']}")
+        pushover.send(
+            f"Entered {symbol} ${record['notional']:,}",
+            f"Filled {record['fill_qty']:.4f} @ ${record['fill_price']:.2f} | Spread: {thesis['spread_pct']}% | Exit: {record['exit_time_planned'][:10]}",
+        )
 
 
 if __name__ == "__main__":

@@ -52,10 +52,32 @@ Register-ScheduledTask `
 
 Write-Host "Main task registered (05:30 CT = 06:30 ET, with -WakeToRun as backup)."
 
+# --- Watchdog task (fires 90 min after main; alerts if no thesis written today) ---
+$watchdogAction   = New-ScheduledTaskAction `
+    -Execute          $python `
+    -Argument         "watch_tactical.py" `
+    -WorkingDirectory $workDir
+
+$watchdogTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "07:00AM"
+$watchdogSettings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -DontStopIfGoingOnBatteries `
+    -AllowStartIfOnBatteries
+
+Register-ScheduledTask `
+    -TaskName "Tactical Markets Watchdog" `
+    -Action   $watchdogAction `
+    -Trigger  $watchdogTrigger `
+    -Settings $watchdogSettings `
+    -RunLevel Limited `
+    -Force | Out-Null
+
+Write-Host "Watchdog task registered (07:00 CT = 08:00 ET)."
+
 # --- Verify ---
 Write-Host ""
 Write-Host "--- Verification ---"
-foreach ($name in @("Tactical Markets Wake", "Tactical Markets")) {
+foreach ($name in @("Tactical Markets Wake", "Tactical Markets", "Tactical Markets Watchdog")) {
     $t = Get-ScheduledTask -TaskName $name
     Write-Host "${name}:"
     $t.Triggers | Select-Object StartBoundary | Format-List
