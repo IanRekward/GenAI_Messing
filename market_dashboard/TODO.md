@@ -140,20 +140,32 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   yoy_series transform, three new threshold blocks, three new tooltips, three
   new tests. Bucket label stays "Commodities & Energy".
 
-- [ ] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(due 2026-05-30 — Brief 26 in ROADMAP.md)*
-  Full procedure in [ROADMAP.md Brief 26](ROADMAP.md#brief-26--regime-weights-review-530--w1-paired-commit-protocol). Bundled with the bot's W1 coordination ask — if the gate passes and `enabled` flips, Part B of the brief is the paired-commit playbook with `tactical_markets_trading/data/macro_weights_allowlist.json`. Decision gate (criteria a/b/c) is unchanged from the original checkpoint; both "flip" and "defer" outcomes are valid. Brief 26 Part B is reusable for any future `weights.yaml` change.
+- [ ] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(re-review due 2026-06-20 — Brief 26 in ROADMAP.md)*
+  **Gate run 2026-05-20 — DEFERRED.** Criterion (a) failed: every production day since
+  2026-04-25 has been `mid` regime; zero high-regime episodes → cannot verify sensible
+  divergence. Criteria (b) passed (rates_curve +0.180, inflation +0.150 in high) and
+  (c) passed (stable regime column, 7 NaN startup rows not genuine flaps).
+  `enabled` stays false. `weights_hash` unchanged → no bot W1 coordination needed.
+  **Two bugs found to fix before next review (Sonnet-executable, ~1 hour):**
+  1. `composite_regime_weighted` not logged to `history.csv` (Brief 10C gap) — add column
+     to `log_run()` in `src/history.py` so next review has divergence data.
+  2. Recalibrate multiplier logic amplifies anti-signal: negative-IC buckets get 2x
+     multipliers (e.g. `economic_momentum` IC=-0.195 → mult=2.0 in high). Fix: in
+     `propose_regime_weights()`, use `max(ic_val, 0.0)` when computing the IC ratio,
+     so negative-IC buckets always get multiplier=1.0 (neutral).
+  Also found: `_bt_yf` dead import bug in `recalibrate.py` (committed 2026-05-20).
+  Re-review on 2026-06-20 with Brief 26 Part A procedure unchanged.
 
 ### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 
-- [ ] 🅾️ **Paywalled news sources** *(user scope call required — partially superseded 2026-04-27)*
-  **Update:** Opus design pass 2026-04-27 produced **Brief 20 (free
-  wire-service expansion)** as the first move — explicitly rejecting paywall
-  bypass tooling (12ft.io / Bypass Paywalls Clean) on legal + operational +
-  marginal-signal grounds. Ship Brief 20 first; revisit paywalled-source
-  integration only if a real market episode shows the breadth expansion
-  isn't enough. The original "Brief B" alternative (manual override channel
-  via `data/manual_news.json` for Ian's existing WSJ/FT subscriptions)
-  remains available as a follow-on if needed.
+- [x] ~~**Paywalled news sources**~~ *(closed 2026-05-20 — Ian's call)*
+  Brief 20 (free wire-service expansion) shipped and covers the use case. Paywall
+  bypass tooling (12ft.io dead; Bypass Paywalls Clean is browser-only; archive.ph
+  unreliable for recent content; cookie-auth violates ToS and requires manual renewal).
+  Marginal-signal argument: the system does keyword matching on headlines; existing 13
+  feeds already include wire-service content via MarketWatch, Yahoo, Bloomberg, CNBC,
+  FT Global Economy, WSJ Economy. No demonstrated coverage gap. Not pursuing further
+  unless a real market episode shows the free feeds missed something material.
 
 - [x] **Research — find free/reliable Reuters, WSJ, and FT feed alternatives** *(complete 2026-05-01)*
   Findings shipped as 4 new feeds in `config/news_feeds.yaml` (now 13 total: 6 official + 7 publisher).
