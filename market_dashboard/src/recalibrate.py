@@ -139,13 +139,13 @@ def run_recalibration(
     df_subset = pd.read_csv(subset_csv, index_col=0, parse_dates=True)
 
     # Load SPX from backtest cache
-    from src.backtest import _bt_yf
     import os
     from dotenv import load_dotenv
+    from src.fetch import fetch_yfinance_series
     load_dotenv()
     env = dict(os.environ)
 
-    spx = _bt_yf("^GSPC", env)
+    spx = fetch_yfinance_series("^GSPC", env, years=26, cache_subdir="backtest", cache_hours=168)
 
     # Recent = post-2016 (full model), Historical = pre-2016 (subset model)
     split = pd.Timestamp(_SPLIT_DATE)
@@ -265,7 +265,7 @@ def propose_regime_weights(
     Requires the backtest CSV to have a 'regime' column (Brief 10B backtest run).
     """
     from src.evaluation import per_regime_bucket_ic
-    from src.backtest import _bt_yf
+    from src.fetch import fetch_yfinance_series
     import os
     from dotenv import load_dotenv
 
@@ -287,7 +287,7 @@ def propose_regime_weights(
 
     load_dotenv()
     env = dict(os.environ)
-    spx = _bt_yf("^GSPC", env)
+    spx = fetch_yfinance_series("^GSPC", env, years=26, cache_subdir="backtest", cache_hours=168)
 
     print("Computing per-regime bucket IC...")
     ic_df = per_regime_bucket_ic(df, spx, horizon_days=21)
