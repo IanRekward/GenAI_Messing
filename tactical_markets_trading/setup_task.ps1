@@ -68,10 +68,33 @@ Register-ScheduledTask `
 
 Write-Host "Exit task registered."
 
+# --- Benchmark backfill task (runs after close to fill null spy/sell-leg returns) ---
+# 03:45 PM CDT = 04:45 PM ET (45 min after 4:00 PM close; EOD bars need ~15-30 min to materialize)
+$backfillAction   = New-ScheduledTaskAction `
+    -Execute          $python `
+    -Argument         "src\backfill_benchmarks.py" `
+    -WorkingDirectory $workDir
+
+$backfillTrigger  = New-ScheduledTaskTrigger -Daily -At "03:45PM"
+$backfillSettings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -DontStopIfGoingOnBatteries `
+    -AllowStartIfOnBatteries
+
+Register-ScheduledTask `
+    -TaskName "Tactical Trading Backfill Benchmarks" `
+    -Action   $backfillAction `
+    -Trigger  $backfillTrigger `
+    -Settings $backfillSettings `
+    -RunLevel Limited `
+    -Force | Out-Null
+
+Write-Host "Backfill benchmarks task registered."
+
 # --- Verify ---
 Write-Host ""
 Write-Host "--- Verification ---"
-foreach ($name in @("Tactical Trading Wake", "Tactical Trading Entry", "Tactical Trading Exit")) {
+foreach ($name in @("Tactical Trading Wake", "Tactical Trading Entry", "Tactical Trading Exit", "Tactical Trading Backfill Benchmarks")) {
     $t = Get-ScheduledTask -TaskName $name
     Write-Host "${name}:"
     $t.Triggers | Select-Object StartBoundary | Format-List
