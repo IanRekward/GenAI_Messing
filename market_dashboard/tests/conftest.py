@@ -50,8 +50,14 @@ def monthly_series():
 
 
 @pytest.fixture(autouse=True)
-def block_network(monkeypatch):
-    """Fail loudly if any test accidentally touches the network."""
+def block_network(request, monkeypatch):
+    """Fail loudly if any test accidentally touches the network.
+
+    Tests marked @pytest.mark.live are exempt — they need real FRED/yfinance fetches.
+    """
+    if "live" in request.keywords:
+        return
+
     def _no_requests(*args, **kwargs):
         raise RuntimeError("Network access not allowed in tests — use fixtures")
 

@@ -1,8 +1,10 @@
 """Tests for Brief 17 — stale data + data quality auto-remediation."""
 import json
+import os
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 import pytest
+from dotenv import load_dotenv
 
 from src.scoring import compute_composite, load_weights, load_thresholds
 from src.triggers import annotate_results
@@ -12,6 +14,14 @@ from run_dashboard import (
     _indicator_source_type,
     _log_remediation,
 )
+
+
+def _live_env() -> dict:
+    """Build an env dict with .env credentials for live-network tests."""
+    load_dotenv()
+    if not os.environ.get("FRED_API_KEY"):
+        pytest.skip("FRED_API_KEY not set — live network test")
+    return {**os.environ, "CACHE_HOURS": "12"}
 
 
 @pytest.fixture
@@ -29,12 +39,13 @@ def cleanup_alert_log():
             alert_log.unlink()
 
 
+@pytest.mark.live
 def test_remediation_triggers_on_percentile_none():
     """Remediation triggers when percentile: None indicators are present."""
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
     manual = load_manual_overrides()
-    env = {"CACHE_HOURS": "12"}
+    env = _live_env()
 
     # Score normally
     scoring = compute_composite(weights, env, manual)
@@ -70,12 +81,13 @@ def test_remediation_triggers_on_percentile_none():
     assert len(remediation_keys) > 0, "Should have non-computed remediation candidates"
 
 
+@pytest.mark.live
 def test_remediation_triggers_on_stale_indicators():
     """Remediation triggers when stale_indicators is non-empty."""
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
     manual = load_manual_overrides()
-    env = {"CACHE_HOURS": "12"}
+    env = _live_env()
 
     # Score normally
     scoring = compute_composite(weights, env, manual)
@@ -95,6 +107,7 @@ def test_remediation_triggers_on_stale_indicators():
     assert len(remediation_keys) > 0, "Should have non-computed stale candidates"
 
 
+@pytest.mark.live
 def test_remediation_skipped_on_clean_run():
     """No indicators have a failed fetch (percentile=None) on a clean cached run.
 
@@ -106,7 +119,7 @@ def test_remediation_skipped_on_clean_run():
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
     manual = load_manual_overrides()
-    env = {"CACHE_HOURS": "12"}
+    env = _live_env()
 
     scoring = compute_composite(weights, env, manual)
     scoring = annotate_results(scoring, thresholds)
@@ -166,6 +179,7 @@ def test_log_remediation_writes_jsonl(cleanup_alert_log):
     assert rem_lines[-1]["reason"] == "percentile_none"
 
 
+@pytest.mark.live
 def test_history_csv_single_row_per_run():
     """Regression check: history.csv has exactly one row appended per dashboard run."""
     history_csv = Path("data/history.csv")
@@ -177,7 +191,7 @@ def test_history_csv_single_row_per_run():
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
     manual = load_manual_overrides()
-    env = {"CACHE_HOURS": "12"}
+    env = _live_env()
 
     # Single compute + annotate + log_run cycle
     scoring = compute_composite(weights, env, manual)

@@ -288,6 +288,14 @@ save yourself the same mistake. Add to this list when something bites you too.
   mocked out.
 - **Config tests** (`tests/test_config.py`) are the canary for schema drift.
   If you break `validate_config()`, these fail first.
+- **`live` marker for network-required tests.** The default `pytest tests/ -q`
+  excludes `@pytest.mark.live` tests via `pytest.ini` and runs in seconds.
+  Live tests (currently 4 in `test_remediation.py`) hit real FRED + yfinance,
+  load `.env` for `FRED_API_KEY`, and skip cleanly when the key is absent.
+  Run them with `pytest -m live` before publishing or after fetch-layer
+  changes. The `block_network` autouse fixture in `conftest.py` exempts
+  `live`-marked tests; everything else gets `RuntimeError` on any
+  `requests.get`/`yf.download` call.
 
 ---
 
