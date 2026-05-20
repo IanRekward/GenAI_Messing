@@ -15,7 +15,7 @@ _NAMES = {
 }
 
 
-def generate(universe_path: Path, thresholds_path: Path) -> dict | None:
+def generate(universe_path: Path, thresholds_path: Path) -> list[dict]:
     universe = yaml.safe_load(universe_path.read_text())
     thresholds = yaml.safe_load(thresholds_path.read_text())
 
@@ -25,7 +25,6 @@ def generate(universe_path: Path, thresholds_path: Path) -> dict | None:
     ma_window = thresholds["ma_window"]
     hold_days = thresholds["hold_days"]
 
-    # Calendar days needed: ma_window trading days ~= 1.4x calendar days
     lookback = f"{int(ma_window * 1.6) + 10}d"
     raw = yf.download(tickers, period=lookback, auto_adjust=True, progress=False)
 
@@ -37,63 +36,77 @@ def generate(universe_path: Path, thresholds_path: Path) -> dict | None:
     latest = closes.iloc[-1]
     prev_mom = closes.iloc[-(mom_window + 1)]
     momentum = (latest / prev_mom - 1).dropna()
-
     ma = closes.tail(ma_window).mean()
 
     ranked = momentum.sort_values(ascending=False)
-    buy_ticker = ranked.index[0]
-    sell_ticker = ranked.index[-1]
+    as_of = datetime.now(timezone.utc).isoformat()
 
-    buy_mom = ranked.iloc[0]
-    sell_mom = ranked.iloc[-1]
-    spread = buy_mom - sell_mom
+    results: list[dict] = []
+    used_buys: set[str] = set()
+    used_sells: set[str] = set()
 
-    if spread < spread_threshold:
-        return None
+    while True:
+        buy = next((t for t in ranked.index if t not in used_buys), None)
+        sell = next((t for t in reversed(ranked.index) if t not in used_sells), None)
+        if buy is None or sell is None or buy == sell:
+            break
 
-    # Don't trade against longer trend: buy target must be above 20d MA
-    buy_price = latest[buy_ticker]
-    buy_ma = ma[buy_ticker]
-    if buy_price <= buy_ma:
-        return None
+        buy_mom = ranked[buy]
+        sell_mom = ranked[sell]
+        spread = buy_mom - sell_mom
 
-    buy_name = _NAMES.get(buy_ticker, buy_ticker)
-    sell_name = _NAMES.get(sell_ticker, sell_ticker)
-    spread_pct = spread * 100
-    buy_pct = buy_mom * 100
-    sell_pct = sell_mom * 100
+        if spread < spread_threshold:
+            break
 
-    thesis = (
-        f"{buy_ticker} ({buy_name}) {buy_pct:+.1f}% vs "
-        f"{sell_ticker} ({sell_name}) {sell_pct:+.1f}% over {mom_window} days. "
-        f"Spread: {spread_pct:.1f}%. "
-        f"Signal: rotate 5-10% from {sell_ticker} -> {buy_ticker}. "
-        f"Hold {hold_days}-{hold_days + 2} days. "
-        f"{buy_ticker} above 20d MA (${buy_price:.2f} vs ${buy_ma:.2f}), trend confirmed."
-    )
+        if latest[buy] <= ma[buy]:
+            used_buys.add(buy)
+            continue
 
-    return {
-        "signal": True,
-        "buy": buy_ticker,
-        "sell": sell_ticker,
-        "buy_momentum_pct": round(buy_pct, 2),
-        "sell_momentum_pct": round(sell_pct, 2),
-        "spread_pct": round(spread_pct, 2),
-        "buy_price": round(float(buy_price), 2),
-        "buy_ma": round(float(buy_ma), 2),
-        "thesis": thesis,
-        "as_of": datetime.now(timezone.utc).isoformat(),
-    }
+        buy_name = _NAMES.get(buy, buy)
+        sell_name = _NAMES.get(sell, sell)
+        spread_pct = spread * 100
+        buy_pct = buy_mom * 100
+        sell_pct = sell_mom * 100
+        buy_price = float(latest[buy])
+        buy_ma = float(ma[buy])
+
+        thesis = (
+            f"{buy} ({buy_name}) {buy_pct:+.1f}% vs "
+            f"{sell} ({sell_name}) {sell_pct:+.1f}% over {mom_window} days. "
+            f"Spread: {spread_pct:.1f}%. "
+            f"Signal: rotate 5-10% from {sell} -> {buy}. "
+            f"Hold {hold_days}-{hold_days + 2} days. "
+            f"{buy} above 20d MA (${buy_price:.2f} vs ${buy_ma:.2f}), trend confirmed."
+        )
+
+        results.append({
+            "signal": True,
+            "buy": buy,
+            "sell": sell,
+            "buy_momentum_pct": round(buy_pct, 2),
+            "sell_momentum_pct": round(sell_pct, 2),
+            "spread_pct": round(spread_pct, 2),
+            "buy_price": round(buy_price, 2),
+            "buy_ma": round(buy_ma, 2),
+            "thesis": thesis,
+            "as_of": as_of,
+        })
+        used_buys.add(buy)
+        used_sells.add(sell)
+
+    return results
 
 
 if __name__ == "__main__":
     base = Path(__file__).parent.parent
-    result = generate(base / "config" / "universe.yaml", base / "config" / "thresholds.yaml")
-    if result:
-        print(result["thesis"])
-        print()
-        print(f"Buy:    {result['buy']}  {result['buy_momentum_pct']:+.1f}%  @ ${result['buy_price']}")
-        print(f"Sell:   {result['sell']}  {result['sell_momentum_pct']:+.1f}%")
-        print(f"Spread: {result['spread_pct']:.1f}%")
+    results = generate(base / "config" / "universe.yaml", base / "config" / "thresholds.yaml")
+    if not results:
+        print("No sector rotation signal today (no pairs above gate, or buy targets below 20d MA).")
     else:
-        print("No sector rotation signal today (spread below threshold or buy target below 20d MA).")
+        for i, r in enumerate(results, 1):
+            print(f"--- Thesis {i} ---")
+            print(r["thesis"])
+            print(f"Buy:    {r['buy']}  {r['buy_momentum_pct']:+.1f}%  @ ${r['buy_price']}")
+            print(f"Sell:   {r['sell']}  {r['sell_momentum_pct']:+.1f}%")
+            print(f"Spread: {r['spread_pct']:.1f}%")
+            print()

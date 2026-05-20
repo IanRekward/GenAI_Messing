@@ -1,13 +1,18 @@
 # Tactical Markets — Task Scheduler setup
 # Run once to register (or re-register) both tasks.
 # No admin required — tasks run as current user.
+#
+# Trigger times are in LOCAL MACHINE TIME. This machine is on Central Time,
+# so 05:30 local = 06:30 ET (the documented target). If you move the machine
+# to a different time zone, recompute the offset. Both ET and CT observe the
+# same DST schedule, so the 1-hour offset holds year-round.
 
 $python  = "C:\Users\rekwa\AppData\Local\Python\pythoncore-3.14-64\python.exe"
 $workDir = "C:\Users\rekwa\ian_projects\tactical_markets"
 
 # --- Wake task (wakes the computer 10 min before main task) ---
 $wakeAction   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c exit"
-$wakeTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "06:20AM"
+$wakeTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "05:20AM"
 $wakeSettings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
@@ -22,7 +27,7 @@ Register-ScheduledTask `
     -RunLevel Limited `
     -Force | Out-Null
 
-Write-Host "Wake task registered."
+Write-Host "Wake task registered (05:20 CT = 06:20 ET)."
 
 # --- Main task ---
 $mainAction   = New-ScheduledTaskAction `
@@ -30,8 +35,9 @@ $mainAction   = New-ScheduledTaskAction `
     -Argument         "run_tactical.py" `
     -WorkingDirectory $workDir
 
-$mainTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "06:30AM"
+$mainTrigger  = New-ScheduledTaskTrigger -Weekly -WeeksInterval 1 -DaysOfWeek Monday,Tuesday,Wednesday,Thursday,Friday -At "05:30AM"
 $mainSettings = New-ScheduledTaskSettingsSet `
+    -WakeToRun `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `
     -AllowStartIfOnBatteries
@@ -44,7 +50,7 @@ Register-ScheduledTask `
     -RunLevel Limited `
     -Force | Out-Null
 
-Write-Host "Main task registered."
+Write-Host "Main task registered (05:30 CT = 06:30 ET, with -WakeToRun as backup)."
 
 # --- Verify ---
 Write-Host ""
