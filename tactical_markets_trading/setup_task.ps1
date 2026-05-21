@@ -24,10 +24,15 @@ Register-ScheduledTask `
 
 Write-Host "Wake task registered."
 
-# --- Entry task (submit order + log trade) ---
+# --- Entry task (Phase 3.1 ensemble orchestrator) ---
+# Changed 2026-05-21: was run_trading.py (sector_rotation_5d), now run_ensemble.py
+# (multi-strategy ensemble — currently only trend_leveraged_tqqq active).
+# run_ensemble.py handles BOTH entries and the software-managed trailing stop —
+# the Exit task below still runs to manage any legacy positions with
+# exit_time_planned (XLE, XLF from the pre-retirement era).
 $entryAction   = New-ScheduledTaskAction `
     -Execute          $python `
-    -Argument         "run_trading.py" `
+    -Argument         "run_ensemble.py" `
     -WorkingDirectory $workDir
 
 $entryTrigger  = New-ScheduledTaskTrigger -Daily -At "08:35AM"

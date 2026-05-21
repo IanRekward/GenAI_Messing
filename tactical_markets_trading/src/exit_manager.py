@@ -265,6 +265,11 @@ def run_exits():
     for i, record in enumerate(records):
         if record["status"] != "open":
             continue
+        # Phase 3.1 records (from run_ensemble.py) don't use timed exits — their
+        # owning strategy manages exit via trailing stop + trend signal. Skip them
+        # here; they're managed by the ensemble orchestrator.
+        if "exit_time_planned" not in record:
+            continue
         exit_due = datetime.fromisoformat(record["exit_time_planned"])
         if now < exit_due:
             continue
