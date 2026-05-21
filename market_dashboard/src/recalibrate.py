@@ -306,6 +306,10 @@ def propose_regime_weights(
             if np.isnan(ic_val) or n_days < _REGIME_MIN_DAYS:
                 multipliers[regime][bucket] = 1.0
                 continue
+            if ic_val < 0:
+                # Anti-signal bucket in this regime — don't amplify or suppress, stay neutral.
+                multipliers[regime][bucket] = 1.0
+                continue
             mean_ic = ic_df.loc[bucket].dropna().mean()
             if np.isnan(mean_ic) or abs(mean_ic) < 1e-6:
                 multipliers[regime][bucket] = 1.0

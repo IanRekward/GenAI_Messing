@@ -4,8 +4,16 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 
 ## Status
 
-**Week-1 live. Two-week freeze active (2026-05-06 → ~2026-05-20).**
-Sector rotation signal shipped and running daily at 6:30 AM ET. Ian reads theses on phone during freeze; no code changes until freeze ends. Post-freeze direction is decided by which of three failure modes shows up (see locked week-1 design below).
+**Freeze ended 2026-05-20. Post-freeze enhancements shipped.**
+
+- **M1 (multi-thesis output):** `sector_rotation.py` returns `list[dict]`; greedy top-vs-bottom pairing; `run_tactical.py` emits one JSONL line per thesis pair. Bot now reads all today's signals via `today_signals()`.
+- **M2 (confidence field):** `sigmoid((spread_pct - 1.5) / 2.0)` per thesis; `confidence` field in every JSONL record.
+- **M3 (signal_type field):** `"sector_rotation"` tag per thesis for future routing.
+- **Scheduler fixed:** triggers shifted from 6:30 AM / 7:00 AM CT to 5:30 AM / 7:00 AM CT (machine is on CDT = UTC-5; was firing at 7:30 ET instead of 6:30 ET).
+- **Watchdog task:** `watch_tactical.py` fires at 7:00 AM CT; Pushover-alerts "Tactical Markets MISSED" if no thesis recorded for today.
+- **Freeze retired:** replaced with production-path vs research-path policy (see bot TODO.md). No action needed until 2026-06-10 review.
+
+**Next action: 2026-06-10 review.** Let M1 multi-thesis data accumulate ~3 weeks across diverse sector pairs, then decide whether to add variant-B (21-day hold) or re-param. See bot-integration-asks-variant-b-2026-05-20.md (HELD).
 
 ## Source documents
 
@@ -13,6 +21,7 @@ Sector rotation signal shipped and running daily at 6:30 AM ET. Ian reads theses
 - [RESEARCH_SUMMARY.md](RESEARCH_SUMMARY.md) — empirical findings (2000–2026) that grounded the signal design
 - [README.md](README.md) — project framing and design principles
 - [_bmad-output/planning-artifacts/bot-integration-asks.md](_bmad-output/planning-artifacts/bot-integration-asks.md) — priority-ordered tasks (M1-M5) the downstream `tactical_markets_trading` bot would like MICRO to consider in the post-freeze design pass. **Read before deciding path (a)/(b)/(c)** — M1 (multi-thesis output) is the highest-leverage ask regardless of which branch you choose.
+- [_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md](_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md) — **HELD (2026-05-20):** variant-B signal ask is on ice. Rekwa picked Option D first: let M1 multi-thesis data accumulate ~3 weeks, review 2026-06-10, then decide whether variant-B (Option C) or re-param (Option B) is needed. **No MICRO action requested until 2026-06-10.**
 
 ## Locked week-1 design (2026-05-05 design session, Opus 4.7)
 

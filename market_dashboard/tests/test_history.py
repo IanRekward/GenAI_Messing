@@ -6,7 +6,10 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from src.history import compute_composite_momentum
+import tempfile
+import os
+
+from src.history import compute_composite_momentum, log_run
 
 
 def _make_history(scores: list[float], start: str = "2026-01-01") -> pd.DataFrame:
@@ -57,6 +60,30 @@ def test_momentum_falling():
     assert m["velocity_7d"] is not None
     assert m["velocity_7d"] < -3
     assert "down" in m["regime"]
+
+
+def test_log_run_writes_composite_regime_weighted(tmp_path, monkeypatch):
+    """Regression: composite_regime_weighted must appear in history.csv (Brief 10C gap)."""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "data").mkdir()
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config" / "weights.yaml").write_text("buckets: {}")
+    scoring = {
+        "run_timestamp": "2026-05-20T12:00:00",
+        "composite": 45.0,
+        "composite_band": "yellow",
+        "red_count": 1,
+        "orange_count": 3,
+        "yellow_count": 4,
+        "buckets": {},
+        "regime": "mid",
+        "composite_naive": 44.5,
+        "composite_regime_weighted": 46.2,
+    }
+    log_run(scoring)
+    df = pd.read_csv(tmp_path / "data" / "history.csv")
+    assert "composite_regime_weighted" in df.columns
+    assert df["composite_regime_weighted"].iloc[0] == pytest.approx(46.2)
 
 
 def test_momentum_dedupes_multiple_runs_per_day():
