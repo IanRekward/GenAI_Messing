@@ -396,6 +396,32 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
   Strips `_series` blobs; stamps `schema_version`/`weights_hash`/`code_sha`.
   6 new tests in `tests/test_sidecar.py`; 236/236 passing.
 
+- [ ] **W3 — Split errors vs warnings in `data/latest.json`** *(Sonnet-ready, ~30 min — do before bot Phase 2 wiring)*
+  **Why:** The trading bot blocks new entries if `errors[]` is non-empty. But MACRO
+  regularly puts "stlfsi is stale" type notes in `errors[]` — that's normal data lag,
+  not a real failure. The bot can't tell the difference, so it silently sits on its
+  hands most days.
+  **Fix:** Add a `warnings[]` field to `data/latest.json` for soft/expected conditions
+  (anything prefixed `STALE:`). Keep `errors[]` for hard failures only (fetch completely
+  failed, config broken, etc.). The bot already uses `.get("warnings", [])` so it's
+  backward-compatible the moment this ships.
+  **Files:** `src/history.py:write_latest_sidecar()` — categorise existing error
+  emissions; add `warnings` key to the payload. Add 1-2 tests confirming STALE entries
+  land in `warnings[]` not `errors[]`.
+
+- [ ] **W2 — Populate `code_sha` in `data/latest.json`** *(Sonnet-ready, ~15 min — bundle with W3)*
+  **Why:** Currently `"code_sha": ""` (empty). The bot records this per-trade for audit
+  trail — useful when investigating a trade months later ("which version of MACRO made
+  that call?"). Right now the audit trail has a blank where the version should be.
+  **Fix:** In `run_dashboard.py`, before calling `write_latest_sidecar()`, populate
+  `code_sha` via a `git rev-parse --short HEAD` call against the `_genai_tmp/` repo.
+  Wrap in try/except so a missing git binary doesn't crash the run.
+  Already stubbed in `src/history.py:_code_sha()` — check if it just needs the right
+  repo path pointed at `_genai_tmp/`.
+
+  > Do W2 and W3 in the same commit. Both are small, both unblock the bot, neither
+  > needs a design pass.
+
 ### Phase H — Phone-triggered refresh (Sonnet-ready, 2026-05-11)
 
 - [x] 🅾️ **Brief 25 — Phase H: Phone-triggered dashboard refresh via GitHub Actions** *(shipped — commit 957736b)*
