@@ -396,7 +396,7 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
   Strips `_series` blobs; stamps `schema_version`/`weights_hash`/`code_sha`.
   6 new tests in `tests/test_sidecar.py`; 236/236 passing.
 
-- [ ] **W3 — Split errors vs warnings in `data/latest.json`** *(Sonnet-ready, ~30 min — do before bot Phase 2 wiring)*
+- [x] **W3 — Split errors vs warnings in `data/latest.json`** *(already shipped — confirmed 2026-05-20)*
   **Why:** The trading bot blocks new entries if `errors[]` is non-empty. But MACRO
   regularly puts "stlfsi is stale" type notes in `errors[]` — that's normal data lag,
   not a real failure. The bot can't tell the difference, so it silently sits on its
@@ -409,7 +409,7 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
   emissions; add `warnings` key to the payload. Add 1-2 tests confirming STALE entries
   land in `warnings[]` not `errors[]`.
 
-- [ ] **W2 — Populate `code_sha` in `data/latest.json`** *(Sonnet-ready, ~15 min — bundle with W3)*
+- [x] **W2 — Populate `code_sha` in `data/latest.json`** *(already shipped — confirmed 2026-05-20)*
   **Why:** Currently `"code_sha": ""` (empty). The bot records this per-trade for audit
   trail — useful when investigating a trade months later ("which version of MACRO made
   that call?"). Right now the audit trail has a blank where the version should be.
