@@ -21,7 +21,7 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 - [RESEARCH_SUMMARY.md](RESEARCH_SUMMARY.md) — empirical findings (2000–2026) that grounded the signal design
 - [README.md](README.md) — project framing and design principles
 - [_bmad-output/planning-artifacts/bot-integration-asks.md](_bmad-output/planning-artifacts/bot-integration-asks.md) — priority-ordered tasks (M1-M5) the downstream `tactical_markets_trading` bot would like MICRO to consider in the post-freeze design pass. **Read before deciding path (a)/(b)/(c)** — M1 (multi-thesis output) is the highest-leverage ask regardless of which branch you choose.
-- [_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md](_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md) — **HELD (2026-05-20):** variant-B signal ask is on ice. Rekwa picked Option D first: let M1 multi-thesis data accumulate ~3 weeks, review 2026-06-10, then decide whether variant-B (Option C) or re-param (Option B) is needed. **No MICRO action requested until 2026-06-10.**
+- [_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md](_bmad-output/planning-artifacts/bot-integration-asks-variant-b-2026-05-20.md) — **CLOSED-CANCELLED (2026-05-21):** bot project pivoted strategic direction away from sector rotation entirely. See [pivot-note-from-bot-2026-05-21.md](_bmad-output/planning-artifacts/pivot-note-from-bot-2026-05-21.md). **No MICRO action needed.** MICRO project continues independently — daily Pushovers remain useful as personal-awareness tool.
 
 ## Locked week-1 design (2026-05-05 design session, Opus 4.7)
 
