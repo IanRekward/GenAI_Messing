@@ -2,6 +2,45 @@
 
 Alpaca paper-trading layer. As of 2026-05-21: pivoting from sector-rotation execution to a multi-strategy regime-routed ensemble. Phase 2 infrastructure (preflight, reconciler, kill switches, sizing) is strategy-agnostic and gets reused.
 
+## 2026-05-21 — PHASE 3.1 BUILT + FIRST PAPER TRADE EXECUTED
+
+**Phase 3.1 component shipped.** `src/strategies/leveraged_trend.py` (TQQQ + 50d MA + 5% trailing stop) + `src/strategy_state.py` (per-strategy persistence) + `run_ensemble.py` (new orchestrator) + 19 tests. **156/156 tests passing.**
+
+**First live paper trade taken via the new orchestrator (2026-05-21 18:12 UTC):**
+- BUY 427 shares TQQQ @ $77.13 (target ~$33k = 33% of $100k equity, whole-share floor)
+- Trigger: trend on (SPY $743.12 > 50d MA $694.87)
+- Trade ID: `dc67b513...` in `data/trades.jsonl` with new schema fields (`strategy`, `trigger`, etc.)
+- Strategy state: `in_position=True, position_peak_price=$77.12, stopped_out=False` in `data/strategy_state_trend_leveraged_tqqq.json` (gitignored, like other runtime state)
+
+**Cooldown reset bug found and fixed while writing tests:** original code only reset the post-stop cooldown when in-position, meaning once stopped out, cooldown stayed sticky forever (no re-entry possible). Fixed: cooldown now clears whenever trend signal goes off (regardless of in-position status). Test: `test_cooldown_full_cycle_stop_fire_then_trend_off_then_trend_on_enters_clean`.
+
+### Scheduled task migration (when ready)
+
+Currently the Windows Scheduled Task "Tactical Trading Entry" still points at `run_trading.py` (which short-circuits via `SECTOR_ROTATION_5D_RETIRED` flag — no trades). To activate the new orchestrator on the daily schedule:
+
+```powershell
+# In setup_task.ps1 or via Task Scheduler GUI:
+# Change the Action for "Tactical Trading Entry" task from:
+#   Execute: ...python.exe
+#   Arguments: run_trading.py
+# To:
+#   Execute: ...python.exe
+#   Arguments: run_ensemble.py
+```
+
+Or run `setup_task.ps1` after updating its Action argument. **NOT YET DONE** — the new orchestrator was smoke-tested via manual invocation today; first scheduled fire will not run it until the task is re-pointed.
+
+Until you re-point the scheduled task: the new strategy runs only when you manually execute `python run_ensemble.py`. The TQQQ position now held is real (paper) and will be managed by future scheduled fires of `run_ensemble.py`. **You should re-point the task before the next NYSE open** so the trailing stop is checked daily — otherwise the position sits unmanaged.
+
+### Open items
+
+- **Re-point scheduled task** to invoke `run_ensemble.py` (above)
+- **Verify state persistence across machine restarts** — `data/strategy_state_trend_leveraged_tqqq.json` survives reboots
+- **Monitor first real stop-fire event** when it happens — the software-managed stop is new; we want to see it work in the wild
+- **Phase 3.2 next**: add `sector_momentum_monthly` + `spy_trend` + regime router. Recommended timing: after `trend_leveraged_tqqq` has 3-4 weeks of paper-trading and at least one full entry/exit cycle.
+
+---
+
 ## 2026-05-21 — STRATEGY PIVOT: ensemble per PRD Phase 4+ vision
 
 **TL;DR:** 33-year multi-strategy research showed `sector_rotation_5d` (the live signal) is broken (CAGR 0.62%, Sharpe 0.19). Walk-forward validated a new candidate: TQQQ trend + 50d MA + 5% trailing stop earns ~42% CAGR / Sharpe 1.83 OOS (TEST=1.83 vs TRAIN=1.87, 98% retention). A 3-component regime-routed ensemble earns ~21% CAGR / Sharpe 1.12 / -28% MaxDD over 24 years. **Pivoting to ensemble architecture.**

@@ -11,3 +11,4 @@ tactical_markets_trading/data/account_state.json
 tactical_markets_trading/data/drift_log.jsonl
 tactical_markets_trading/data/graduation_state.json
 tactical_markets_trading/data/reconciler_log.jsonl
+tactical_markets_trading/data/strategy_state_*.json
