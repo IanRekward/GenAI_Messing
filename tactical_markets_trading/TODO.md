@@ -1,6 +1,30 @@
 # tactical_markets_trading — TODO
 
-Alpaca paper-trading layer that validates [tactical_markets](../tactical_markets/) signal efficacy. Separate from signal generation; integrates *with* it via files-on-disk (`tactical_markets/data/theses.jsonl`). No imports across projects.
+Alpaca paper-trading layer. As of 2026-05-21: pivoting from sector-rotation execution to a multi-strategy regime-routed ensemble. Phase 2 infrastructure (preflight, reconciler, kill switches, sizing) is strategy-agnostic and gets reused.
+
+## 2026-05-21 — STRATEGY PIVOT: ensemble per PRD Phase 4+ vision
+
+**TL;DR:** 33-year multi-strategy research showed `sector_rotation_5d` (the live signal) is broken (CAGR 0.62%, Sharpe 0.19). Walk-forward validated a new candidate: TQQQ trend + 50d MA + 5% trailing stop earns ~42% CAGR / Sharpe 1.83 OOS (TEST=1.83 vs TRAIN=1.87, 98% retention). A 3-component regime-routed ensemble earns ~21% CAGR / Sharpe 1.12 / -28% MaxDD over 24 years. **Pivoting to ensemble architecture.**
+
+Full research evidence:
+- [research/data/strategy_research_consolidated_2026-05-21.md](research/data/strategy_research_consolidated_2026-05-21.md) — every strategy tested
+- [research/data/trailing_stop_walk_forward_report.md](research/data/trailing_stop_walk_forward_report.md) — robustness validation
+- [research/data/extended_report.md](research/data/extended_report.md) — extended-window backtest
+- [research/data/crisis_decisions_*.csv](research/data/) — day-by-day decisions through dot-com / GFC / COVID / 2022
+
+New design doc: [_bmad-output/planning-artifacts/phase-3-ensemble-design.md](_bmad-output/planning-artifacts/phase-3-ensemble-design.md). Awaiting Rekwa review.
+
+**Actions taken today:**
+- `sector_rotation_5d` retired as live signal via `SECTOR_ROTATION_5D_RETIRED = True` flag in [run_trading.py](run_trading.py). Scheduled task still fires but short-circuits cleanly. No new entries until ensemble is built.
+- Existing open positions (XLE, XLF) continue to be managed by Exit task until scheduled close.
+- 137 tests still passing.
+
+**Open questions for Rekwa — RESOLVED 2026-05-21:**
+1. **Capital allocation:** equal 33/33/33 in Phase 3.x paper testing (best Sharpe in backtest; simplest default for measuring per-component contribution). Revisit at Phase 3.3 (pre-live).
+2. **MICRO retired from automation; MACRO promoted to regime safety layer.** The new ensemble does NOT consume `theses.jsonl` for trading. MICRO continues to ship Pushovers as personal-awareness tool. MACRO becomes a "veto" layer in the regime router — if MACRO sees red even when SPY > 200d MA, force defensive allocation. See full updated regime router logic in the design doc.
+3. **Phase 3 graduation gate replaced.** Old: "50 trades." New: 6-month time floor AND per-component minimums (30 closed trades, ≥1 stop-fired exit, ≥1 MACRO-veto period) AND 30-day operational cleanliness (zero drift, zero ABORT, zero stranded). About VALIDATION not COUNT.
+4. **Live capital amount deferred.** Not close to deployment; doesn't bind for Phase 3.0/3.1/3.2 (all paper at $100k). Phase 3.3 design will pin down.
+5. **Variant-B ask CLOSED.** Updated MICRO project artifact + filed pivot note to MICRO owner: `../tactical_markets/_bmad-output/planning-artifacts/pivot-note-from-bot-2026-05-21.md`.
 
 ## Status
 
@@ -117,10 +141,232 @@ The Phase 1 freeze is **retired** as a blanket policy. Replaced with a **product
 
 ### Next concrete code work (post-smoke-test)
 
-- Wait for MICRO to ship `theses_variant_b.jsonl` (per the ask doc).
-- Once shipped, parameterize the bot's entry path to read either ledger via a `--variant` flag, create the second scheduled task, set up `data/trades_variant_b.jsonl` ledger, A/B compare at 30 cumulative trades.
-- Apply the Phase 2 → Phase 3 gate tightening (Sharpe- / relative-return-based, replacing the coin-flip-clearable "win rate vs SPY > 50%").
+- Wait for MICRO to ship `theses_variant_b.jsonl` (per the ask doc). **HELD pending 2026-06-10 M1 review.**
+- Once shipped (if needed per the 2026-06-10 review), parameterize the bot's entry path to read either ledger via a `--variant` flag, create the second scheduled task, set up `data/trades_variant_b.jsonl` ledger, A/B compare at 30 cumulative trades.
+- Apply the Phase 2 → Phase 3 gate tightening (Sharpe- / relative-return-based, replacing the coin-flip-clearable "win rate vs SPY > 50%"). **Done — captured in the 2026-05-20 strategy gate section above.**
 - Begin Phase 2 wiring stories (broker-side stops, MACRO size-down, risk-based sizing, kill switch) in the order specified in [epics.md](_bmad-output/planning-artifacts/epics.md). The reconciler is now in place as the safety net.
+
+---
+
+## 2026-05-20 — Epic 1a shipped: Broker-Enforced Stop Orders
+
+**All 5 stories of Epic 1a complete.** Every Phase 2 entry now carries a broker-held stop at 2.5% below fill; exits cancel the stop before market SELL; closed records carry an `exit_reason` distinguishing scheduled / stop_fired / stop_cancel_failed close paths. NFR5 (multi-day VPS outage failsafe) is satisfied.
+
+### Changes
+
+- **Story 1a.1 (compute_stop_price):** already shipped 2026-05-13 in `src/risk.py`. No changes.
+- **Story 1a.2 (submit broker-side stop after entry fill):** added `submit_stop(symbol, qty, fill_price)` in `src/order_builder.py`. Computes stop via `risk.compute_stop_price`, submits `StopOrderRequest(side=SELL, time_in_force=GTC)`. On failure: returns `stop_order_id=None`, `stop_rule_used="stop_submission_failed"`, leaves position open (never auto-close), Pushover alerts caller.
+- **Story 1a.3 (persist stop fields in entry record):** `log_entry` in `src/trade_logger.py` now calls `submit_stop` after `wait_for_fill` succeeds, persists `stop_order_id`, `stop_price`, `stop_rule_used` in the new entry record.
+- **Story 1a.4 (cancel stop at scheduled exit):** new helper `_cancel_stop_and_classify(client, record)` in `src/exit_manager.py`. Handles four paths: (a) cancel succeeds → `exit_reason="scheduled"`, (b) record has no `stop_order_id` (Phase 1 / stop_submission_failed) → skip cancel, `exit_reason="scheduled"`, (c) cancel raises AND position is 0 → `exit_reason="stop_fired"`, looks up the filled stop order for fill data, skips the market SELL, (d) cancel raises AND position still held → `exit_reason="stop_cancel_failed"`, proceeds with market SELL.
+- **Story 1a.5 (exit_reason on close):** every closed record now carries `exit_reason`. Phase 1 records read by Phase 2 code use `.get("exit_reason", "scheduled")` for backward compat.
+
+### Tests added (48 → 61 passing)
+
+- `tests/test_order_builder.py` (3 tests) — `submit_stop` happy path, failure metadata, stop-price math matches `compute_stop_price`.
+- `tests/test_trade_logger.py` (+2 tests) — `log_entry` persists stop fields on success and on failure.
+- `tests/test_exit_manager.py` (+6 tests) — covers all four `_cancel_stop_and_classify` branches plus market-hours guard (Rekwa-added).
+
+### Files touched
+
+- `src/order_builder.py` — added `submit_stop`, imports
+- `src/trade_logger.py` — wired `submit_stop` into `log_entry`, added 3 new entry-record fields, `FILL_POLL_TIMEOUT` already bumped earlier this session
+- `src/exit_manager.py` — added `_cancel_stop_and_classify`, branched `exit_position` (stop_fired path skips SELL; normal path tags exit_reason)
+- `tests/test_order_builder.py` (new), `tests/test_trade_logger.py` (extended), `tests/test_exit_manager.py` (extended)
+
+### What still needs a live smoke test
+
+The Story 1a changes are production-path. Per the new policy, they need a paper-fire smoke test against the real Alpaca API before they ride a scheduled fire. Two scenarios to cover:
+
+1. **Entry-path smoke:** next signal-positive trading day, the scheduled 13:35 UTC fire will exercise `submit_order → log_entry → submit_stop` end-to-end. Verify in `data/trades.jsonl` that the new record has non-null `stop_order_id`, `stop_price`, `stop_rule_used="fixed_pct_2.5"`.
+2. **Exit-path smoke (stop cancel):** the next scheduled 13:40 UTC exit fire that closes a Phase 2 record. Verify the stop gets cancelled and `exit_reason="scheduled"` is on the close. (XLE's queued SELL from earlier today is a Phase 1 record — no stop, no cancel attempt; closes via the "no_stop_to_cancel → scheduled" branch.)
+
+If MICRO's M1 multi-thesis emits today/tomorrow, the first Phase 2 entry will land naturally without any manual smoke step needed.
+
+### Open question / known gap
+
+- **Alpaca fractional-qty stop-order support is unverified.** Stop orders may not accept fractional `qty` (only whole shares). If Alpaca rejects, `submit_stop` returns `stop_rule_used="stop_submission_failed"` and the position stays open without a broker stop. The Pushover alert will surface this immediately. If it turns out fractional stops aren't supported, the fix is either (a) floor the qty to whole shares (sacrifices some hedge), or (b) submit two stops (whole + fractional notional sell). Defer until we see the first live attempt.
+
+---
+
+## Next concrete code work
+
+1. **Watch tomorrow's scheduled cycle (2026-05-21 13:30/13:40 UTC).** Verify:
+   - XLE SELL fills at open
+   - Reconciler at exit-task fire detects local-open-but-Alpaca-no-position, backfills the close
+   - If MICRO emits a signal, the entry path exercises Story 1a + 1b end-to-end (first Phase 2 entry with broker-side stop + MACRO snapshot field)
+2. **Investigate the 2026-05-14 16:40 UTC Task Scheduler miss** — the BUY for trade `68527bf4` submitted 3 hours late. Check Event Viewer history. If `StartWhenAvailable` is firing tasks when machines wake at random times, the new `_market_is_open()` guard on the exit task handles it, but entries are still at risk.
+3. **After tomorrow's live fire validates Stories 1a+1b: ship Epic 1c (risk-based sizing + concentration limits + drawdown kill switch).** This is the biggest semantic change in Phase 2 because risk-based sizing replaces the fixed $10k notional with a qty tied to stop distance. The pure functions are already shipped in `src/risk.py`; the wiring is in `run_trading.py`. Touches the same code paths as Epic 1b so worth letting 1b bake for a few cycles first.
+
+---
+
+## 2026-05-20 — Epic 1b shipped: Regime-Aware Pre-flight (MACRO + Health Checks)
+
+**Stories 1b.1, 1b.2, 1b.3 were already shipped** in `src/macro_consumer.py` on 2026-05-13 (validate, staleness + allow-list, size_multiplier). The wiring work — Stories 1b.4, 1b.5, 1b.6 — landed today.
+
+### Changes
+
+- **Story 1b.4 (preflight module):** new [src/preflight.py](src/preflight.py) with `check_entry()` (5 checks: env keys, Alpaca account, MICRO file freshness, MACRO validate, kill-switch stub) and `check_exit()` (2 checks: env keys, Alpaca account). Short-circuits on first failure. Any check that raises wraps the exception into `preflight_check_X_raised: ...`. Kill-switch check is a placeholder returning OK; real implementation comes with Story 1c.5.
+- **Story 1b.5 (wire preflight):** `run_trading.py` calls `preflight.check_entry()` as the first action after `load_env()`; on failure sends Pushover ABORT and `sys.exit(1)`. `src/exit_manager.run_exits()` calls `preflight.check_exit()` analogously.
+- **Story 1b.6 (wire MACRO multiplier):** `run_trading.main()` now calls `macro_consumer.validate()` + `size_multiplier()` once per batch, after preflight. If multiplier == 0 (red regime) → skip entries with Pushover info. Otherwise applies multiplier to the fixed $10k notional and passes the adjusted value to `submit_order(thesis, notional=...)`. Entry record gains two new fields:
+  - `macro_snapshot`: `{run_timestamp, composite_band, regime, weights_hash, neutralized}` — the regime decision the trade was made under
+  - `sizing_rule_used`: `"phase1_fixed"` when multiplier is 1.0, `"phase1_fixed_x_macro_mult"` when scaled. Story 1c.3 will replace this with `"risk_based"` / `"concentration_cap"`.
+- **Pushover message expanded** to include MACRO band/regime/multiplier so notifications carry the regime context.
+
+### Tests added (61 → 74 passing)
+
+- `tests/test_preflight.py` (13 tests) — happy-path entry/exit + every failure mode: missing env keys, Alpaca down, account not active, trading_blocked, MICRO file missing/stale, MACRO broken, exception in check, and the explicit "MACRO stale is OK" assertion. Also pins `check_exit` deliberately not depending on MICRO/MACRO (exit task must run when regime data is broken).
+- `tests/test_exit_manager.py` (+1 test) — `test_run_exits_aborts_on_preflight_failure` confirms preflight failure short-circuits before reconciler runs.
+
+### Smoke-tested against real environment
+
+`preflight.check_entry()` and `check_exit()` both return `(True, "ok")` against the actual `.env`, Alpaca paper account, MICRO `theses.jsonl` (written today), and MACRO sidecar (currently 30h stale → neutralized, treated as OK). Confirmed MACRO's current regime (`orange / mid`) maps to `size_multiplier = 1.0` via the stale-neutralized path — so tomorrow's entry (if MICRO emits) will trade full size.
+
+### Files touched
+
+- `src/preflight.py` (new)
+- `src/order_builder.py` — `submit_order(thesis, notional=NOTIONAL)` now takes optional notional
+- `src/trade_logger.py` — `log_entry(order_result, macro_snapshot=None, sizing_rule_used="phase1_fixed")` adds two optional kwargs + persists them
+- `src/exit_manager.py` — preflight + ABORT wired at top of `run_exits()`
+- `run_trading.py` — preflight + MACRO validate + multiplier + size-scaled notional + macro_snapshot
+- `tests/test_preflight.py` (new), `tests/test_exit_manager.py` (extended)
+
+### Open question / known gap
+
+- **MACRO sidecar is currently 30h stale.** It's degrading to neutral as designed (Story 1b.2), but you'll want to ask the MACRO project owner if the daily 07:30 ET refresh is still firing. If not, Phase 2 trades will always run "full size with stale neutralized MACRO" — defeats the point of MACRO size-down. Flag for MACRO project investigation. **(Cross-project — see MACRO investigation note below.)**
+
+---
+
+## 2026-05-20 — MACRO refresh missed today; investigation flagged
+
+While shipping Epic 1b, I checked the MACRO sidecar state:
+- `market_dashboard/data/latest.json` `run_timestamp`: **2026-05-19 17:52 UTC** (~30 hours ago at time of check)
+- Expected: daily ~07:30 ET (`market_dashboard/TODO.md` says "Daily automation runs at 7:30 AM")
+- Today's (2026-05-20) refresh did not fire — analogous to the bot's 2026-05-14 Task Scheduler miss
+
+**No bot-side action — this is a cross-project (MACRO) concern.** Surface to MACRO project owner. The bot itself degrades cleanly: `validate()` returns `(True, "macro_stale_30h_treating_as_neutral", regime_data_with_neutralized=True)`, `size_multiplier` returns 1.0, entries trade full size. But the *point* of MACRO size-down is to scale down during stress regimes, and stale MACRO can never trigger that.
+
+**Action:** Rekwa check MACRO's Task Scheduler history (or whatever automation runs `market_dashboard/`'s daily refresh) and reschedule / debug. Related: the bot's own `_market_is_open` guard could be the right pattern for MACRO if it has a similar "StartWhenAvailable fires off-hours" problem.
+
+---
+
+## 2026-05-20 — Epic 1c shipped: Portfolio Risk Engine
+
+**All 5 stories of Epic 1c complete.** Position sizing is risk-aware (qty derived from account_value, entry_price estimate, and stop_price), concentration limits are enforced pre-trade, and the drawdown auto-pause kill switch is wired into preflight check 5.
+
+### Changes
+
+- **Stories 1c.1, 1c.2 (compute_position_size, check_concentration):** already shipped 2026-05-13 in `src/risk.py`. No changes.
+- **Story 1c.3 (wire sizing + concentration):** `run_trading.main()` now:
+  1. Fetches `account.equity` from Alpaca
+  2. For each thesis, estimates entry via `get_estimated_entry_price(symbol)` (yfinance `history(period="2d").Close.iloc[-1]`)
+  3. Computes `stop_price` via `risk.compute_stop_price`
+  4. Computes `(qty, sizing_rule_used)` via `risk.compute_position_size`
+  5. Applies MACRO multiplier: `final_qty = qty * multiplier`, `sizing_rule_used += "_with_macro_x_{multiplier}"` if scaled
+  6. Fetches current positions and runs `risk.check_concentration` — on fail, Pushover info + skip
+  7. Submits qty-based `MarketOrderRequest(qty=final_qty)` via refactored `submit_order(thesis, qty=…)`
+- **Story 1c.4 (account high-water-mark):** new [src/account_state.py](src/account_state.py) module with `load_or_init(current_equity)` and `update_peak_if_higher(state, current_equity)`. Persists to `data/account_state.json`. Handles corrupt-file recovery by reinitializing with current equity + surfaces reason to caller for optional alerting. `run_trading.main()` updates HWM after each Entry preflight passes.
+- **Story 1c.5 (drawdown kill switch):** new `risk.check_kill_switch(current_equity, account_state, threshold=0.20)` — pure function, returns `(ok, reason)`. Wired into `preflight._check_kill_switch` replacing the stub. Trips when drawdown >= 20%; Pushover title becomes "Tactical Trading ABORT: KILL SWITCH"; Exit task continues normally.
+- **`order_builder.submit_order` refactored** to accept either `qty` (Story 1c.3) OR `notional` (transitional). Raises if both/neither. Result dict carries `qty` and `notional` (one is None).
+- **`trade_logger.log_entry` updated** — new entry-record field `submitted_qty` (the qty we asked Alpaca to fill, None for notional-based); `notional` becomes None on qty-based entries.
+
+### Tests added (74 → 97 passing)
+
+- `tests/test_risk.py` (+7 tests) — `check_kill_switch` happy path, threshold-edge, custom threshold, missing peak, default constant
+- `tests/test_account_state.py` (new, 8 tests) — load/init/persist + corrupt-file recovery
+- `tests/test_preflight.py` (+3 tests) — kill switch wired into check 5: tripped on drawdown, ok on no-drawdown, initializes state when missing
+- `tests/test_order_builder.py` (+5 tests) — `submit_order` qty vs notional dispatch, requires exactly one, `get_estimated_entry_price` returns latest close + raises on empty
+- `tests/test_trade_logger.py` (updated) — log_entry now handles qty-based + notional-based shapes
+
+### Smoke-tested against real environment
+
+- `preflight.check_entry()` now returns `(False, "micro_theses_stale: last_mtime=2026-05-20, today=2026-05-21")` because the date rolled over mid-session — correct behavior; MICRO refreshes at ~11:30 UTC today
+- `account.equity = $100,221.05` (small positive PnL since session start)
+- `account_state.json` initialized at $100,000 peak earlier in session; update_peak_if_higher will bump to $100,221 on the first signal-positive day
+- `get_estimated_entry_price("SPY") = $741.25` — works
+
+### Files touched
+
+- `src/risk.py` — added `check_kill_switch` + `KILL_SWITCH_DRAWDOWN_PCT` constant
+- `src/account_state.py` (new)
+- `src/preflight.py` — replaced kill-switch stub with real implementation
+- `src/order_builder.py` — `submit_order(qty | notional)` refactor, added `get_estimated_entry_price` helper
+- `src/trade_logger.py` — `submitted_qty` field, handles None `notional`
+- `run_trading.py` — full risk-based entry orchestration with concentration check + HWM update
+- `tests/test_risk.py`, `tests/test_account_state.py` (new), `tests/test_preflight.py`, `tests/test_order_builder.py`, `tests/test_trade_logger.py`
+
+---
+
+## 2026-05-21 — Epic 2 + Epic 3 shipped; investigations + diagnostics
+
+### Diagnostics from PowerShell / Task Scheduler
+
+- **Task Scheduler Operational log is DISABLED** (`enabled: false` per `wevtutil gl Microsoft-Windows-TaskScheduler/Operational`). That's why fire history is invisible — every "did the task run?" question is currently unanswerable from event logs. **Fix (needs admin):** `wevtutil sl Microsoft-Windows-TaskScheduler/Operational /e:true`. Worth doing — without it, the 2026-05-14 miss and the MACRO refresh miss can't be definitively diagnosed.
+- **All tasks' `LastRunTime = 2026-05-19 5:51:18 PM`** across all three projects (Market Dashboard, Tactical Markets, Tactical Trading). That's a bulk re-registration timestamp (`setup_task.ps1 -Force` style), not a real fire signal. After re-enabling the operational log, future LastRunTime values will be meaningful.
+- **Power events show evening-only wake/sleep activity** for 5/18–5/19 (6 PM–8 PM range). No morning power events visible in the last 20 events — the machine is probably in deep sleep at 8:20/8:35/8:40 AM CDT. The Wake task with `WakeToRun=True` is supposed to handle this; the operational log would tell us whether it's working.
+- **MACRO last refreshed 2026-05-19 17:52 UTC** (scheduled "Market Stress Dashboard" task is configured correctly with NextRunTime 5/21 7:30 AM). Today's 5/20 refresh didn't fire — same pattern as the bot's 5/14 miss.
+- **Cross-project follow-ups for Rekwa:**
+  - Enable Task Scheduler Operational log (one-time admin action)
+  - Check power settings — ensure hibernate/sleep doesn't block scheduled fires (`powercfg /devicequery wake_armed` shows what can wake the machine)
+  - The MICRO project's `Tactical Markets Watchdog` task has `LastRunTime = 11/30/1999` (never run) and result `267011` (never ran yet); next fire today 7:00 AM CT. Worth watching.
+
+### Smoke test of wired-up entry path
+
+- `python run_trading.py` cleanly exits on `Preflight FAILED: micro_theses_stale: last_mtime=2026-05-20, today=2026-05-21` — correct (date rolled mid-session; MICRO refreshes ~11:30 UTC).
+
+### Epic 2 (Drift Detection + Loss Discipline) — shipped
+
+- **Story 2.1 (canonical drift events):** new `reconciler.report()` is read-only and returns events with the spec's canonical types: `orphan_position`, `orphan_open_order`, `missing_position`, `missing_stop_order`. Distinct from existing `reconcile()` which is active backfill. Smarter `orphan_open_order` detection: skips in-flight market SELLs whose symbol matches a local open record (those are normal pending exits, not drift).
+- **Story 2.2 (drift_log + notify):** `reconciler.notify_drift(events)` appends each event to `data/drift_log.jsonl` with `detected_at` UTC timestamp and sends a single Pushover summary (truncated to 1024 chars). Idempotent on empty input.
+- **Story 2.3 (post-task reconciler):** `reconciler.report_and_notify()` convenience wrapper. Wired into the `finally` block of `run_trading.py` `__main__` AND the end of `exit_manager.run_exits()`. Catches drift the cycle itself introduces; non-fatal on failure.
+- **Story 2.4 (consecutive-loss kill switch):** new `risk.check_consecutive_losses(trades, threshold=5)`. Sorts closed trades by `exit_time_actual` and trips if the last 5 are all losses. Wired into `preflight._check_kill_switch` alongside the drawdown check. Pushover title becomes "Tactical Trading ABORT: CONSECUTIVE LOSSES" when this trips.
+- **Story 2.5 (wash-sale at exit):** `exit_manager._compute_wash_sale(record, all_records, exit_time, pnl)` scans local trades for same-symbol entries in the 30 days before exit. Embeds a `wash_sale` object in every closed record (uniform shape regardless of win/loss). Excludes self and other symbols. Phase 2 is informational; Phase 3 may auto-block re-entries.
+
+### Epic 3 (Graduation Tracking) — shipped
+
+- **Story 3.1 (graduation status):** new [src/graduation.py](src/graduation.py) with `check_status()` returning `{total_closed_trades, stop_fired_exits, macro_size_downs, drift_false_positives, criterion_met, criterion_summary}`. Reads `trades.jsonl` + `drift_log.jsonl`. Counts MACRO size-downs from `macro_snapshot.composite_band` (red=any, orange+high), skipping neutralized records. Current status (smoke-tested): 3/20 closed, 0/2 stop-fired, 0/1 MACRO size-down, 0 drift events (after the tightening fix). Long road to graduation.
+- **Story 3.2 (graduation notify):** `notify_if_met()` sends a one-shot Pushover when criterion is first met; idempotent via `data/graduation_state.json` `already_notified: true` flag. Wired into the end of `exit_manager.run_exits()`.
+
+### Tests added (97 → 129 passing)
+
+- `tests/test_reconciler.py` (+8 tests) — all 4 canonical drift types, notify_drift persistence + idempotence + Pushover format, recognizes tracked stop, in-flight exit not flagged
+- `tests/test_risk.py` (+7 tests) — `check_consecutive_losses`: under-threshold, breaks-on-winner, trips-on-streak, ignores-open, orders-by-time, custom threshold, default constant
+- `tests/test_exit_manager.py` (+6 tests) — `_compute_wash_sale`: no-prior, prior-within-30d, excludes-self, excludes-other-symbols, excludes-outside-window, winner-uniform-shape
+- `tests/test_graduation.py` (new, 11 tests) — count each criterion field, files-missing case, criterion logic, notify idempotence
+
+### Smoke tests against real environment
+
+- `graduation.check_status()`: 3 closed / 0 stop-fired / 0 macro-sizedown / 0 drift → criterion_met=False (as expected)
+- `reconciler.report()`: 0 drift events after the in-flight-exit fix (was incorrectly flagging XLE's queued SELL as orphan_open_order before the fix)
+
+### Files touched
+
+- `src/reconciler.py` — added `report()`, `notify_drift()`, `report_and_notify()`, new `DRIFT_LOG` constant; CLI gained `--report` flag
+- `src/risk.py` — added `check_consecutive_losses` + `CONSECUTIVE_LOSS_THRESHOLD` constant
+- `src/preflight.py` — `_check_kill_switch` now runs BOTH drawdown and consecutive-loss checks
+- `src/exit_manager.py` — `_compute_wash_sale` helper, wash_sale field on both stop_fired and normal closes, `report_and_notify` hook at end of `run_exits`, graduation hook at end of `run_exits`
+- `run_trading.py` — `finally` block calls `report_and_notify`
+- `src/graduation.py` (new)
+- `tests/test_reconciler.py`, `tests/test_risk.py`, `tests/test_exit_manager.py`, `tests/test_graduation.py` (new)
+
+---
+
+## Phase 2 status as of 2026-05-21
+
+**All Phase 2 epics complete** (1a, 1b, 1c, 2, 3). All wired together. 129/129 tests passing. Live smoke-validated everywhere I could without actually trading.
+
+Next live milestone: today's 13:30/13:35/13:40 UTC scheduled cycle. If MICRO emits, the Entry path will exercise the full stack — preflight (env, Alpaca, MICRO, MACRO, kill-switch+consecutive-loss) → MACRO validate → risk-based sizing → concentration check → submit BUY → wait_for_fill → submit_stop → log_entry → post-cycle drift report. The Exit task will run reconcile → market-hours guard → cancel stops + market SELL → wash-sale compute → drift report → graduation check.
+
+### Known limitations / Phase 2.5 candidates
+
+- **`get_estimated_entry_price` uses yfinance daily bars.** During market hours yfinance returns today's intraday close (= latest tick), which is fine for sizing. Edge case: a fast-moving stock with a 5% intraday move between the price estimate and the actual fill produces a position size that's slightly miscalibrated relative to the actual fill. For Phase 2 / sector ETFs (low intraday vol) this is negligible. Phase 2.5 may switch to Alpaca's `StockHistoricalDataClient.get_stock_latest_trade()` for sub-second freshness.
+- **High-water-mark only updates on Entry fires.** During no-signal stretches, peak can lag actual equity. The kill switch then under-reports drawdown (peak too low → drawdown smaller than reality). Acceptable for Phase 2; Phase 3 may want to update HWM on every Exit too.
+- **Concentration check fetches positions inside the per-thesis loop.** If MICRO emits 3 theses and the bot enters all 3, each check uses Alpaca state from when the loop started (positions submitted earlier in the loop aren't reflected yet because orders are still ACCEPTED, not filled). Phase 2.5: incrementally update `current_positions` after each successful submission. For now: per-trade caps are unaffected; only open-total cap could be undercounted within a single fire.
+- **Drift resolution is manual-only.** v1 of the human-confirmation gate (shipped 2026-05-21) requires running `python src/reconciler.py --resolve-all "reason"` to clear benign drift. Phase 2.5 candidates:
+  - **Auto-resolve heuristics:** `orphan_open_order` whose `order_id` is now FILLED/CANCELED in Alpaca history → safe to auto-resolve (the order completed, was real, just transient). `missing_position` for a trade_id that now has matching exit_order_id → similarly safe.
+  - **Drift summary command:** `python src/reconciler.py --drift-summary` showing counts by week / by type, both resolved and unresolved. Useful for "is the bot producing more drift over time" trend monitoring.
+  - **Pushover-link to the resolve workflow:** the drift Pushover currently just lists event types; could include the `event_id`s so a one-tap-from-phone resolve becomes possible.
+- **Fractional-share remainder is uncovered by broker stops.** `submit_stop` floors to whole shares (Alpaca rejects fractional GTC stops); typical remainder is <1 share = ~$20-30 of unprotected position. `exit_position` mitigates by selling Alpaca's actual qty at scheduled exit (cleans up any post-stop-fire residue). True fix needs either (a) Alpaca to allow fractional GTC stops, or (b) a second DAY stop for the fractional remainder resubmitted each day. Both are real Phase 2.5 considerations if the dollar amounts ever grow meaningfully (e.g., live capital sizing produces larger fractional remainders).
+- **Reconciler-recovered closes default `exit_reason="scheduled"`.** If a stop ever fires through a reconciler-recovery path (rather than the exit-task path), it gets tagged "scheduled" not "stop_fired" — undercounting in graduation's `stop_fired_exits`. The probability is low (stop fire is detected at exit-task time normally) but non-zero. Phase 2.5: have reconciler distinguish stop-vs-scheduled SELL by querying the order's `order_type` field.
 
 ## Source documents
 

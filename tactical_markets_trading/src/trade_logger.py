@@ -17,7 +17,11 @@ TERMINAL_FAILED = {OrderStatus.REJECTED, OrderStatus.CANCELED, OrderStatus.EXPIR
 
 TRADES_PATH = Path(__file__).resolve().parent.parent / "data" / "trades.jsonl"
 FILL_POLL_INTERVAL = 2
-FILL_POLL_TIMEOUT = 60
+# 60s was too short — XLE 2026-05-18 entry took 3min 21s to fill, wait_for_fill
+# raised, log_entry never persisted, and we silently held an untracked position
+# for two days. 300s is generous enough for slow market fills and still fails
+# fast on truly stuck orders. The reconciler is the secondary safety net.
+FILL_POLL_TIMEOUT = 300
 HOLD_DAYS = 2  # NYSE trading days. Lowered from 5 on 2026-05-13 to speed Phase 1 graduation (pipes-and-signals test).
 
 
@@ -54,22 +58,57 @@ def wait_for_fill(order_id: str) -> dict:
     raise RuntimeError(f"Order {order_id} not filled within {FILL_POLL_TIMEOUT}s (last status: {last_status})")
 
 
-def log_entry(order_result: dict) -> dict:
+def log_entry(order_result: dict, macro_snapshot: dict | None = None, sizing_rule_used: str = "phase1_fixed") -> dict:
+    """Log an entry record. Optional Phase 2 fields:
+        macro_snapshot: dict with run_timestamp, composite_band, regime, weights_hash,
+                        neutralized — extracted from regime_data per Story 1b.6.
+        sizing_rule_used: 'phase1_fixed', 'phase1_fixed_x_macro_mult' (transitional),
+                          'risk_based', or 'concentration_cap' (Story 1c.3+).
+    """
     TRADES_PATH.parent.mkdir(exist_ok=True)
     fill = wait_for_fill(order_result["order_id"])
     entry_time = datetime.fromisoformat(fill["fill_time"])
+
+    # Story 1a.2 + 1a.3: submit broker-side stop AFTER entry fills, persist the result.
+    # Late import — order_builder also imports from this module, avoid a cycle at load time.
+    from order_builder import submit_stop
+    stop_result = submit_stop(
+        symbol=order_result["symbol"],
+        qty=fill["fill_qty"],
+        fill_price=fill["fill_price"],
+    )
+    if stop_result["stop_order_id"] is None:
+        # Surface to human per Story 1a.2 AC; do NOT auto-close the entry position.
+        import pushover
+        pushover.send(
+            f"Stop order submission FAILED for {order_result['symbol']}",
+            f"Entry filled {fill['fill_qty']} @ ${fill['fill_price']}. "
+            f"Stop computed at ${stop_result['stop_price']}. "
+            f"Error: {stop_result.get('stop_submission_error', 'unknown')}. "
+            f"Position is open and UNPROTECTED — broker stop not in place.",
+        )
+
     record = {
         "trade_id": str(uuid.uuid4()),
         "order_id": order_result["order_id"],
         "symbol": order_result["symbol"],
         "sell_leg": order_result["sell_leg"],
-        "notional": order_result["notional"],
+        # notional is None when Story 1c.3 qty-based sizing was used; preserved as a
+        # Phase 1 / 1b.6 transitional value otherwise.
+        "notional": order_result.get("notional"),
+        "submitted_qty": order_result.get("qty"),  # the qty we asked Alpaca to fill (None if notional-based)
         "thesis_as_of": order_result["thesis_as_of"],
         "entry_time": fill["fill_time"],
         "fill_price": fill["fill_price"],
         "fill_qty": fill["fill_qty"],
         "exit_time_planned": str(add_trading_days(entry_time, HOLD_DAYS)),
         "status": "open",
+        "stop_order_id": stop_result["stop_order_id"],
+        "stop_price": stop_result["stop_price"],
+        "stop_rule_used": stop_result["stop_rule_used"],
+        "stop_qty_covered": stop_result.get("stop_qty_covered"),
+        "sizing_rule_used": sizing_rule_used,
+        "macro_snapshot": macro_snapshot,
     }
     with open(TRADES_PATH, "a") as f:
         f.write(json.dumps(record) + "\n")

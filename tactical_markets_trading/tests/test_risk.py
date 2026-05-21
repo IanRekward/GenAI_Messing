@@ -7,8 +7,10 @@ Phase 2; these tests are the first regression guard.
 import pytest
 
 from risk import (
+    KILL_SWITCH_DRAWDOWN_PCT,
     STOP_PCT_DEFAULT,
     check_concentration,
+    check_kill_switch,
     compute_position_size,
     compute_stop_price,
 )
@@ -176,3 +178,141 @@ def test_concentration_per_trade_check_uses_proposed_value_not_qty():
         account_value=100_000,
     )
     assert ok, reason
+
+
+# Story 1c.5: check_kill_switch
+
+
+def test_kill_switch_ok_when_no_drawdown():
+    ok, reason = check_kill_switch(current_equity=100_000, account_state={"peak_equity": 100_000})
+    assert ok
+    assert reason == "ok"
+
+
+def test_kill_switch_ok_when_drawdown_below_threshold():
+    # 10% drawdown — below 20% threshold
+    ok, reason = check_kill_switch(current_equity=90_000, account_state={"peak_equity": 100_000})
+    assert ok
+    assert reason == "ok"
+
+
+def test_kill_switch_trips_at_exactly_threshold():
+    # Exactly 20% drawdown — trips (>= comparison)
+    ok, reason = check_kill_switch(current_equity=80_000, account_state={"peak_equity": 100_000})
+    assert not ok
+    assert "kill_switch_drawdown" in reason
+    assert "20.00%" in reason
+
+
+def test_kill_switch_trips_above_threshold():
+    # 25% drawdown
+    ok, reason = check_kill_switch(current_equity=75_000, account_state={"peak_equity": 100_000})
+    assert not ok
+    assert "25.00%" in reason
+    assert "peak $100,000.00" in reason
+    assert "current $75,000.00" in reason
+
+
+def test_kill_switch_ok_when_peak_missing():
+    """Defensive: missing peak_equity (freshly initialized state) returns OK."""
+    ok, reason = check_kill_switch(current_equity=100_000, account_state={})
+    assert ok
+    assert reason == "ok"
+
+
+def test_kill_switch_custom_threshold():
+    # 15% drawdown trips at 10% threshold
+    ok, reason = check_kill_switch(
+        current_equity=85_000, account_state={"peak_equity": 100_000}, threshold=0.10
+    )
+    assert not ok
+    assert "15.00%" in reason
+
+
+def test_kill_switch_default_threshold_constant():
+    assert KILL_SWITCH_DRAWDOWN_PCT == 0.20
+
+
+# Story 2.4: check_consecutive_losses
+
+
+from risk import CONSECUTIVE_LOSS_THRESHOLD, check_consecutive_losses
+
+
+def _closed(pnl, exit_at="2026-05-15T13:40:00+00:00"):
+    return {"status": "closed", "pnl_dollars": pnl, "exit_time_actual": exit_at}
+
+
+def test_consecutive_losses_ok_when_fewer_than_threshold_records():
+    trades = [_closed(-100), _closed(-100), _closed(-100)]  # only 3 closes
+    ok, reason = check_consecutive_losses(trades)
+    assert ok
+    assert reason == "ok"
+
+
+def test_consecutive_losses_ok_when_recent_winner_in_last_5():
+    trades = [
+        _closed(-100, "2026-05-01T13:40:00+00:00"),
+        _closed(-100, "2026-05-02T13:40:00+00:00"),
+        _closed(+200, "2026-05-03T13:40:00+00:00"),  # winner breaks the streak
+        _closed(-100, "2026-05-04T13:40:00+00:00"),
+        _closed(-100, "2026-05-05T13:40:00+00:00"),
+    ]
+    ok, reason = check_consecutive_losses(trades)
+    assert ok
+
+
+def test_consecutive_losses_trips_when_last_5_are_all_losses():
+    trades = [
+        _closed(+50, "2026-05-01T13:40:00+00:00"),
+        _closed(-100, "2026-05-02T13:40:00+00:00"),
+        _closed(-100, "2026-05-03T13:40:00+00:00"),
+        _closed(-100, "2026-05-04T13:40:00+00:00"),
+        _closed(-100, "2026-05-05T13:40:00+00:00"),
+        _closed(-100, "2026-05-06T13:40:00+00:00"),
+    ]
+    ok, reason = check_consecutive_losses(trades)
+    assert not ok
+    assert "kill_switch_consecutive_losses" in reason
+    assert "5 losses" in reason
+    assert "2026-05-01" in reason  # last winner date
+
+
+def test_consecutive_losses_ignores_open_records():
+    trades = [
+        _closed(-100, "2026-05-01T13:40:00+00:00"),
+        _closed(-100, "2026-05-02T13:40:00+00:00"),
+        _closed(-100, "2026-05-03T13:40:00+00:00"),
+        _closed(-100, "2026-05-04T13:40:00+00:00"),
+        _closed(-100, "2026-05-05T13:40:00+00:00"),
+        {"status": "open", "pnl_dollars": None},  # open record ignored
+    ]
+    ok, reason = check_consecutive_losses(trades)
+    assert not ok
+
+
+def test_consecutive_losses_orders_by_exit_time():
+    """Out-of-order input must still pick the correct last 5 by exit_time_actual."""
+    trades = [
+        _closed(-100, "2026-05-05T13:40:00+00:00"),
+        _closed(+200, "2026-05-01T13:40:00+00:00"),  # earliest, ignored in last-5
+        _closed(-100, "2026-05-04T13:40:00+00:00"),
+        _closed(-100, "2026-05-02T13:40:00+00:00"),  # 2nd earliest — IS in last 5 if N=5
+        _closed(-100, "2026-05-03T13:40:00+00:00"),
+        _closed(-100, "2026-05-06T13:40:00+00:00"),
+    ]
+    # Last 5 sorted by exit_time: 05-02, 05-03, 05-04, 05-05, 05-06 — all -100 → trip
+    ok, reason = check_consecutive_losses(trades)
+    assert not ok
+
+
+def test_consecutive_losses_custom_threshold():
+    trades = [_closed(-100) for _ in range(3)]
+    ok, reason = check_consecutive_losses(trades, threshold=3)
+    assert not ok
+    ok, reason = check_consecutive_losses(trades, threshold=5)
+    assert ok  # only 3 records, threshold 5
+
+
+def test_consecutive_losses_default_threshold_is_5():
+    assert CONSECUTIVE_LOSS_THRESHOLD == 5

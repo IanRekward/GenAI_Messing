@@ -12,10 +12,53 @@ from alpaca.trading.requests import MarketOrderRequest
 import pandas_market_calendars as mcal
 import yfinance as yf
 
+import preflight
 import pushover
 import reconciler
 from alpaca_connector import load_env, trading_client
 from trade_logger import TRADES_PATH, wait_for_fill
+
+
+def _compute_wash_sale(record: dict, all_records: list[dict], exit_time_actual: str, pnl_dollars: float) -> dict:
+    """Story 2.5: scan local trades for same-symbol entries within 30 days before exit.
+
+    Phase 2 implementation is informational only — Phase 3 may auto-block re-entries
+    that would trigger a wash sale. Returns the wash_sale object for embedding in the
+    close record.
+    """
+    is_loss = pnl_dollars < 0
+    if not is_loss:
+        return {"is_loss": False, "loss_amount": 0, "lots_within_30d": [], "potential_wash_sale": False}
+
+    exit_dt = datetime.fromisoformat(exit_time_actual)
+    window_start = exit_dt - timedelta(days=30)
+    lots = []
+    for r in all_records:
+        if r.get("symbol") != record.get("symbol"):
+            continue
+        if r.get("trade_id") == record.get("trade_id"):
+            continue
+        et = r.get("entry_time")
+        if not et:
+            continue
+        try:
+            entry_dt = datetime.fromisoformat(et)
+        except ValueError:
+            continue
+        if window_start <= entry_dt < exit_dt:
+            lots.append({
+                "trade_id": r["trade_id"],
+                "entry_time": et,
+                "fill_price": r.get("fill_price"),
+                "fill_qty": r.get("fill_qty"),
+            })
+
+    return {
+        "is_loss": True,
+        "loss_amount": pnl_dollars,
+        "lots_within_30d": lots,
+        "potential_wash_sale": len(lots) > 0,
+    }
 
 
 def get_return_pct(ticker: str, start: datetime, end: datetime) -> float | None:
@@ -51,16 +94,16 @@ def _cancel_stop_and_classify(client, record: dict) -> tuple[str, dict | None]:
 
     Returns (exit_reason, stop_fill_data_or_none).
 
-    - "scheduled"          — cancel succeeded; proceed with market SELL
-    - "no_stop_to_cancel"  — record has stop_order_id=None (Phase 1 or stop_submission_failed);
-                             proceed with market SELL
+    - "scheduled"          — cancel succeeded OR no stop existed (Phase 1 / stop_submission_failed);
+                             proceed with market SELL. The "did a stop exist?" detail is preserved
+                             in the record's stop_order_id field for forensics.
     - "stop_fired"         — cancel raised AND position size is 0 → broker's stop already filled;
                              returns the stop's fill data so the caller skips the SELL
     - "stop_cancel_failed" — cancel raised but position still held; proceed with market SELL
     """
     stop_order_id = record.get("stop_order_id")
     if not stop_order_id:
-        return "no_stop_to_cancel", None
+        return "scheduled", None
 
     try:
         client.cancel_order_by_id(stop_order_id)
@@ -97,9 +140,12 @@ def exit_position(record: dict) -> dict:
     client = trading_client()
     # Pre-flight: confirm we actually hold this symbol on Alpaca. If not, raise so
     # the reconciler can backfill the close from order history rather than triggering
-    # the "fractional cannot be sold short" rejection.
+    # the "fractional cannot be sold short" rejection. Also capture the actual position
+    # qty — if a stop partial-fill or fractional-remainder leak occurred, we sell what's
+    # actually there, not what the local record thinks.
     try:
-        client.get_open_position(record["symbol"])
+        position = client.get_open_position(record["symbol"])
+        actual_position_qty = float(position.qty)
     except Exception as e:
         raise RuntimeError(
             f"no Alpaca position for {record['symbol']} (local trade {record['trade_id'][:8]}); "
@@ -124,6 +170,7 @@ def exit_position(record: dict) -> dict:
             "sell_leg_return_pct": None,
             "status": "closed",
             "exit_reason": exit_reason,
+            "wash_sale": _compute_wash_sale(record, load_trades(), stop_fill["exit_time_actual"], pnl_dollars),
         }
         try:
             entry_time = datetime.fromisoformat(record["entry_time"])
@@ -134,10 +181,15 @@ def exit_position(record: dict) -> dict:
             print(f"  benchmark fetch failed: {e} - record saved without benchmarks")
         return closed
 
-    # Normal path (scheduled, no_stop_to_cancel, or stop_cancel_failed): submit market SELL.
+    # Normal path (scheduled, no_stop_to_cancel, or stop_cancel_failed): submit market SELL
+    # for what we ACTUALLY hold on Alpaca. Using actual_position_qty (rather than the local
+    # record's fill_qty) lets us cleanly close fractional-remainder leakage from a prior
+    # whole-share stop partial-fire.
+    if abs(actual_position_qty - record["fill_qty"]) > 1e-6:
+        print(f"  position qty drift: local={record['fill_qty']} alpaca={actual_position_qty} — selling actual")
     order = client.submit_order(MarketOrderRequest(
         symbol=record["symbol"],
-        qty=record["fill_qty"],
+        qty=actual_position_qty,
         side=OrderSide.SELL,
         time_in_force=TimeInForce.DAY,
     ))
@@ -158,6 +210,7 @@ def exit_position(record: dict) -> dict:
         "sell_leg_return_pct": None,
         "status": "closed",
         "exit_reason": exit_reason,
+        "wash_sale": _compute_wash_sale(record, load_trades(), fill["fill_time"], pnl_dollars),
     }
     try:
         entry_time = datetime.fromisoformat(record["entry_time"])
@@ -182,6 +235,13 @@ def _market_is_open() -> bool:
 
 
 def run_exits():
+    # Story 1b.5: preflight ABORT on broken state (env keys, Alpaca reachability).
+    ok, reason = preflight.check_exit()
+    if not ok:
+        print(f"Exit preflight FAILED: {reason}")
+        pushover.send("Tactical Trading EXIT ABORT", reason)
+        sys.exit(1)
+
     # Reconcile first so local state matches Alpaca before we decide what to exit.
     # Backfills closures we missed; alerts on untracked positions. Non-fatal on failure
     # (reconciler will Pushover its own crash); we still proceed with the exit cycle.
@@ -230,6 +290,25 @@ def run_exits():
             )
     if not exited:
         print(f"No open positions due for exit ({len(records)} record(s) checked).")
+
+    # Story 2.3: post-cycle drift report (passive monitoring). Catches drift the cycle
+    # itself may have introduced (e.g., a stop fired mid-run). Non-fatal on failure.
+    try:
+        events = reconciler.report_and_notify()
+        if events:
+            print(f"Post-cycle drift: {len(events)} event(s) recorded to drift_log.jsonl")
+    except Exception as e:
+        print(f"reconciler post-report failed (non-fatal): {e}")
+        pushover.send("Reconciler post-report failed", str(e))
+
+    # Epic 3: check graduation status, Pushover once when criterion is first met.
+    try:
+        import graduation
+        if graduation.notify_if_met():
+            print("PHASE 2 GRADUATION MET — Pushover sent.")
+    except Exception as e:
+        print(f"graduation check failed (non-fatal): {e}")
+
     return exited
 
 

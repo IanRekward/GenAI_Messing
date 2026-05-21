@@ -16,7 +16,14 @@ The canonical sources of policy are [TODO.md](../TODO.md) (current status + lock
 
 ## Phase status — read this first
 
-**Phase 1 is BUILT and FROZEN until 5+ trades execute cleanly** (lowered from 10 on 2026-05-13 — see TODO.md). No new code until the freeze lifts. The freeze is enforced for empirical reasons — adding features now contaminates the validation substrate. If a Phase 2-style change feels obvious, stop and surface it; don't ship it.
+**Phase 1 is BUILT. The blanket freeze is RETIRED as of 2026-05-20.** See [TODO.md "2026-05-20 — Freeze retired"](../TODO.md) for the rationale. The freeze was lifted twice in two weeks anyway, "5 clean executions" didn't actually validate strategy edge (only the pipes), and pure-function work demonstrably shipped during the freeze without contaminating anything.
+
+**Replacement policy — production-path vs research-path:**
+- **Production-path changes** (`run_trading.py`, `src/order_builder.py`, `src/trade_logger.py`, `src/exit_manager.py`, `src/alpaca_connector.py`, `setup_task.ps1`): require a paper-fire smoke test against the real Alpaca API before they land in the scheduler. Ship → run module's `__main__` block → verify sane output → leave for next scheduled fire.
+- **Research-path and protective changes** (`src/risk.py`, `src/macro_consumer.py`, `tests/`, `research/`, `docs/`, `_bmad-output/`, new utility scripts): ship freely. No gate.
+- **The safety net is the reconciler, not the freeze.** Build automated drift detection (compare local `trades.jsonl` open count to Alpaca `get_all_positions()`, Pushover-alert on mismatch) as the first Phase 2 story.
+
+**Strategy-gate decision pending.** Before Phase 2 wiring stories unblock, Rekwa needs to pick option A/B/C in [strategy-gate-decision.md](./planning-artifacts/strategy-gate-decision.md). Backtest evidence shows the live signal underperforms SPY by 12× cumulative return at lower Sharpe than 60/40; "engineering gate" (pipes work) and "strategy gate" (signal has edge) were being conflated and need separating.
 
 **The PRD describes the end-state vision** (multi-strategy, regime-aware, MACRO+MICRO fusion, dashboard, kill switch, tax export). **Phase 1 is dramatically simpler:** one signal, long-only momentum, fixed $10k, no stops, no MACRO. Treat the PRD as the north star, not Phase 1 scope.
 
@@ -133,10 +140,10 @@ These are also in [TODO.md](../TODO.md) "Locked rules" table — that's the sour
 ## Critical Don't-Miss Rules
 
 - **Do not re-open locked scope.** See the table above. Re-opening requires explicit user sign-off.
-- **Do not ship code during the Phase 1 freeze.** Wait for 5+ clean trades (revised down from 10 on 2026-05-13).
+- **Do not skip the smoke test on production-path changes.** Per the 2026-05-20 policy update, anything touching the entry/exit/fill path requires a paper-fire smoke test before being left for the scheduler. The freeze is gone; the smoke test discipline replaces it.
 - **Do not remove `paper=True`** without an explicit user sign-off + the written rules-of-engagement doc.
-- **Do not introduce a tests directory in Phase 1.** Phase 2 may.
-- **Do not consume MACRO in Phase 1.** Phase 2+ candidate.
+- **Do not skip writing tests for production-path code.** The "no tests in Phase 1" rule is retired — it cost us the partial-fill bug. Add regression tests as you fix bugs.
+- **Do not consume MACRO without the strategy-gate decision being made.** Phase 2 wiring stories are gated on the option A/B/C decision.
 - **Do not import across siblings.** Files-on-disk only.
 - **Do not delete or rewrite past `data/trades.jsonl` rows.** Append-only; in-place close-update only.
 - **Do not let yfinance failures kill the close.** The exit path is non-raising after the SELL fills — leave benchmarks null rather than losing the trade record.

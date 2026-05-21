@@ -10,6 +10,57 @@ MAX_POSITION_PCT = 0.05   # 5% per trade concentration cap (PRD FR12).
 MAX_OPEN_PCT = 0.20       # 20% total open positions cap (PRD FR12).
 MAX_TICKER_PCT = 0.25     # 25% single-ticker cap (PRD FR12).
 MAX_RISK_PCT = 0.02       # 2% per-trade risk budget (PRD FR11).
+KILL_SWITCH_DRAWDOWN_PCT = 0.20  # 20% peak-to-current drawdown triggers auto-pause (FR13 drawdown).
+
+
+CONSECUTIVE_LOSS_THRESHOLD = 5  # 5 losses in a row trips the slow-bleed kill switch (FR13).
+
+
+def check_consecutive_losses(trades: list[dict], threshold: int = CONSECUTIVE_LOSS_THRESHOLD) -> tuple[bool, str]:
+    """Story 2.4: pause new entries when the last `threshold` closed trades are all losses.
+
+    Pure function. Caller passes the full trades.jsonl record list; this function filters
+    to status=='closed' and orders by exit_time_actual.
+
+    Returns (ok, reason). ok=False means "consecutive-loss kill switch tripped."
+    Returns (True, "ok") if fewer than `threshold` closed records exist (not enough signal).
+    """
+    closed = [t for t in trades if t.get("status") == "closed" and t.get("pnl_dollars") is not None]
+    closed.sort(key=lambda t: t.get("exit_time_actual", ""))
+    if len(closed) < threshold:
+        return True, "ok"
+    last_n = closed[-threshold:]
+    if all(t["pnl_dollars"] < 0 for t in last_n):
+        # Find last winner date for the message
+        winners = [t for t in closed if t["pnl_dollars"] >= 0]
+        last_winner_date = winners[-1].get("exit_time_actual", "never") if winners else "never"
+        return False, (
+            f"kill_switch_consecutive_losses: {threshold} losses in a row, "
+            f"last winner {last_winner_date[:10] if last_winner_date != 'never' else 'never'}"
+        )
+    return True, "ok"
+
+
+def check_kill_switch(current_equity: float, account_state: dict, threshold: float = KILL_SWITCH_DRAWDOWN_PCT) -> tuple[bool, str]:
+    """Story 1c.5: pause new entries when drawdown from peak >= threshold.
+
+    Pure function. account_state must carry a 'peak_equity' field; caller is
+    responsible for loading/persisting it via account_state.py.
+
+    Returns (ok, reason). ok=False means "kill switch tripped, block new entries."
+    Exit task is independent — it continues processing ripe positions.
+    """
+    peak = account_state.get("peak_equity")
+    if peak is None or peak <= 0:
+        # Defensive: no peak yet means freshly initialized; can't compute drawdown.
+        return True, "ok"
+    drawdown = (peak - current_equity) / peak
+    if drawdown >= threshold:
+        return False, (
+            f"kill_switch_drawdown: {drawdown * 100:.2f}% "
+            f"(peak ${peak:,.2f} -> current ${current_equity:,.2f}, threshold {threshold * 100:.0f}%)"
+        )
+    return True, "ok"
 
 
 def compute_stop_price(fill_price: float, stop_pct: float = STOP_PCT_DEFAULT) -> float:
