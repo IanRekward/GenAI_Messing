@@ -38,6 +38,18 @@ Both issues diagnosed and closed.
 
 ---
 
+## Known issues — observed 2026-05-20 (OPEN)
+
+### Issue 3 — Missed morning run on 2026-05-20
+
+`data/latest.json` was last written at **17:52 UTC on 2026-05-19**. The daily 7:30 AM ET (11:30 UTC) run on 2026-05-20 did not fire. Machine was likely in deep sleep and did not respond to the RTC wake trigger.
+
+**Impact:** The `tactical_markets_trading` bot's MACRO preflight (`src/macro_consumer.py`) treats sidecar files >24h stale as neutralized — full-size trades, no regime gating. No risk of bad action, but regime protection is defeated until the next successful run.
+
+**To investigate:** Check Windows Event Viewer → Task Scheduler → `Market Dashboard Wake` and `Market Dashboard` task history for 2026-05-20. If the wake task fired but the run task didn't, it's a timing issue (run fires before PC is fully awake). If neither fired, the RTC wake isn't working reliably — may need to pin the machine to never sleep, or add a `StartWhenAvailable` flag to the market_dashboard run task (same fix applied to the trading bot tasks).
+
+---
+
 **Tactical Markets companion projects** are now sibling repos with their own backlogs:
 [../tactical_markets/TODO.md](../tactical_markets/TODO.md), [../tactical_markets_trading/TODO.md](../tactical_markets_trading/TODO.md). They remain in hopper until Market Stress Dashboard is complete and all Phase G items ship.
 
