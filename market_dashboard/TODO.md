@@ -158,15 +158,14 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   divergence. Criteria (b) passed (rates_curve +0.180, inflation +0.150 in high) and
   (c) passed (stable regime column, 7 NaN startup rows not genuine flaps).
   `enabled` stays false. `weights_hash` unchanged → no bot W1 coordination needed.
-  **Two bugs found to fix before next review (Sonnet-executable, ~1 hour):**
-  1. `composite_regime_weighted` not logged to `history.csv` (Brief 10C gap) — add column
-     to `log_run()` in `src/history.py` so next review has divergence data.
-  2. Recalibrate multiplier logic amplifies anti-signal: negative-IC buckets get 2x
-     multipliers (e.g. `economic_momentum` IC=-0.195 → mult=2.0 in high). Fix: in
-     `propose_regime_weights()`, use `max(ic_val, 0.0)` when computing the IC ratio,
-     so negative-IC buckets always get multiplier=1.0 (neutral).
-  Also found: `_bt_yf` dead import bug in `recalibrate.py` (committed 2026-05-20).
-  Re-review on 2026-06-20 with Brief 26 Part A procedure unchanged.
+  Post-review status: both items flagged as "bugs" were already fixed in code —
+  the anti-signal guard (`if ic_val < 0: mult=1.0`) was already in `propose_regime_weights()`,
+  and `composite_regime_weighted` was already in `log_run()` (column now appears in
+  `history.csv` from 2026-05-20 onward). The `_bt_yf` import crash had hidden both.
+  Fix: `_bt_yf` dead import committed in `82b84f0` (2026-05-20).
+  Re-review on 2026-06-20: run `python -m src.recalibrate --regime`, then check
+  `history.csv` for high-regime rows with `composite_regime_weighted` diverging from
+  `composite_naive`. All gate criteria (a/b/c) unchanged.
 
 ### Phase F — Blocked on Ian's scope call (do not start until Ian answers)
 
