@@ -22,6 +22,19 @@ class ConfigError(Exception):
     """Raised when weights.yaml, thresholds.yaml, or scoring.py have drifted."""
 
 
+def load_yaml_safe(path: str, key: str | None = None, default=None):
+    """Load a YAML file; on missing file or parse error return `default` (or {})."""
+    p = Path(path)
+    fallback = default if default is not None else {}
+    if not p.exists():
+        return fallback
+    try:
+        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
+        return data.get(key, fallback) if key else data
+    except Exception:
+        return fallback
+
+
 # Canonical set of indicator keys that _fetch_indicator() handles.
 # Update this when adding a new indicator to scoring.py.
 KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({

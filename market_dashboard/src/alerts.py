@@ -16,13 +16,13 @@ from src.history import (
     compute_composite_momentum, cross_bucket_correlation,
     correlation_regime, classify_shock_type,
 )
+from src.indicators import BAND_ORDER as _BAND_ORDER
 from src.news import get_trigger_news_context
 
 DATA_DIR = Path("data")
 STATE_FILE = DATA_DIR / "alert_state.json"
 ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 
-_BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
 _BAND_MIN = {"green": 0.0, "yellow": 30.0, "orange": 50.0, "red": 70.0}
 
 

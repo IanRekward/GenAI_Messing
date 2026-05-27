@@ -3,9 +3,7 @@ Threshold evaluation: annotates every indicator and bucket with its stress band.
 """
 from __future__ import annotations
 
-from src.indicators import band_from_score
-
-_BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
+from src.indicators import band_from_score, BAND_ORDER as _BAND_ORDER
 
 
 def _evaluate_band(raw: float | None, thr: dict) -> str:

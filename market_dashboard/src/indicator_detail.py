@@ -7,9 +7,9 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from src.indicators import BAND_COLOR as _BAND_COLOR
+from src.config import load_yaml_safe
 
 _EXPLAINERS: dict | None = None
 
@@ -17,11 +17,7 @@ _EXPLAINERS: dict | None = None
 def _load_explainers() -> dict:
     global _EXPLAINERS
     if _EXPLAINERS is None:
-        p = Path("config/indicator_explainers.yaml")
-        try:
-            _EXPLAINERS = (yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("indicators", {}) if p.exists() else {}
-        except Exception:
-            _EXPLAINERS = {}
+        _EXPLAINERS = load_yaml_safe("config/indicator_explainers.yaml", "indicators", {})
     return _EXPLAINERS
 
 

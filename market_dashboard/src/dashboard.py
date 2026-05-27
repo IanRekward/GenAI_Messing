@@ -8,7 +8,6 @@ from datetime import datetime, date, timedelta
 from pathlib import Path
 
 import pandas as pd
-import yaml
 
 from src.history import (
     build_trend_svg, compute_composite_momentum, compute_bucket_momentum,
@@ -17,6 +16,7 @@ from src.history import (
 from src.indicator_detail import build_indicator_detail
 from src.analogs import find_analog
 from src.indicators import band_from_score as _band_from_score, BAND_COLOR as _BAND_COLOR, BAND_BG as _BAND_BG
+from src.config import load_yaml_safe as _load_yaml
 
 OUTPUT_DIR = Path("output")
 
@@ -106,6 +106,15 @@ def _fmt_raw(ind: dict) -> str:
     return f"{raw:.2f}"
 
 
+_VEL_UP = "#ff6b6b"
+_VEL_DOWN = "#4dbb6a"
+_VEL_FLAT = "#6e7681"
+
+
+def _vel_color(v: float) -> str:
+    return _VEL_UP if v > 0 else (_VEL_DOWN if v < 0 else _VEL_FLAT)
+
+
 def _fmt_momentum(mom: dict, band_color: str) -> str:
     """Render a one-line momentum summary for the composite card."""
     v7 = mom.get("velocity_7d")
@@ -114,24 +123,12 @@ def _fmt_momentum(mom: dict, band_color: str) -> str:
         return '<div class="score-sub" style="margin-top:4px">— (need 8+ days)</div>'
     arrow = "&#8593;" if v7 > 0 else ("&#8595;" if v7 < 0 else "&#8594;")
     sign = "+" if v7 > 0 else ""
-    color = "#ff6b6b" if v7 > 0 else ("#4dbb6a" if v7 < 0 else "#6e7681")
     label = regime.replace("_", " ")
     return (
-        f'<div class="score-sub" style="margin-top:4px;color:{color}">'
-        f'{arrow} {sign}{v7:.1f} pts / 7d <span style="color:#6e7681">({label})</span>'
+        f'<div class="score-sub" style="margin-top:4px;color:{_vel_color(v7)}">'
+        f'{arrow} {sign}{v7:.1f} pts / 7d <span style="color:{_VEL_FLAT}">({label})</span>'
         f"</div>"
     )
-
-
-def _load_yaml(path: str, key: str | None = None, default=None):
-    p = Path(path)
-    if not p.exists():
-        return default if default is not None else {}
-    try:
-        data = yaml.safe_load(p.read_text(encoding="utf-8")) or {}
-        return data.get(key, default if default is not None else {}) if key else data
-    except Exception:
-        return default if default is not None else {}
 
 
 _WEEKDAY_MAP = {
@@ -750,8 +747,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         delta = composite_regime_weighted - composite_naive
         delta_str = ""
         if abs(delta) >= 0.5:
-            delta_color = "#ff6b6b" if delta > 0 else "#4dbb6a"
-            delta_str = f'<span style="color:{delta_color}"> {delta:+.1f}</span>'
+            delta_str = f'<span style="color:{_vel_color(delta)}"> {delta:+.1f}</span>'
         if regime_weights_applied:
             # enabled=true: composite is regime-weighted; show naive as reference
             naive_color = _color(_band_from_score(composite_naive))
@@ -1008,10 +1004,9 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
         vel_html = ""
         if vel is not None:
             arrow = "&#9650;" if vel > 0 else ("&#9660;" if vel < 0 else "&#8594;")
-            vel_color = "#ff6b6b" if vel > 0 else ("#4dbb6a" if vel < 0 else "#6e7681")
             sign = "+" if vel > 0 else ""
             vel_html = (
-                f'<div style="font-size:.72rem;color:{vel_color};margin-top:1px">'
+                f'<div style="font-size:.72rem;color:{_vel_color(vel)};margin-top:1px">'
                 f'{arrow} {sign}{vel:.1f} / 7d</div>'
             )
         # Top-3 accelerating badge

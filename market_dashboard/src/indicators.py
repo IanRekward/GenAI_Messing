@@ -42,6 +42,7 @@ def yoy_series(level_series: pd.Series) -> pd.Series:
 
 
 BAND_THRESHOLDS: dict[str, int] = {"yellow": 30, "orange": 50, "red": 70}
+BAND_ORDER: dict[str, int] = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
 
 BAND_COLOR = {"green": "#22cc44", "yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
 BAND_BG = {"green": "#0d2e14", "yellow": "#2e2800", "orange": "#2e1600", "red": "#2e0d0d"}
