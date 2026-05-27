@@ -152,7 +152,7 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   yoy_series transform, three new threshold blocks, three new tooltips, three
   new tests. Bucket label stays "Commodities & Energy".
 
-- [ ] **Brief 27 — Parallel indicator fetch via ThreadPoolExecutor** *(design locked 2026-05-27, ready for Sonnet)*
+- [x] **Brief 27 — Parallel indicator fetch via ThreadPoolExecutor** *(shipped 2026-05-27)*
   Three-phase refactor of `compute_composite` (plan → fetch parallel → score
   CPU-only). Default 8 workers, `MAX_FETCH_WORKERS=1` serial escape hatch.
   Computed handlers' nested fetches stay serial — no nested pool submissions.

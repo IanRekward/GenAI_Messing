@@ -271,6 +271,12 @@ save yourself the same mistake. Add to this list when something bites you too.
   fail silently on site changes. `_handler_cnn_fear_greed` falls back to FRED
   UMCSENT. Don't assume freshness — check `data/fetch_cache/` staleness if
   sentiment numbers look stale.
+- **Parallel indicator fetch via `MAX_FETCH_WORKERS`.** `compute_composite`
+  parallelizes the ~26 top-level indicator fetches across 8 workers by
+  default. Set `MAX_FETCH_WORKERS=1` in `.env` or shell to force serial
+  execution (escape hatch for concurrency-related issues). Computed handlers'
+  nested `fetch.fetch_yfinance_series` calls stay serial — no nested pool
+  submissions.
 
 ---
 

@@ -3,6 +3,7 @@ Composite scoring: orchestrates data fetching, indicator calculations, and bucke
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 
@@ -351,19 +352,73 @@ def _load_prev_regime() -> str | None:
     return None
 
 
+FetchOutcome = tuple  # (str, float | None, pd.Series | None, str | None)
+
+
+def _fetch_indicators_parallel(
+    specs: list[tuple[str, dict]],
+    env: dict,
+    manual: dict,
+) -> dict[str, FetchOutcome]:
+    """Fetch every indicator in `specs` and return {ikey: (status, raw, series, msg)}.
+
+    status="ok"     → fetch succeeded (raw, series, None)
+    status="stale"  → live fetch failed, used cache (raw, series, warning_msg)
+    status="error"  → hard failure (None, None, error_msg)
+
+    Serial when MAX_FETCH_WORKERS=1; otherwise threaded across `specs`.
+    """
+    workers = int(env.get("MAX_FETCH_WORKERS", 8))
+
+    def _run_one(ikey: str, icfg: dict) -> FetchOutcome:
+        try:
+            raw, series = _fetch_indicator(ikey, icfg, env, manual)
+            return ("ok", raw, series, None)
+        except StaleCacheFallback as stale:
+            return ("stale", float(stale.series.iloc[-1]), stale.series,
+                    f"STALE CACHE: {ikey} — {stale}")
+        except Exception as exc:
+            return ("error", None, None, str(exc))
+
+    if workers <= 1:
+        return {ikey: _run_one(ikey, icfg) for ikey, icfg in specs}
+
+    out: dict[str, FetchOutcome] = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        future_map = {ex.submit(_run_one, ikey, icfg): ikey for ikey, icfg in specs}
+        for fut in as_completed(future_map):
+            out[future_map[fut]] = fut.result()
+    return out
+
+
 def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     """
     Fetch all data, score every indicator, aggregate into buckets and composite.
     Returns the full scoring dict (bands are placeholder 'green' until triggers.py runs).
     """
     cadence_cfg = fetch.load_cadence_config()
+    short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
+    short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
+
+    # Phase 1: plan
+    specs: list[tuple[str, dict]] = [
+        (ikey, icfg)
+        for bcfg in weights["buckets"].values()
+        for ikey, icfg in bcfg["indicators"].items()
+    ]
+    vix_regime_spec = ("__vix_regime__", {
+        "source": {"type": "yfinance", "ticker": "^VIX"},
+        "label": "VIX (regime)", "weight": 0,
+    })
+
+    # Phase 2: fetch (parallel)
+    fetched = _fetch_indicators_parallel(specs + [vix_regime_spec], env, manual)
+
+    # Phase 3: score (CPU-only)
     bucket_results: dict = {}
     errors: list[str] = []
     warnings: list[str] = []
     stale_indicators: list[str] = []
-
-    short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
-    short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
 
     for bkey, bcfg in weights["buckets"].items():
         bucket_weight = float(bcfg["weight"])
@@ -375,27 +430,22 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         for ikey, icfg in bcfg["indicators"].items():
             iweight = float(icfg["weight"])
             invert = bool(icfg.get("invert", False))
+            status, raw, series, msg = fetched[ikey]
 
-            stale_cache_msg: str | None = None
-            try:
-                raw, series = _fetch_indicator(ikey, icfg, env, manual)
-            except StaleCacheFallback as stale:
-                raw, series = float(stale.series.iloc[-1]), stale.series
-                stale_cache_msg = f"STALE CACHE: {ikey} — {stale}"
-                warnings.append(stale_cache_msg)
-            except Exception as exc:
-                errors.append(f"{ikey}: {exc}")
+            if status == "error":
+                errors.append(f"{ikey}: {msg}")
                 score = 50.0
                 ind_results[ikey] = _build_ind_record(
-                    icfg, score=score, score_short=score, invert=invert, error=str(exc),
+                    icfg, score=score, score_short=score, invert=invert, error=msg,
                 )
                 weighted_sum += score * iweight
                 weighted_sum_short += score * iweight
                 weight_used += iweight
                 continue
 
-            # Success path (live or stale-cache fallback)
-            if not stale_cache_msg:
+            if status == "stale":
+                warnings.append(msg)
+            else:
                 staleness_warning = fetch.check_series_staleness(ikey, series, cadence_cfg)
                 if staleness_warning:
                     warnings.append(staleness_warning)
@@ -408,8 +458,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                 pct = 50.0
                 zscore = 0.0
 
-            # Short-window (regime-aware) percentile
-            pct_short = pct  # fall back to 10yr if insufficient short-window data
+            pct_short = pct
             if series is not None and not series.empty and isinstance(series.index, pd.DatetimeIndex):
                 s_short = series.loc[series.index >= short_cutoff]
                 if len(s_short) >= 10:
@@ -463,20 +512,16 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         else 50.0
     )
 
-    # VIX regime classification — fetch directly so no bucket key is hardcoded
+    # VIX regime classification
     regime_info: dict = {}
-    try:
-        vix_series = fetch.fetch_yfinance_series(
-            "^VIX", env, years=int(env.get("HISTORY_YEARS", 10))
-        )
-        regime_info = classify_vix_regime(vix_series, _load_prev_regime())
-    except StaleCacheFallback as stale:
+    vix_status, _, vix_series, vix_msg = fetched["__vix_regime__"]
+    if vix_status in ("ok", "stale") and vix_series is not None:
         try:
-            regime_info = classify_vix_regime(stale.series, _load_prev_regime())
+            regime_info = classify_vix_regime(vix_series, _load_prev_regime())
         except Exception as exc:
             errors.append(f"vix_regime: {exc}")
-    except Exception as exc:
-        errors.append(f"vix_regime: {exc}")
+    elif vix_status == "error":
+        errors.append(f"vix_regime: {vix_msg}")
 
     composite_naive = composite
     rw_result = _apply_regime_weights(
@@ -489,6 +534,10 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         composite = composite_regime_weighted
     if rw_result.get("error"):
         errors.append(f"regime_weights: {rw_result['error']}")
+
+    errors.sort()
+    warnings.sort()
+    stale_indicators.sort()
 
     result = {
         "composite": round(composite, 1),

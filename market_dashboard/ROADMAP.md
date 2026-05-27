@@ -4085,7 +4085,7 @@ Invoke the protocol when:
 
 ## Brief 27 — Parallel indicator fetch via ThreadPoolExecutor
 
-**Status: design pass complete 2026-05-27. Ready for Sonnet execution.**
+**Status: shipped 2026-05-27. 250/250 tests.**
 
 **Problem:** `compute_composite()` in `src/scoring.py` fetches ~26
 indicators serially via `_fetch_indicator()`. Each indicator is I/O-bound
