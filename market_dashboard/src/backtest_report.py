@@ -70,21 +70,23 @@ def _fmt(v, decimals=3, suffix="", na="-"):
     return f'<span class="{cls}">{v:.{decimals}f}{suffix}</span>'
 
 
+def _ic_flag(ic, weak_threshold: float = 0.05) -> str:
+    if ic is None or ic != ic:
+        return ""
+    if ic < weak_threshold:
+        return '<span class="badge flag-weak">WEAK</span>'
+    if ic >= 0.15:
+        return '<span class="badge flag-ok">STRONG</span>'
+    return ""
+
+
 def _fmt_ic_row(ic, lo, hi, threshold=0.05):
     ic_str = _fmt(ic)
     if lo is None or np.isnan(lo):
         ci_str = '<span class="neu">-</span>'
     else:
         ci_str = f'<span class="neu">[{lo:.3f}, {hi:.3f}]</span>'
-    if ic is None or np.isnan(ic):
-        flag = ""
-    elif ic < threshold:
-        flag = '<span class="badge flag-weak">WEAK</span>'
-    elif ic >= 0.15:
-        flag = '<span class="badge flag-ok">STRONG</span>'
-    else:
-        flag = ""
-    return ic_str, ci_str, flag
+    return ic_str, ci_str, _ic_flag(ic, threshold)
 
 
 # ---------------------------------------------------------------------------
@@ -199,18 +201,10 @@ def _section_indicator_ic(signal_df: pd.DataFrame, target: pd.Series, label: str
     rows_html = ""
     for _, row in df.iterrows():
         ic = row["ic"]
-        if ic != ic:
-            flag = ""
-        elif ic < 0.05:
-            flag = '<span class="badge flag-weak">WEAK</span>'
-        elif ic >= 0.15:
-            flag = '<span class="badge flag-ok">STRONG</span>'
-        else:
-            flag = ""
         rows_html += (
             f"<tr><td>{row['indicator']}</td>"
             f"<td class='num'>{_fmt(ic)}</td>"
-            f"<td>{flag}</td></tr>"
+            f"<td>{_ic_flag(ic)}</td></tr>"
         )
 
     return f"""

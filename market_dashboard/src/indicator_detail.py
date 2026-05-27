@@ -58,7 +58,11 @@ def _explainer_html(ikey: str) -> str:
     parts += '</div>'
     return parts
 
-_THRESH_COLOR = {"yellow": "#ffcc00", "orange": "#ff8800", "red": "#ff4444"}
+_THRESH_COLOR = {
+    "yellow": _BAND_COLOR["yellow"],
+    "orange": _BAND_COLOR["orange"],
+    "red":    _BAND_COLOR["red"],
+}
 
 
 def _build_detail_svg(series: pd.Series, threshold_cfg: dict | None) -> str:

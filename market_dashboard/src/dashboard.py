@@ -3,6 +3,7 @@ HTML dashboard generation.
 """
 from __future__ import annotations
 
+from html import escape as _html_escape
 from datetime import datetime, date, timedelta
 from pathlib import Path
 
@@ -235,7 +236,7 @@ def _tip(text: str, tip_str: str, tag: str = "span") -> str:
     """Wrap text in a CSS tooltip span. tip_str is HTML-escaped automatically."""
     if not tip_str:
         return text
-    safe = tip_str.replace('"', "&quot;").replace("<", "&lt;").replace(">", "&gt;")
+    safe = _html_escape(tip_str, quote=True)
     return (
         f'<{tag} class="tip" data-tip="{safe}" tabindex="0">'
         f"{text}</{tag}>"
@@ -709,8 +710,11 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             f"</div>"
         )
 
-    # VIX regime badge (Brief 10A — read-only telemetry)
-    _regime_colors = {"low": "#22cc44", "mid": "#ffcc00", "high": "#ff8800"}
+    _regime_colors = {
+        "low": _BAND_COLOR["green"],
+        "mid": _BAND_COLOR["yellow"],
+        "high": _BAND_COLOR["orange"],
+    }
     vix_regime = scoring.get("regime")
     vix_regime_html = ""
     if vix_regime is not None:
@@ -979,7 +983,10 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
             )
             # Bar chart segment: flex width proportional to indicator weight in bucket
             seg_color = _color(ind["band"])
-            seg_tip = f'{ind["label"]}: {iw*100:.0f}% of bucket, {iw_comp:.1f}% of composite'.replace('"', '&quot;')
+            seg_tip = _html_escape(
+                f'{ind["label"]}: {iw*100:.0f}% of bucket, {iw_comp:.1f}% of composite',
+                quote=True,
+            )
             bar_segments += (
                 f'<div style="flex:{iw:.3f};background:{seg_color}55;border-radius:2px;'
                 f'border-top:2px solid {seg_color}" title="{seg_tip}"></div>'

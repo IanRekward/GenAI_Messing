@@ -1,18 +1,17 @@
 """Tests for Brief 16 — VIX term-structure indicator."""
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-import numpy as np
 import pandas as pd
 import pytest
 
 from src.scoring import _handler_vix_term_structure, COMPUTED_HANDLERS
 
 
-def _make_price_df(values: list[float], ticker: str = "^VIX") -> pd.DataFrame:
+def _make_series(values: list[float]) -> pd.Series:
     idx = pd.date_range("2024-01-01", periods=len(values), freq="B")
-    return pd.DataFrame({"Close": values}, index=idx)
+    return pd.Series(values, index=idx)
 
 
 def test_vix_term_structure_registered():
@@ -21,10 +20,10 @@ def test_vix_term_structure_registered():
 
 def test_vix_term_structure_backwardation():
     """VIX > VIX3M → ratio > 1.0 (backwardation / stress)."""
-    vix_df = _make_price_df([25.0] * 50)
-    vix3m_df = _make_price_df([20.0] * 50)
+    vix = _make_series([25.0] * 50)
+    vix3m = _make_series([20.0] * 50)
 
-    with patch("yfinance.download", side_effect=[vix_df, vix3m_df]):
+    with patch("src.scoring.fetch.fetch_yfinance_series", side_effect=[vix, vix3m]):
         raw, series = _handler_vix_term_structure("vix_term_structure", {}, {}, {}, 10)
 
     assert raw == pytest.approx(25.0 / 20.0)
@@ -33,10 +32,10 @@ def test_vix_term_structure_backwardation():
 
 def test_vix_term_structure_contango():
     """VIX < VIX3M → ratio < 1.0 (normal contango / calm)."""
-    vix_df = _make_price_df([15.0] * 50)
-    vix3m_df = _make_price_df([18.0] * 50)
+    vix = _make_series([15.0] * 50)
+    vix3m = _make_series([18.0] * 50)
 
-    with patch("yfinance.download", side_effect=[vix_df, vix3m_df]):
+    with patch("src.scoring.fetch.fetch_yfinance_series", side_effect=[vix, vix3m]):
         raw, series = _handler_vix_term_structure("vix_term_structure", {}, {}, {}, 10)
 
     assert raw == pytest.approx(15.0 / 18.0)
@@ -45,10 +44,10 @@ def test_vix_term_structure_contango():
 
 def test_vix_term_structure_returns_series():
     """Handler must return a Series (not None) for history charting."""
-    vix_df = _make_price_df([20.0] * 100)
-    vix3m_df = _make_price_df([21.0] * 100)
+    vix = _make_series([20.0] * 100)
+    vix3m = _make_series([21.0] * 100)
 
-    with patch("yfinance.download", side_effect=[vix_df, vix3m_df]):
+    with patch("src.scoring.fetch.fetch_yfinance_series", side_effect=[vix, vix3m]):
         raw, series = _handler_vix_term_structure("vix_term_structure", {}, {}, {}, 10)
 
     assert isinstance(series, pd.Series)

@@ -85,14 +85,9 @@ def _handler_copper_gold_ratio(key: str, cfg: dict, env: dict, manual: dict, yea
 
 
 def _handler_vix_term_structure(key: str, cfg: dict, env: dict, manual: dict, years: int):
-    import yfinance as yf
-    vix = yf.download("^VIX", period=f"{years}y", progress=False, auto_adjust=True)
-    vix3m = yf.download("^VIX3M", period=f"{years}y", progress=False, auto_adjust=True)
-
-    close_vix = vix["Close"].squeeze()
-    close_vix3m = vix3m["Close"].squeeze()
-
-    combined = pd.concat([close_vix.rename("vix"), close_vix3m.rename("vix3m")], axis=1)
+    vix = fetch.fetch_yfinance_series("^VIX", env, years)
+    vix3m = fetch.fetch_yfinance_series("^VIX3M", env, years)
+    combined = pd.concat([vix.rename("vix"), vix3m.rename("vix3m")], axis=1)
     combined = combined.ffill().dropna()
     ratio = combined["vix"] / combined["vix3m"]
     return float(ratio.iloc[-1]), ratio
@@ -117,6 +112,39 @@ _TRANSFORMS = {
 }
 
 
+def _build_ind_record(
+    icfg: dict,
+    *,
+    raw=None,
+    zscore=None,
+    pct=None,
+    pct_short=None,
+    score: float = 50.0,
+    score_short: float = 50.0,
+    invert: bool = False,
+    series_data=None,
+    error: str | None = None,
+) -> dict:
+    rec = {
+        "label": icfg["label"],
+        "raw": round(raw, 4) if isinstance(raw, (int, float)) and raw == raw else None,
+        "zscore": round(zscore, 2) if zscore is not None else None,
+        "percentile": round(pct, 1) if pct is not None else None,
+        "percentile_short": round(pct_short, 1) if pct_short is not None else None,
+        "score": score,
+        "score_short": score_short,
+        "band": "green",
+        "unit": icfg.get("unit", ""),
+        "manual": bool(icfg.get("manual", False)),
+        "invert": invert,
+    }
+    if error is not None:
+        rec["error"] = error
+    else:
+        rec["_series"] = series_data
+    return rec
+
+
 def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[float, pd.Series | None]:
     """
     Return (current_raw_value, history_series) for one indicator.
@@ -128,7 +156,6 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
     src = cfg.get("source", {})
     stype = src.get("type")
 
-    # Remediation bypass (Brief 17): force-refresh stale/failed indicators
     remediation_keys = env.get("_remediation_keys", set())
     if key in remediation_keys:
         env = {**env, "CACHE_HOURS": "0"}
@@ -162,7 +189,6 @@ def _fetch_indicator(key: str, cfg: dict, env: dict, manual: dict) -> tuple[floa
             s = _TRANSFORMS[transform](s)
         return float(s.iloc[-1]), s
 
-    # Fallback for old-format configs without source field (should not occur post-Brief 1)
     raise ConfigError(
         f"Indicator '{key}' has no valid source type (got '{stype}'). "
         f"Add a source: field to config/weights.yaml."
@@ -360,20 +386,9 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             except Exception as exc:
                 errors.append(f"{ikey}: {exc}")
                 score = 50.0
-                ind_results[ikey] = {
-                    "label": icfg["label"],
-                    "raw": None,
-                    "zscore": None,
-                    "percentile": None,
-                    "percentile_short": None,
-                    "score": score,
-                    "score_short": score,
-                    "band": "green",
-                    "unit": icfg.get("unit", ""),
-                    "manual": bool(icfg.get("manual", False)),
-                    "invert": invert,
-                    "error": str(exc),
-                }
+                ind_results[ikey] = _build_ind_record(
+                    icfg, score=score, score_short=score, invert=invert, error=str(exc),
+                )
                 weighted_sum += score * iweight
                 weighted_sum_short += score * iweight
                 weight_used += iweight
@@ -409,20 +424,17 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
                     "dates": [d.strftime("%Y-%m-%d") for d in series.index],
                     "values": [float(v) for v in series.values],
                 }
-            ind_results[ikey] = {
-                "label": icfg["label"],
-                "raw": round(raw, 4) if raw == raw else None,  # nan check
-                "zscore": round(zscore, 2),
-                "percentile": round(pct, 1),
-                "percentile_short": round(pct_short, 1),
-                "score": score,
-                "score_short": score_short,
-                "band": "green",
-                "unit": icfg.get("unit", ""),
-                "manual": bool(icfg.get("manual", False)),
-                "invert": invert,
-                "_series": series_data,
-            }
+            ind_results[ikey] = _build_ind_record(
+                icfg,
+                raw=raw,
+                zscore=zscore,
+                pct=pct,
+                pct_short=pct_short,
+                score=score,
+                score_short=score_short,
+                invert=invert,
+                series_data=series_data,
+            )
 
             weighted_sum += score * iweight
             weighted_sum_short += score_short * iweight
@@ -466,7 +478,6 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
     except Exception as exc:
         errors.append(f"vix_regime: {exc}")
 
-    # Brief 10C — regime-weighted composite
     composite_naive = composite
     rw_result = _apply_regime_weights(
         bucket_results, weights.get("regime_weights", {}), regime_info.get("regime")

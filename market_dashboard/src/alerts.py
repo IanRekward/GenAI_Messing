@@ -25,6 +25,13 @@ ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 _BAND_ORDER = {"green": 0, "yellow": 1, "orange": 2, "red": 3}
 _BAND_MIN = {"green": 0.0, "yellow": 30.0, "orange": 50.0, "red": 70.0}
 
+
+def _iter_triggered(scoring: dict, bands: tuple[str, ...] = ("red", "orange")):
+    for bk, bkt in scoring["buckets"].items():
+        for ik, ind in bkt["indicators"].items():
+            if ind.get("band") in bands:
+                yield bk, ik, ind
+
 # Shock-type classification rules — (primary_bucket, secondary_bucket_or_None, label, description).
 # Evaluated in order; first match where the primary bucket is elevated (orange/red) wins.
 # "Broad Risk-Off" is checked first before this table (5+ elevated buckets).
@@ -154,10 +161,7 @@ def _log_alert(
         entry["alert_types"] = alert_types or []
         entry["shock_type"] = shock_type
         entry["triggered_indicators"] = [
-            f"{bk}.{ik}"
-            for bk, bkt in scoring["buckets"].items()
-            for ik, ind in bkt["indicators"].items()
-            if ind.get("band") in ("red", "orange")
+            f"{bk}.{ik}" for bk, ik, _ in _iter_triggered(scoring)
         ]
     with open(ALERT_LOG, "a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
@@ -326,7 +330,6 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
     prev_band = prev.get("composite_band", "green")
     debounce_buffer = float(env.get("ALERT_DEBOUNCE_BUFFER", 5.0))
 
-    # Bucket breadth for todo 35
     n_stressed_buckets = sum(
         1 for b in scoring["buckets"].values() if b["band"] in ("orange", "red")
     )
@@ -357,12 +360,7 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
             alert_types.append("composite_improvement")
 
     # 2. New red indicators
-    cur_reds = [
-        f"{bk}.{ik}"
-        for bk, bkt in scoring["buckets"].items()
-        for ik, ind in bkt["indicators"].items()
-        if ind.get("band") == "red"
-    ]
+    cur_reds = [f"{bk}.{ik}" for bk, ik, _ in _iter_triggered(scoring, ("red",))]
     new_reds = [r for r in cur_reds if r not in set(prev.get("red_indicators", []))]
     if new_reds:
         labels = [_indicator_label(scoring, r) for r in new_reds]
@@ -370,12 +368,7 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
         alert_types.append("new_reds")
 
     # 3. Two or more new orange indicators
-    cur_oranges = [
-        f"{bk}.{ik}"
-        for bk, bkt in scoring["buckets"].items()
-        for ik, ind in bkt["indicators"].items()
-        if ind.get("band") == "orange"
-    ]
+    cur_oranges = [f"{bk}.{ik}" for bk, ik, _ in _iter_triggered(scoring, ("orange",))]
     new_oranges = [r for r in cur_oranges if r not in set(prev.get("orange_indicators", []))]
     if len(new_oranges) >= 2:
         labels = [_indicator_label(scoring, r) for r in new_oranges[:5]]
@@ -505,11 +498,7 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
     body = suppressed_digest + shock_prefix + "\n\n".join(messages)
 
     # Append news context for triggered indicators
-    triggered_keys: set[str] = set()
-    for bk, bkt in scoring["buckets"].items():
-        for ik, ind in bkt["indicators"].items():
-            if ind.get("band") in ("red", "orange"):
-                triggered_keys.add(ik)
+    triggered_keys = {ik for _, ik, _ in _iter_triggered(scoring)}
     try:
         news_ctx = get_trigger_news_context(triggered_keys, env)
         if news_ctx:

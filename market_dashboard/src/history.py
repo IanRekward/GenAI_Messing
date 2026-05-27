@@ -17,6 +17,14 @@ DATA_DIR = Path("data")
 HISTORY_FILE = DATA_DIR / "history.csv"
 
 
+def _daily_last(history: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    df = history[["timestamp"] + cols].copy()
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df["date"] = df["timestamp"].dt.date
+    df = df.sort_values("timestamp").groupby("date").last().reset_index()
+    return df.sort_values("date").reset_index(drop=True)
+
+
 def _weights_hash() -> str:
     """MD5 of config/weights.yaml for provenance tracking."""
     try:
@@ -168,11 +176,7 @@ def compute_composite_momentum(history: pd.DataFrame) -> dict:
         return {"velocity_7d": None, "velocity_30d": None,
                 "acceleration_7d": None, "regime": "insufficient"}
 
-    df = history[["timestamp", "composite"]].copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["date"] = df["timestamp"].dt.date
-    df = df.sort_values("timestamp").groupby("date").last().reset_index()
-    df = df.sort_values("date").reset_index(drop=True)
+    df = _daily_last(history, ["composite"])
 
     if len(df) < 2:
         return {"velocity_7d": None, "velocity_30d": None,
@@ -220,11 +224,7 @@ def compute_bucket_momentum(history: pd.DataFrame) -> dict:
     if not bucket_cols:
         return {}
 
-    df = history[["timestamp"] + bucket_cols].copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["date"] = df["timestamp"].dt.date
-    df = df.sort_values("timestamp").groupby("date").last().reset_index()
-    df = df.sort_values("date").reset_index(drop=True)
+    df = _daily_last(history, bucket_cols)
 
     latest = df.iloc[-1]
     latest_date = pd.Timestamp(latest["date"])
@@ -388,11 +388,7 @@ def cross_bucket_correlation(history: pd.DataFrame, window_days: int = 30) -> fl
     if len(bucket_cols) < 2:
         return None
 
-    df = history[["timestamp"] + bucket_cols].copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["date"] = df["timestamp"].dt.date
-    df = df.sort_values("timestamp").groupby("date").last().reset_index()
-    df = df.sort_values("date").tail(window_days).reset_index(drop=True)
+    df = _daily_last(history, bucket_cols).tail(window_days).reset_index(drop=True)
 
     if len(df) < 5:
         return None
