@@ -4083,89 +4083,252 @@ Invoke the protocol when:
 
 ---
 
-## Brief 27 — Parallel indicator fetch via ThreadPoolExecutor 🅾️
+## Brief 27 — Parallel indicator fetch via ThreadPoolExecutor
 
-**Status:** design-first. Surfaced by the 2026-05-27 simplify pass as the
-single biggest user-visible win still on the table. Not executed in that pass
-because it requires a real design decision about error handling and ordering.
+**Status: design pass complete 2026-05-27. Ready for Sonnet execution.**
 
-**Problem:** `compute_composite()` in `src/scoring.py` fetches ~26 indicators
-serially in `_fetch_indicator()`. Each indicator hits FRED, yfinance, or
-TreasuryDirect — all I/O-bound, network-blocking. On a cold-cache run
-(daily 7:30 AM cron after the cache TTL elapses) the wall time is dominated
-by sequential round-trips; estimated 5–10× speedup if dispatched in parallel.
-Backtest cold start (`run_standard_backtests`) compounds this across hundreds
-of dates.
+**Problem:** `compute_composite()` in `src/scoring.py` fetches ~26
+indicators serially via `_fetch_indicator()`. Each indicator is I/O-bound
+(FRED, yfinance, TreasuryDirect). On cold-cache daily runs the wall time
+is dominated by sequential network round-trips. Parallelizing the top-level
+fetch is the single biggest user-visible win still on the table from the
+2026-05-27 simplify pass.
 
-**Why this needs Opus before Sonnet:**
-1. **yfinance concurrency** has been historically flaky. The decision to
-   parallelize ^VIX, ^GSPC, ^VIX3M, sector ETFs, HG=F, GC=F, NG=F, etc.
-   simultaneously needs validation — possible rate-limiting, possible
-   library-internal contention. Mitigation strategy needs design.
-2. **Ordering / determinism in tests.** Current tests mock individual
-   `_fetch_indicator` calls and assume in-order execution. ThreadPoolExecutor
-   with `as_completed` is non-deterministic; tests that assert error message
-   order or sequential side-effects will break.
-3. **Error path:** today an exception in one indicator marks that indicator
-   `score=50.0` and continues. With concurrent fetches, the exception
-   propagates through `Future.result()` — needs explicit catch in the
-   collector loop.
-4. **Cache writes:** each indicator writes its own JSON cache file
-   (`data/cache/yf_*.json`, `data/cache/fred_*.json`). Per-file writes are
-   independent so file-level race is impossible, but worth confirming
-   `_write_cache()` is fully self-contained.
-5. **StaleCacheFallback handling:** today raised by `fetch_yfinance_series`
-   when live fetch fails on all retries but cache exists. Currently caught
-   in the score loop. Needs to move to the collector.
+**Out of scope:** `backtest.py:_fetch_raw` is left serial. Backtest
+parallelization is a separate brief if ever needed — the daily run is the
+hot path.
 
-**Sketch (NOT a final design):**
+### Design decisions — LOCKED
+
+1. **Default worker count: 8.** Override via `MAX_FETCH_WORKERS` env var.
+   FRED rate limit is 120 req/min; Yahoo Finance soft limit unreached at
+   this scale. 8 workers ≈ 2 "waves" across the 26 indicators.
+
+2. **Serial fallback escape hatch.** `MAX_FETCH_WORKERS=1` MUST use a
+   plain `for`-loop, not `ThreadPoolExecutor(max_workers=1)`. This is
+   the production-safety lever: if a future change in yfinance breaks
+   concurrent fetches, set the env var and revert to deterministic
+   serial execution without code changes.
+
+3. **Computed handlers run serially within their worker.** Handlers
+   like `_handler_treasury_auction_stress`, `_handler_vix_term_structure`,
+   `_handler_copper_gold_ratio` etc. internally call
+   `fetch.fetch_yfinance_series()` 2–3 times. Those inner calls stay
+   serial — they do NOT submit back to the pool. This avoids nested-
+   submission deadlock and keeps reasoning simple. Parallelism is only
+   across the ~26 top-level indicators.
+
+4. **VIX regime fetch joins the plan.** The inline `fetch.fetch_yfinance_series("^VIX", ...)`
+   at `src/scoring.py:469` (used for `classify_vix_regime`) gets a
+   virtual indicator slot in the fetch phase so it parallelizes with
+   the others. It dedupes with the existing `vix` indicator fetch via
+   the shared cache layer — same ticker, same cache file.
+
+5. **Three-phase refactor in `compute_composite`:**
+   - **Plan** — flatten weights into a list of `(bkey, ikey, icfg)`
+     triplets plus the VIX regime fetch.
+   - **Fetch** — dispatch through `_fetch_indicators_parallel`. Each
+     completed future is caught individually for `StaleCacheFallback`
+     and `Exception`. Results collected into a `{ikey: FetchOutcome}`
+     dict where `FetchOutcome` is a 4-tuple `(status, raw, series, msg)`:
+       - `"ok"`: `(raw: float, series: pd.Series, None)`
+       - `"stale"`: `(raw: float, series: pd.Series, msg: str)` — used the
+         stale cache; warning string set
+       - `"error"`: `(None, None, msg: str)` — hard fail
+   - **Score** — iterate buckets, read from results map, branch on
+     status. This phase has zero I/O — pure CPU. Easier to test.
+
+6. **Deterministic output.** Parallel execution produces non-deterministic
+   completion order, which currently bleeds into `errors`, `warnings`,
+   and `stale_indicators` lists in scoring output. Sort all three
+   alphabetically at the end of `compute_composite` so downstream
+   consumers (sidecar, history.csv, the bot) see stable diffs.
+   Grep confirmed no test asserts list ordering — only `any()` checks
+   and empty-list assertions.
+
+7. **Test mocking still works unchanged.** All scoring tests patch
+   `src.scoring._fetch_indicator` via `monkeypatch.setattr`, which
+   substitutes the module attribute. The patched function is visible
+   from all worker threads (Python GIL + thread-safe attribute lookup).
+   Confirmed against `tests/test_scoring.py`, `tests/test_remediation.py`,
+   `tests/test_alert_controls.py`.
+
+8. **No timeout added.** Today's code has no per-call timeout on
+   `yf.download`. Parallel doesn't make this worse. Existing
+   retry/backoff in `fetch.fetch_yfinance_series` bounds total wait
+   to ~21s per ticker via `_RETRY_DELAYS = [1, 4, 16]`. Out of scope
+   to add timeouts.
+
+9. **No rate limiting.** 8 concurrent requests across mixed endpoints
+   (FRED + yfinance + TreasuryDirect) is well under any documented or
+   observed limit. Re-evaluate if a real rate-limit error is seen.
+
+### Implementation spec for Sonnet
+
+**File: `src/scoring.py`**
+
+Add a new private function above `compute_composite`:
 
 ```python
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-def _fetch_all(weights, env, manual) -> dict[str, tuple]:
-    """Returns {ikey: (raw_or_None, series_or_None, exc_or_None)}."""
-    keys = [(ikey, icfg) for bcfg in weights.values()
-            for ikey, icfg in bcfg["indicators"].items()]
+# FetchOutcome = (status, raw, series, msg) where status ∈ {"ok", "stale", "error"}
+FetchOutcome = tuple  # (str, float | None, pd.Series | None, str | None)
+
+
+def _fetch_indicators_parallel(
+    specs: list[tuple[str, dict]],
+    env: dict,
+    manual: dict,
+) -> dict[str, FetchOutcome]:
+    """Fetch every indicator in `specs` and return {ikey: (status, raw, series, msg)}.
+
+    status="ok"     → fetch succeeded (raw, series, None)
+    status="stale"  → live fetch failed, used cache (raw, series, warning_msg)
+    status="error"  → hard failure (None, None, error_msg)
+
+    Serial when MAX_FETCH_WORKERS=1; otherwise threaded across `specs`.
+    """
     workers = int(env.get("MAX_FETCH_WORKERS", 8))
-    results = {}
+
+    def _run_one(ikey: str, icfg: dict) -> FetchOutcome:
+        try:
+            raw, series = _fetch_indicator(ikey, icfg, env, manual)
+            return ("ok", raw, series, None)
+        except StaleCacheFallback as stale:
+            return ("stale", float(stale.series.iloc[-1]), stale.series,
+                    f"STALE CACHE: {ikey} — {stale}")
+        except Exception as exc:
+            return ("error", None, None, str(exc))
+
+    if workers <= 1:
+        return {ikey: _run_one(ikey, icfg) for ikey, icfg in specs}
+
+    out: dict[str, FetchOutcome] = {}
     with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(_fetch_indicator, ik, ic, env, manual): ik
-                   for ik, ic in keys}
-        for fut in as_completed(futures):
-            ik = futures[fut]
-            try:
-                results[ik] = (*fut.result(), None)
-            except Exception as exc:
-                results[ik] = (None, None, exc)
-    return results
+        future_map = {ex.submit(_run_one, ikey, icfg): ikey
+                      for ikey, icfg in specs}
+        for fut in as_completed(future_map):
+            out[future_map[fut]] = fut.result()
+    return out
 ```
 
-Then refactor the score loop in `compute_composite` to two passes:
-1. `results = _fetch_all(...)`
-2. iterate buckets, read from `results[ikey]` to score
+Then refactor `compute_composite`:
 
-**Open design questions for Opus:**
-- Worker count default. 8 is a guess; 4 might be safer with yfinance.
-  Make `MAX_FETCH_WORKERS` an env var with conservative default.
-- Should computed handlers (which call `_handler_*` that themselves call
-  `fetch.fetch_yfinance_series` 2–3 times) run on the same pool, or
-  serially? Nested submissions to the same pool can deadlock.
-- Behavior under `--no-cache`: parallel fetches all force re-fetch, which
-  multiplies network load 8x. Acceptable? Or rate-limit at the pool level?
-- Test strategy: tests mock `fetch.fetch_yfinance_series` and
-  `fetch.fetch_fred_series`. As long as those mocks are thread-safe (they
-  are — `unittest.mock.patch` patches are visible across threads), tests
-  should pass. But any test that asserts order of `errors.append(...)`
-  calls will need updating.
+```python
+def compute_composite(weights, env, manual) -> dict:
+    cadence_cfg = fetch.load_cadence_config()
+    short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
+    short_cutoff = pd.Timestamp.now() - pd.DateOffset(years=short_years)
 
-**Estimated effort:** Opus design pass (~30 min) → Sonnet execution
-(~1.5 hours including test updates) → manual `--no-cache` dry-run.
+    # Phase 1: plan
+    specs: list[tuple[str, dict]] = [
+        (ikey, icfg)
+        for bcfg in weights["buckets"].values()
+        for ikey, icfg in bcfg["indicators"].items()
+    ]
+    # Add VIX regime fetch as a virtual indicator (no bucket, no scoring)
+    vix_regime_spec = ("__vix_regime__", {
+        "source": {"type": "yfinance", "ticker": "^VIX"},
+        "label": "VIX (regime)", "weight": 0,
+    })
 
-**Acceptance criteria:**
-- Cold-cache `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
-  completes in <30s (current baseline: 60–90s on a warm laptop).
-- All existing tests pass.
-- One new test asserting `_fetch_all()` survives a single-indicator exception
-  without short-circuiting the others.
-- `MAX_FETCH_WORKERS` documented in CLAUDE.md gotchas section.
+    # Phase 2: fetch (parallel)
+    fetched = _fetch_indicators_parallel(specs + [vix_regime_spec], env, manual)
+
+    # Phase 3: score (CPU-only)
+    bucket_results: dict = {}
+    errors: list[str] = []
+    warnings: list[str] = []
+    stale_indicators: list[str] = []
+
+    for bkey, bcfg in weights["buckets"].items():
+        # ... existing per-bucket scoring loop, but instead of calling
+        # _fetch_indicator inline, consume fetched[ikey]:
+        for ikey, icfg in bcfg["indicators"].items():
+            iweight = float(icfg["weight"])
+            invert = bool(icfg.get("invert", False))
+            status, raw, series, msg = fetched[ikey]
+
+            if status == "error":
+                errors.append(f"{ikey}: {msg}")
+                # ... same error-path _build_ind_record as today
+                continue
+            if status == "stale":
+                warnings.append(msg)
+            # ... rest of success path unchanged (staleness check, percentile, score)
+
+    # VIX regime classification (consume fetched[__vix_regime__])
+    regime_info: dict = {}
+    vix_status, _, vix_series, _ = fetched["__vix_regime__"]
+    if vix_status in ("ok", "stale") and vix_series is not None:
+        try:
+            regime_info = classify_vix_regime(vix_series, _load_prev_regime())
+        except Exception as exc:
+            errors.append(f"vix_regime: {exc}")
+    elif vix_status == "error":
+        errors.append(f"vix_regime: {fetched['__vix_regime__'][3]}")
+
+    # ... rest of compute_composite (regime weights, composite calc) unchanged
+
+    # Determinism: sort for stable output
+    errors.sort()
+    warnings.sort()
+    stale_indicators.sort()
+
+    result = { ... }
+    return result
+```
+
+**File: `tests/test_parallel_fetch.py`** (new)
+
+Three tests are sufficient:
+
+```python
+def test_parallel_serial_fallback_matches(monkeypatch):
+    """MAX_FETCH_WORKERS=1 (serial) and =8 (parallel) produce identical results."""
+    # Patch _fetch_indicator with a known-good function, run both modes,
+    # assert composite scores are equal.
+
+def test_parallel_isolates_per_indicator_failures(monkeypatch):
+    """A single-indicator exception does not short-circuit the others."""
+    # Patch _fetch_indicator: half the keys succeed, half raise. Assert all
+    # successful keys score normally, all failures appear in errors[],
+    # and `errors` is sorted alphabetically.
+
+def test_parallel_handles_stale_cache_fallback(monkeypatch):
+    """StaleCacheFallback from one indicator is recorded as a warning,
+    not an error, and the stale series is used for scoring."""
+    # Patch _fetch_indicator: one key raises StaleCacheFallback(series=...).
+    # Assert that key has a non-50 score derived from the stale series,
+    # and a STALE CACHE: warning appears in warnings[].
+```
+
+**File: `CLAUDE.md`**
+
+Add a new bullet under "Technical gotchas":
+
+> - **Parallel indicator fetch via `MAX_FETCH_WORKERS`.** `compute_composite`
+>   parallelizes the ~26 top-level indicator fetches across 8 workers by
+>   default. Set `MAX_FETCH_WORKERS=1` in `.env` or shell to force serial
+>   execution (escape hatch for concurrency-related issues). Computed
+>   handlers' nested `fetch.fetch_yfinance_series` calls stay serial —
+>   no nested pool submissions.
+
+### Acceptance criteria
+
+- All 247 existing tests pass without modification.
+- Three new tests in `tests/test_parallel_fetch.py` (above).
+- `errors`, `warnings`, `stale_indicators` are sorted alphabetically at
+  end of `compute_composite`.
+- `MAX_FETCH_WORKERS` documented in CLAUDE.md.
+- Manual smoke: `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
+  completes ≥30% faster than serial baseline (collect baseline time first).
+- Manual smoke #2: `MAX_FETCH_WORKERS=1 python run_dashboard.py ...` produces
+  byte-identical `data/latest.json` to the parallel run (modulo `run_timestamp`).
+
+### Estimated effort
+
+Sonnet execution: ~2 hours including the three new tests and the manual
+smoke runs. The refactor itself is mechanical given the spec above;
+most of the time is in the manual verification.

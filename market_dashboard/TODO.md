@@ -152,12 +152,16 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   yoy_series transform, three new threshold blocks, three new tooltips, three
   new tests. Bucket label stays "Commodities & Energy".
 
-- [ ] 🅾️ **Brief 27 — Parallel indicator fetch via ThreadPoolExecutor** *(filed 2026-05-27)*
-  Surfaced by the simplify pass as the largest user-visible win not yet shipped:
-  cold-cache runs are network-bound, ~26 indicators fetched serially. Estimated
-  5–10× speedup. Needs Opus design pass first (yfinance concurrency caveats,
-  test-order assumptions, error-path handling). Full brief in
-  [ROADMAP.md](ROADMAP.md#brief-27--parallel-indicator-fetch-via-threadpoolexecutor-).
+- [ ] **Brief 27 — Parallel indicator fetch via ThreadPoolExecutor** *(design locked 2026-05-27, ready for Sonnet)*
+  Three-phase refactor of `compute_composite` (plan → fetch parallel → score
+  CPU-only). Default 8 workers, `MAX_FETCH_WORKERS=1` serial escape hatch.
+  Computed handlers' nested fetches stay serial — no nested pool submissions.
+  VIX regime fetch joins the parallel plan. Sort `errors`/`warnings`/
+  `stale_indicators` alphabetically at end for stable downstream output.
+  Tests patch `_fetch_indicator` (thread-safe across workers) so existing 247
+  tests pass unchanged; three new tests in `tests/test_parallel_fetch.py`
+  cover serial-parity, per-indicator-failure isolation, and StaleCacheFallback.
+  Full spec in [ROADMAP.md](ROADMAP.md#brief-27--parallel-indicator-fetch-via-threadpoolexecutor).
 
 - [ ] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(re-review due 2026-06-20 — Brief 26 in ROADMAP.md)*
   **Gate run 2026-05-20 — DEFERRED.** Criterion (a) failed: every production day since
