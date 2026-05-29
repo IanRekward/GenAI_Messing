@@ -17,7 +17,7 @@ feeds:
     url: "https://www.federalreserve.gov/feeds/speeches.xml"
     category: official
     max_items: 12
-  - name: "ECB Press Releases"
+  - name: "European Central Bank Press Releases"
     url: "https://www.ecb.europa.eu/rss/press.html"
     category: official
     max_items: 12
@@ -43,7 +43,7 @@ feeds:
     url: "https://finance.yahoo.com/rss/topstories"
     category: publisher
     max_items: 8
-  - name: "FT Alphaville"
+  - name: "Financial Times Alphaville"
     url: "https://www.ft.com/alphaville?format=rss"
     category: publisher
     max_items: 8
@@ -59,7 +59,7 @@ feeds:
     url: "https://feeds.content.dowjones.io/public/rss/socialeconomyfeed"
     category: publisher
     max_items: 10
-  - name: "FT Global Economy"
+  - name: "Financial Times Global Economy"
     url: "https://www.ft.com/global-economy?format=rss"
     category: publisher
     max_items: 10

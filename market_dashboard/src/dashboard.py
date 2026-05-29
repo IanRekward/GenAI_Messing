@@ -26,8 +26,12 @@ body{background:#0d1117;color:#c9d1d9;font-family:'Segoe UI',system-ui,sans-seri
 .wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
 h1{font-size:1.5rem;font-weight:600}
 h2{font-size:1rem;font-weight:600;margin-bottom:10px}
-.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.hdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.tagline{font-size:.95rem;color:#adbac7;line-height:1.5;max-width:760px;margin-bottom:18px}
 .ts{font-size:.8rem;color:#6e7681}
+.explain{cursor:pointer;font-size:.92rem;color:#58a6ff;font-weight:600;list-style:none;display:flex;align-items:center;gap:6px}
+.explain::-webkit-details-marker{display:none}
+.explain:hover{text-decoration:underline}
 .composite{border-radius:8px;padding:18px 22px;margin-bottom:16px;display:flex;align-items:center;gap:24px}
 .score-num{font-size:3.2rem;font-weight:700;line-height:1}
 .score-band{font-size:1.1rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em}
@@ -812,7 +816,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
           <span class="tc"><b style="color:#ffcc00">{scoring['yellow_count']}</b> yellow</span>
         </div>
         <details style="margin-top:12px;cursor:pointer">
-          <summary style="color:#6e7681;font-size:.85rem;user-select:none"><b>What does this mean?</b></summary>
+          <summary class="explain" style="user-select:none"><span style="font-size:.7rem">&#9654;</span> What does this mean?</summary>
           <div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363d;font-size:.85rem;line-height:1.5;color:#c9d1d9">
             <p style="margin:0 0 6px 0"><b>The 0–100 score</b> measures market stress across 11 signal categories: equity volatility, credit spreads, yield curve, rates, liquidity, commodities, bonds, sentiment, economic momentum, spillover effects, and market breadth. 0 = all calm; 100 = severe stress across the board.</p>
             <p style="margin:0 0 6px 0"><b>The band</b> (green/yellow/orange/red) reflects your current position in the stress distribution. Green = historically calm; yellow = elevated but not alarming; orange = material stress; red = critical conditions.</p>
@@ -1137,13 +1141,14 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     <h1>Market Stress Dashboard</h1>
     <span class="ts">Last refreshed: {ts}</span>
   </div>
+  <p class="tagline">An early-warning read on U.S. financial-market stress — gauging stability, risk, and volatility across markets to show investors where strain is building.</p>
   {staleness_banner}
   {bucket_health_card}
   <div style="font-size:.72rem;color:#6e7681;font-weight:600;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Composite Stress Score &mdash; Weighted Average of 11 Buckets</div>
   {composite_card}
   <details class="card" style="margin-top:-10px;margin-bottom:14px;font-size:.82rem;line-height:1.6">
-    <summary style="cursor:pointer;font-size:.8rem;color:#6e7681;list-style:none;display:flex;align-items:center;gap:6px">
-      <span style="font-size:.65rem">&#9654;</span> What does this score mean?
+    <summary class="explain">
+      <span style="font-size:.7rem">&#9654;</span> New here? What does this score mean?
     </summary>
     <div style="margin-top:10px;color:#c9d1d9">
       <p style="margin-bottom:8px"><strong>The number is a market "fever reading" from 0 to 100.</strong> It shows how stressed U.S. financial markets are <em>right now</em> compared to every day in the past 10 years. A score of 60 means today looks more stressed than 60% of all days on record.</p>
