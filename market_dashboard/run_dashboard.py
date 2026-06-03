@@ -15,11 +15,13 @@ Optional flags:
 from __future__ import annotations
 
 import argparse
+import logging
 import os
 import shutil
 import subprocess
 import sys
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 # Make src/ importable
@@ -100,6 +102,47 @@ def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
             print("  Publish: dashboard pushed to GitHub Pages.")
         else:
             print(f"  Publish: push failed — {push.stderr.strip()}")
+
+
+def _setup_run_logging() -> logging.Logger:
+    """File logger recording every run's start/finish + any crash traceback.
+
+    Independent of --quiet: the scheduled task runs quiet, so this file is the
+    only post-mortem trail when a run fails. Rotates to bound disk use.
+    """
+    logs_dir = Path(__file__).resolve().parent / "logs"
+    logs_dir.mkdir(exist_ok=True)
+    logger = logging.getLogger("dashboard_run")
+    if not logger.handlers:
+        handler = RotatingFileHandler(
+            logs_dir / "dashboard_run.log",
+            maxBytes=1_000_000, backupCount=3, encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+    return logger
+
+
+def _verify_dashboard_written(output_path: Path, quiet: bool = False) -> None:
+    """Catch silent write failures: the dashboard file must exist and be freshly written.
+
+    A stale mtime means write_dashboard returned without overwriting (e.g. a cached
+    file was served), which would silently publish yesterday's numbers.
+    """
+    import time
+    if not output_path.exists():
+        raise RuntimeError(f"Dashboard write failed: {output_path} does not exist")
+
+    file_age_sec = time.time() - output_path.stat().st_mtime
+    if file_age_sec > 60:
+        raise RuntimeError(
+            f"Dashboard write failed: {output_path} is {file_age_sec:.0f}s old "
+            f"(expected <60s). This indicates a stale cached file was not overwritten."
+        )
+
+    if not quiet:
+        print(f"  Dashboard written successfully ({file_age_sec:.0f}s old)")
 
 
 def main():
@@ -247,6 +290,9 @@ def main():
                                   env=env,
                                   signal_quality_stats=pm_stats)
 
+    # Verify dashboard was actually written (catch silent failures)
+    _verify_dashboard_written(output_path, args.quiet)
+
     # JSON sidecar for downstream consumers (e.g. tactical_markets_trading)
     write_latest_sidecar(scoring, shock_type=shock_type)
 
@@ -274,6 +320,29 @@ def main():
         print("=" * 60)
         print(f"\n  Open in browser:  file://{output_path.absolute()}")
 
+    return scoring
+
+
+def run_cli() -> None:
+    """Entry wrapper: record run start/finish + any crash traceback to the run log."""
+    import traceback
+
+    logger = _setup_run_logging()
+    logger.info("run start: argv=%s", sys.argv[1:])
+    try:
+        result = main()
+        if result:
+            logger.info(
+                "run ok: composite=%.1f band=%s red=%d orange=%d",
+                result["composite"], result["composite_band"],
+                result["red_count"], result["orange_count"],
+            )
+        else:
+            logger.info("run ok")
+    except Exception:
+        logger.error("run FAILED:\n%s", traceback.format_exc())
+        raise
+
 
 if __name__ == "__main__":
-    main()
+    run_cli()

@@ -3,8 +3,8 @@
 
 thresholds:
   daily: 5       # FRED/yfinance daily series: covers 3-day holiday weekends + T+1 publish lag (ICE OAS posts Mon AM with Fri's value)
-  weekly: 10     # FRED weekly (NFCI, STLFSI, jobless claims): published with ~1wk lag
-  monthly: 60    # FRED monthly (CPI, UNRATE): period indexed to month-start + ~30d publication lag
+  weekly: 15     # FRED weekly (NFCI, STLFSI, jobless claims): observation dated to week-ending + ~7d publication lag; a fresh series routinely sits 11-13d behind mid-week before the next print (was 10 → false-positived on STLFSI/IC4WSA).
+  monthly: 75    # FRED monthly (CPI, UNRATE): observation dated to PERIOD START, not release. April data is dated YYYY-04-01 but isn't superseded until May data releases ~June 6-11, so a fresh series legitimately reaches a ~63-71d gap right before each release (was 60 → false-positived every month).
 
 indicators:
   vix: daily

@@ -16,11 +16,16 @@ $workDir = "C:\Users\rekwa\ian_projects\market_dashboard"
 # --- Wake task (wakes the machine 10 min before run) ---
 $wakeAction   = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c exit"
 $wakeTrigger  = New-ScheduledTaskTrigger -Daily -At "07:20AM"
+# ExecutionTimeLimit PT20M: the pipeline finishes in ~1 min. A hard 20-min cap
+# guarantees a hung run (e.g. a stalled network fetch) self-terminates so the
+# NEXT day's trigger starts clean. The old PT72H default + MultipleInstances
+# IgnoreNew meant one hung run could silently skip up to 3 days of runs.
 $wakeSettings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `
-    -AllowStartIfOnBatteries
+    -AllowStartIfOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
 
 Register-ScheduledTask `
     -TaskName "Market Dashboard Wake" `
@@ -43,7 +48,8 @@ $runSettings = New-ScheduledTaskSettingsSet `
     -WakeToRun `
     -StartWhenAvailable `
     -DontStopIfGoingOnBatteries `
-    -AllowStartIfOnBatteries
+    -AllowStartIfOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
 
 Register-ScheduledTask `
     -TaskName "Market Stress Dashboard" `

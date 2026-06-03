@@ -49,9 +49,9 @@ def test_fomc_type_tag():
 # ── _ism_dates ────────────────────────────────────────────────────────────────
 
 def test_ism_returns_mfg_and_services():
-    # Large window from the past to the future — both events must appear at least once
+    # Freeze "today" to month-start so the current month's Mfg date is still upcoming.
     end = date(2026, 6, 30)
-    events = _ism_dates(end)
+    events = _ism_dates(end, today=date(2026, 6, 1))
     labels = [e["label"] for e in events]
     assert "ISM Mfg PMI" in labels
     assert "ISM Services PMI" in labels
@@ -59,7 +59,7 @@ def test_ism_returns_mfg_and_services():
 
 def test_ism_mfg_is_first_weekday():
     end = date(2026, 6, 30)
-    events = _ism_dates(end)
+    events = _ism_dates(end, today=date(2026, 6, 1))
     mfg = [e for e in events if e["label"] == "ISM Mfg PMI"]
     assert mfg, "Expected at least one ISM Mfg PMI event"
     for ev in mfg:

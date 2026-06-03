@@ -4332,3 +4332,109 @@ Add a new bullet under "Technical gotchas":
 Sonnet execution: ~2 hours including the three new tests and the manual
 smoke runs. The refactor itself is mechanical given the spec above;
 most of the time is in the manual verification.
+
+---
+
+## Brief 28 — Run reliability hardening: close the silent-gap failure modes
+
+**Status: implemented 2026-06-03 (Opus). This brief is the design record.**
+
+### Problem
+
+The dashboard did not run for ~59 hours over the 2026-05-24/25 Memorial Day
+weekend (`history.csv`: 05-23 07:30 → 05-26 18:25, recovered by a manual
+off-schedule run). Diagnosis surfaced **four** distinct reliability gaps, only
+one of which the prior battery-flag fix addressed:
+
+1. **No off-machine liveness check.** Every liveness signal — the heartbeat and
+   `_check_dashboard_freshness()` — runs *inside* the pipeline on Ian's machine.
+   A watchdog that lives inside the thing it watches cannot detect its own
+   non-execution. When the machine is simply off (holiday, travel), nothing
+   fires until it comes back. The Memorial Day gap was exactly this.
+2. **A single hung fetch can silently eat up to 3 days of runs.** `yf.download`
+   had no timeout (every `requests.get` already has `timeout=20`). The scheduled
+   task had `ExecutionTimeLimit: PT72H` and `MultipleInstances: IgnoreNew`, so a
+   hung yfinance call keeps the instance "running" for up to 72h, during which
+   the next day's trigger is skipped — and `LastTaskResult` stays `0` the whole
+   time, so nothing looks wrong.
+3. **No run logging.** The task runs `--quiet` with no stdout/stderr capture, so
+   a crash leaves no traceback anywhere — you can see *that* it failed but never
+   *why*.
+4. **Staleness thresholds too tight → daily cry-wolf.** Confirmed via live probe,
+   not a fetch failure: FRED dates monthly series to the period *start*, so a
+   fresh CPI/UNRATE print legitimately reaches a 63–71d gap right before the next
+   release, tripping the 60d monthly threshold every month. Weekly series hit
+   11–13d against a 10d threshold. The morning Pushover became a rotating
+   staleness nag that masks genuine stress alerts.
+
+### Design decisions — LOCKED
+
+- **The watchdog runs on GitHub Actions, not the local machine.** This is the
+  whole point: it must survive the machine being off. Free, always-on, and it
+  already has repo secrets + a publish history to key off.
+- **Liveness signal = git commit time of `docs/index.html`.** That file is the
+  published GitHub Pages dashboard; its last commit is an unambiguous "last
+  successful publish" timestamp, independent of the local clock. We do NOT parse
+  the HTML (fragile) or rely on file mtime (checkout resets it).
+- **Watchdog threshold = 28h, check at 20:00 UTC daily.** The run publishes
+  ~12:30 UTC (07:30 CT). Checking at 20:00 UTC (~7.5h later) with a 28h threshold
+  catches a *fully-missed* day the same evening — e.g. on the Memorial Day
+  scenario, last publish Fri 12:30 → Sat 20:00 check sees a 31.5h gap → alert
+  Saturday evening — while still tolerating a catch-up run that fires up to ~7h
+  late. Runs daily incl. weekends (the local job runs weekends too). (Caveat: `_publish_to_github` skips the
+  commit when the dashboard is byte-identical to the prior day. In practice the
+  HTML changes daily — scores, AI narrative, news — so a daily commit is
+  reliable; `git log` confirms an unbroken daily-commit cadence. If a content-
+  identical day ever occurs, the watchdog would false-positive once; accepted.)
+- **Watchdog alerts via Pushover** using repo secrets `PUSHOVER_APP_TOKEN` and
+  `PUSHOVER_USER_KEY` (same names as `.env`). ← **MANUAL STEP for Ian: add these
+  two as GitHub repo secrets.** Until then the workflow runs but the send is a
+  no-op (it logs and exits 0 if secrets are absent — no hard failure).
+- **yfinance timeout = 20s**, matching the existing `requests` convention.
+  yfinance 1.3.0 supports the `timeout=` kwarg (verified).
+- **`ExecutionTimeLimit` = PT20M** on both scheduled tasks. The pipeline finishes
+  in ~1 min; 20 min is generous headroom while guaranteeing a hung run
+  self-terminates so the next day starts clean.
+- **Run logging is in-process** (a `RotatingFileHandler` in `run_dashboard.py`),
+  NOT a task-action change. Re-pointing the scheduled task to a launcher script
+  is higher-risk to the daily automation; in-process logging captures every
+  start/finish and full exception traceback regardless of `--quiet`, with zero
+  change to the task action. (Trade-off: it cannot capture a pre-interpreter
+  failure like a missing python.exe — that surfaces in Task Scheduler's
+  `LastTaskResult`, and the external watchdog catches its downstream effect.)
+- **Staleness thresholds:** weekly 10→15, monthly 60→75, daily unchanged at 5.
+  Reasoning is documented inline in `config/series_cadence.yaml`.
+
+### Files changed
+
+- `config/series_cadence.yaml` — recalibrated weekly/monthly thresholds + rationale.
+- `src/fetch.py` — `yf.download(..., timeout=20)`.
+- `run_dashboard.py` — extracted `_verify_dashboard_written()` (testable seam);
+  added `_setup_run_logging()` + try/except traceback capture in `__main__`.
+- `setup_task.ps1` — `ExecutionTimeLimit` on both tasks; also applied live via
+  `Set-ScheduledTask`.
+- `.github/workflows/dashboard-watchdog.yml` — NEW external dead-man's-switch.
+- `tests/test_calendar.py`, `tests/test_ondemand.py` — fixed pre-existing red
+  tests (clock injection for ISM; mock the new `_verify_dashboard_written` seam).
+- `tests/test_run_logging.py` — NEW: traceback capture + verify-guard behavior.
+
+### Edge cases
+
+- Watchdog can't `git log` the file (first run, shallow checkout) → fetch full
+  history (`fetch-depth: 0`); if the file is missing entirely, alert (that itself
+  is a failure state).
+- Pushover secrets absent → log a warning and exit 0 (don't fail the workflow and
+  spam Ian with red-X emails before he's added the secrets).
+- yfinance timeout fires → existing retry/backoff + `StaleCacheFallback` path
+  already handles it; the timeout just bounds each attempt.
+
+### Success criteria
+
+- Full suite green (was 7 pre-existing failures; fixed as part of this pass).
+- New tests prove: an exception in `main()` writes a traceback to the log and
+  re-raises; `_verify_dashboard_written` raises on a missing/stale file and
+  passes on a fresh one.
+- Live: `(Get-ScheduledTask 'Market Stress Dashboard').Settings.ExecutionTimeLimit`
+  returns `PT20M`.
+- Watchdog workflow validates (YAML) and the freshness logic returns "fresh" for
+  the current `docs/index.html`.

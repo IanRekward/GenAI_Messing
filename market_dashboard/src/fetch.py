@@ -237,7 +237,7 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
     raw_df = None
     for attempt in range(len(_RETRY_DELAYS) + 1):
         try:
-            raw_df = yf.download(ticker, start=start, progress=False, auto_adjust=True)
+            raw_df = yf.download(ticker, start=start, progress=False, auto_adjust=True, timeout=20)
             if not raw_df.empty:
                 break
             raise RuntimeError(f"Yahoo Finance returned empty data for {ticker}")

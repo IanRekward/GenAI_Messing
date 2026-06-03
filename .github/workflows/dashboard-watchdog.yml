@@ -1,0 +1,67 @@
+name: Dashboard Watchdog (dead-man's switch)
+
+# External liveness check that runs on GitHub's always-on infrastructure, so it
+# survives the one failure mode the in-pipeline freshness check cannot: the local
+# machine being off (holiday, travel) and never running at all. It keys off the
+# git commit time of docs/index.html — the published GitHub Pages dashboard —
+# which is an unambiguous "last successful publish" timestamp.
+
+on:
+  schedule:
+    - cron: "0 20 * * *" # 20:00 UTC daily (~7.5h after the 12:30 UTC / 07:30 CT publish)
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history needed to read the file's last commit time
+
+      - name: Check published dashboard freshness
+        env:
+          PUSHOVER_APP_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER_KEY: ${{ secrets.PUSHOVER_USER_KEY }}
+        run: |
+          set -euo pipefail
+          FILE="docs/index.html"
+          THRESHOLD_HOURS=28
+          STALE=0
+          MSG=""
+
+          if [ ! -f "$FILE" ]; then
+            echo "::error::$FILE not found in the repo."
+            MSG="🚨 Watchdog: the published dashboard ($FILE) is MISSING from the repo. Publication is broken."
+            STALE=1
+          else
+            LAST_EPOCH=$(git log -1 --format=%ct -- "$FILE")
+            NOW_EPOCH=$(date -u +%s)
+            AGE_HOURS=$(( (NOW_EPOCH - LAST_EPOCH) / 3600 ))
+            echo "Last publish: $(git log -1 --format=%cI -- "$FILE")  (${AGE_HOURS}h ago, threshold ${THRESHOLD_HOURS}h)"
+            if [ "$AGE_HOURS" -gt "$THRESHOLD_HOURS" ]; then
+              MSG="🚨 Market dashboard has not published in ${AGE_HOURS}h (threshold ${THRESHOLD_HOURS}h). The 07:30 CT scheduled run likely failed or the machine was off. Check Windows Task Scheduler and market_dashboard/logs/dashboard_run.log."
+              STALE=1
+            else
+              echo "OK: dashboard is fresh (${AGE_HOURS}h old)."
+            fi
+          fi
+
+          if [ "$STALE" -eq 1 ]; then
+            if [ -z "${PUSHOVER_APP_TOKEN:-}" ] || [ -z "${PUSHOVER_USER_KEY:-}" ]; then
+              echo "::warning::Dashboard is stale but PUSHOVER_APP_TOKEN / PUSHOVER_USER_KEY repo secrets are not set — cannot alert. Add them in repo Settings → Secrets and variables → Actions."
+              exit 0
+            fi
+            HTTP=$(curl -s -o /dev/null -w "%{http_code}" --max-time 20 \
+              --form-string "token=${PUSHOVER_APP_TOKEN}" \
+              --form-string "user=${PUSHOVER_USER_KEY}" \
+              --form-string "title=Dashboard Watchdog" \
+              --form-string "priority=1" \
+              --form-string "message=${MSG}" \
+              https://api.pushover.net/1/messages.json)
+            echo "Pushover responded HTTP $HTTP"
+            [ "$HTTP" = "200" ] || { echo "::error::Pushover send failed (HTTP $HTTP)"; exit 1; }
+          fi
