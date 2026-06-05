@@ -344,8 +344,19 @@ These were debated and decided. Treat them as constraints, not starting points.
   `WakeToRun: true`. Requires RTCWAKE=1 (Enable) in powercfg.
 - **Dashboard task:** "Market Stress Dashboard" — 7:30 AM daily,
   `python run_dashboard.py --publish --heartbeat --quiet`
-- If automation breaks, diagnose in order: `powercfg /waketimers` (admin),
+- If automation breaks, diagnose in order: **`logs/dashboard_run.log` first**
+  (Brief 28 — every run logs start/finish + full crash traceback there, even
+  under `--quiet`), then `powercfg /waketimers` (admin),
   `schtasks /query /tn "Market Dashboard Wake"`, `powercfg /lastwake`.
+- **External watchdog (Brief 28):** `.github/workflows/dashboard-watchdog.yml`
+  runs on GitHub (cron 20:00 UTC), keys off the commit time of `docs/index.html`,
+  and Pushover-alerts if no publish in >28h — the dead-man's switch for the
+  machine being off. It is **inert until repo secrets `PUSHOVER_APP_TOKEN` and
+  `PUSHOVER_USER_KEY` are added** (it logs a warning and exits 0 without them).
+- **`ExecutionTimeLimit` is PT20M (Brief 28)**, not the PT72H default — a hung
+  run self-terminates so the next day starts clean. The main task was set live;
+  the wake task needs an elevated shell (Access denied otherwise) but its limit
+  is moot (it runs `cmd /c exit`). `setup_task.ps1` bakes PT20M into both.
 - **Battery flags must stay false on a laptop.** Both tasks need
   `DisallowStartIfOnBatteries=false` and `StopIfGoingOnBatteries=false`. With
   the defaults true, the wake task is silently skipped on battery and only

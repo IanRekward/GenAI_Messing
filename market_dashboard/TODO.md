@@ -50,7 +50,36 @@ Both issues diagnosed and closed.
 
 ---
 
-**Tactical Markets companion projects** are now sibling repos with their own backlogs:
+## Known issues — observed 2026-06-01 (RESOLVED 2026-06-03)
+
+### Issue 4 — Silent dashboard staleness + task failure recovery
+
+On June 1–2, the daily 7:30 AM run executed but hit stale-data remediation failures for `cpi_yoy` and `unemployment` (normal FRED delays), fell back to cache, and generated a dashboard with stale indicators flagged. However, **no alert was sent to notify the user that the refresh was degraded**. With shared users (mother-in-law), this requires visible monitoring.
+
+**Solutions implemented 2026-06-03:**
+1. **Dashboard write verification** — `run_dashboard.py` now verifies the output file was written <60s ago. If not, raises RuntimeError instead of silently continuing.
+2. **Health alert system** — New `_check_dashboard_freshness()` in `src/alerts.py` checks if published HTML is >40h old and fires a 🚨 CRITICAL ALERT via Pushover/Twilio/Email if stale.
+3. **Debounce strategy** — Health alerts only fire once per 6 hours to avoid spam; state tracks `last_health_alert_time`.
+4. **Failover on health alert** — If dashboard is stale, `send_alerts()` returns early with health alert (counts as 1 alert sent), overriding normal market alerts.
+
+**Configuration:**
+- `DASHBOARD_FRESHNESS_HOURS=40` in .env (default: 40h threshold)
+- Health alert fires immediately if published HTML is older than threshold
+- Resends alert if stale persists and >6h since last alert
+
+**Testing:**
+- Monitor next morning run (2026-06-04 07:30 AM) to confirm write verification works
+- Manually test by stopping Task Scheduler for 40+ hours, then check Pushover fire on next run
+
+**Brief 28 extension (2026-06-03, Opus) — closed the remaining gaps the in-pipeline fix could not:**
+1. **External watchdog** (`.github/workflows/dashboard-watchdog.yml`) — runs on GitHub, so it survives the *machine being off* (the actual Memorial-Day failure mode; the in-pipeline freshness check cannot detect its own non-execution). Alerts via Pushover if `docs/index.html` hasn't been committed in >28h.
+2. **Hung-fetch protection** — `yf.download(timeout=20)` + `ExecutionTimeLimit` PT72H→PT20M (one hung fetch could otherwise silently skip up to 3 days under `MultipleInstances=IgnoreNew`).
+3. **Run logging** — `logs/dashboard_run.log` (start/finish + crash traceback, even under `--quiet`). Confirmed capturing the 06-04 and 06-05 scheduled runs.
+4. **Staleness recalibration** — `series_cadence.yaml` weekly 10→15, monthly 60→75. The daily staleness alerts were a *false positive* (FRED dates monthly series to period-start, so fresh CPI/UNRATE legitimately reaches 63–71d before release), not a fetch failure.
+
+> ⚠️ **ACTION REQUIRED (Ian):** add repo secrets **`PUSHOVER_APP_TOKEN`** and **`PUSHOVER_USER_KEY`** in GitHub → Settings → Secrets and variables → Actions. The watchdog runs without them but cannot send the alert (it logs a warning and exits 0). Until then the dead-man's switch is inert.
+
+---
 [../tactical_markets/TODO.md](../tactical_markets/TODO.md), [../tactical_markets_trading/TODO.md](../tactical_markets_trading/TODO.md). They remain in hopper until Market Stress Dashboard is complete and all Phase G items ship.
 
 **Downstream consumer coordination:** the `tactical_markets_trading` bot has filed three coordination tasks (W1-W3) at [_bmad-output/planning-artifacts/bot-integration-asks.md](_bmad-output/planning-artifacts/bot-integration-asks.md). **W1 (HIGH) directly affects the 2026-05-30 regime-weights review** — without pre-coordination, that recalibration will silently block bot trading. Read before the 5/30 checkpoint.
