@@ -70,9 +70,9 @@ def _fomc_events(end: date) -> list[dict]:
     ]
 
 
-def _ism_dates(end: date) -> list[dict]:
+def _ism_dates(end: date, today: date | None = None) -> list[dict]:
     """Approximate ISM PMI dates: Mfg on 1st weekday, Services on 3rd weekday of month."""
-    today = date.today()
+    today = today or date.today()
     events: list[dict] = []
     for m_offset in range(3):
         m = (today.month - 1 + m_offset) % 12 + 1
