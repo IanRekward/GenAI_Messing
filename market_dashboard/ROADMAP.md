@@ -4438,3 +4438,140 @@ one of which the prior battery-flag fix addressed:
   returns `PT20M`.
 - Watchdog workflow validates (YAML) and the freshness logic returns "fresh" for
   the current `docs/index.html`.
+
+---
+
+## Brief 29 — Honest calibration card (kill the false "Miscalibrated" verdict)
+
+**Dependencies:** None. Touches `src/dashboard.py` (the card), `src/evaluation.py`
+(adequacy fields), and the backtest/evaluation serialization (new JSON summary).
+
+**Prefer: Sonnet.** Design is settled below — this is well-scoped execution.
+
+### Problem
+
+The "Model Calibration" card renders a red **Miscalibrated** badge whenever the
+rolling composite IC is < 0.05. That verdict is computed live over the last 252
+days of `history.csv` — but live history only began **2026-04-23**, so the window
+is ~30–50 observations sitting entirely inside one calm, grinding-up regime with
+no drawdown event to predict. A stress model *cannot* show SPX-drawdown skill
+when there is no drawdown in the sample; the badge is measuring small-sample noise
+in a quiet tape, not a degraded model.
+
+The model is not miscalibrated. The 17-year backtest (`output/backtest_full.csv`,
+~2,167 obs incl. 2008/2020/2022) shows genuine skill:
+
+| Horizon | IC vs SPX drawdown | IC vs realized stress (VIX+HY+NFCI) |
+|---|---|---|
+| 1 week | **0.150 (STRONG)** | 0.76 |
+| 1 month | 0.115 | 0.70 |
+| 3 month | -0.019 | 0.54 |
+| 6 month | -0.126 | 0.39 |
+
+The composite has real short-horizon equity-drawdown skill (peaks ~0.15 at 1wk)
+and is strongly predictive of forward *realized financial stress* at every horizon
+(0.39–0.76). The negative 6-month SPX IC is expected mean-reversion (peak fear
+precedes recovery), not a defect. The card is holding a stress thermometer to a
+market-timing yardstick on far too little data, and will keep reading red for most
+of the first **year** of live operation regardless of model quality.
+
+> **Why not auto-recalibrate instead?** Considered and rejected (see 2026-06-09
+> discussion). Recalibration down-weights indicators that looked weak *recently* —
+> running it on a calm-regime reading would strip out exactly the early-warning
+> coverage the tool exists to provide, mutate the authoritative `weights.yaml`
+> silently, and contradict the deliberate human-in-the-loop checkpoint (regime
+> weights `enabled: false` pending the 2026-06-20 review). The bug is the card's
+> verdict logic, not the weights.
+
+### Design decisions (locked)
+
+1. **Adequacy gate.** The live card must not render a hard Tracking / Weak /
+   Miscalibrated verdict until it has enough live history to mean something.
+   Below `MIN_CALIBRATION_OBS = 90` aligned observations, the verdict is
+   **"Building history"** (neutral grey `#6e7681`), with sub-text
+   `N/90 obs — verdict pends sufficient live history`. The IC number may still
+   display (greyed), but the colored badge does not claim a verdict.
+   - 90 daily obs ≈ one full quarter of live runs — enough to span more than a
+     single calm stretch. This is a floor, not a guarantee of regime variety;
+     the proven-skill line (below) carries the real evidence in the meantime.
+   - The existing `n_obs < 30 → None → "Insufficient history"` path stays as the
+     hardest floor; 30–89 obs now also routes to "Building history" rather than a
+     colored verdict.
+
+2. **Proven-skill line from the backtest.** The card shows the full-history
+   backtest IC next to the live IC, so "is the model sound" (yes, proven) is
+   visually separated from "is it tracking lately" (too soon to say). Render a
+   line like:
+   `Proven skill: 0.15 IC @ 1wk vs drawdown · 0.70 @ 1m vs realized stress (17yr backtest)`.
+   Source it from a new machine-readable summary, **not** by scraping
+   `backtest_report.html`.
+
+3. **Surface the realized-stress target, not just SPX drawdown.** SPX price
+   drawdown is a deliberately noisy target for a stress index; realized stress is
+   the model's actual mandate and where it scores 0.4–0.8. Both numbers go in the
+   proven-skill line. The *live* IC stays SPX-drawdown-only (computing live
+   forward realized stress needs VIX/HY/NFCI forward windows — out of scope here;
+   the backtest summary already carries the stress number).
+
+4. **No auto-recalibration, no weight mutation.** This brief is display/logic
+   only. It does not touch `weights.yaml`, scoring, or alerts.
+
+### Files
+
+- **`src/evaluation.py:rolling_composite_ic()`** — add `min_obs_for_verdict`
+  param (default 90) and return an `adequacy` field: `"insufficient"`
+  (`n_obs < 30`), `"building"` (`30 ≤ n_obs < 90`), or `"ok"` (`n_obs ≥ 90`).
+  Keep the existing `ic`/`n_obs` keys for backward compat.
+- **`src/dashboard.py:_build_signal_quality_card()`** — branch on `adequacy`:
+  `"ok"` → existing colored `_VERDICT` logic; `"building"`/`"insufficient"` →
+  grey "Building history" badge + `N/90 obs` sub-text. Add the proven-skill line
+  from the JSON summary (best-effort; absent file → omit the line, never crash).
+- **Backtest/evaluation serialization** — wherever `run_full_evaluation()` /
+  `headline_table()` output is rendered for `backtest_report.html`, also dump
+  `output/backtest_ic_summary.json`:
+  ```json
+  {
+    "generated": "2026-04-25T15:58:00",
+    "n_obs": 2167,
+    "composite_vs_spx_drawdown": {"1w": 0.150, "1m": 0.115, "3m": -0.019, "6m": -0.126},
+    "composite_vs_stress_index": {"1w": 0.759, "1m": 0.704, "3m": 0.540, "6m": 0.390}
+  }
+  ```
+  Read the values straight from the `run_full_evaluation` results dict (they
+  already exist as `results["continuous"][h]["spx_drawdown"]["spearman_ic"]` and
+  `["stress_index"]["spearman_ic"]`) — do not hardcode the numbers above; they are
+  illustrative of the current run.
+
+### Edge cases
+
+- **`backtest_ic_summary.json` missing** (never run, fresh checkout) → card omits
+  the proven-skill line entirely, no error. The existing backtest-freshness
+  warning already nudges a re-run.
+- **Summary present but stale** → the existing `bt_age_h > 48` staleness warning
+  in the card already covers this; the proven-skill line is a model property, not
+  a freshness claim, so stale-but-present is fine to show.
+- **`stress_index` absent from a backtest run** (HY OAS series too short under
+  FRED restriction) → emit only `composite_vs_spx_drawdown`; card shows the
+  drawdown number and drops the stress clause.
+- **First ~90 days of live operation** → card correctly shows "Building history".
+  This is the intended steady-state until ~2026-07/08, not a bug to suppress.
+
+### Tests (`tests/test_dashboard.py` / `tests/test_evaluation.py`)
+
+- `rolling_composite_ic` returns `adequacy="building"` for a synthetic 50-obs
+  history and `"ok"` for a 120-obs history.
+- The card renders "Building history" (grey, no Tracking/Miscalibrated badge)
+  when adequacy is below `ok`, and the colored verdict when it's `ok`.
+- The card includes the proven-skill line when `output/backtest_ic_summary.json`
+  exists and omits it cleanly when absent (tmp_path with/without the file).
+- The summary writer produces valid JSON with both target keys from a synthetic
+  `run_full_evaluation` results dict.
+
+### Success criteria
+
+- With today's ~50-obs live history, the card shows a grey **Building history**
+  badge — the false red "Miscalibrated" verdict is gone.
+- The card shows a proven-skill line sourced from `backtest_ic_summary.json`.
+- `output/backtest_ic_summary.json` is written on the next backtest run and parses.
+- Full suite green; `python run_dashboard.py --no-cache --no-news --no-alerts
+  --quiet` renders the card without error.

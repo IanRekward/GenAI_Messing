@@ -147,6 +147,15 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 ### Phase E — Design-first items (route through Opus before Sonnet executes) 🅾️
 
+- [ ] **Brief 29 — Honest calibration card (kill false "Miscalibrated" verdict)** *(Opus design done 2026-06-09 → Sonnet-ready)*
+  The Model Calibration card renders a red "Miscalibrated" badge from ~30–50 obs
+  of live history over one calm regime — small-sample noise, not a degraded model.
+  17yr backtest shows real skill (0.15 IC @ 1wk vs drawdown, 0.4–0.8 vs realized
+  stress). Fix: (a) adequacy gate — show grey "Building history" below 90 obs
+  instead of a colored verdict; (b) proven-skill line from a new
+  `output/backtest_ic_summary.json`. Display/logic only, no weight mutation.
+  Full brief in [ROADMAP.md](ROADMAP.md#brief-29--honest-calibration-card-kill-the-false-miscalibrated-verdict).
+
 - [x] **Brief 15 — Backtest signal-quality card + link** *(shipped)*
   Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`.
 
