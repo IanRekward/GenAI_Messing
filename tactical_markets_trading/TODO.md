@@ -2,6 +2,57 @@
 
 Alpaca paper-trading layer. As of 2026-05-21: pivoting from sector-rotation execution to a multi-strategy regime-routed ensemble. Phase 2 infrastructure (preflight, reconciler, kill switches, sizing) is strategy-agnostic and gets reused.
 
+## 2026-06-09 — STATUS: Phase 3.2 running, first stop-fired exit booked
+
+Current verified state (against `data/` ledger + last reconciler run). Phase 3.2 has now been live and trading for ~2 weeks; this is the source of truth, the 2026-05-29 section below is the prior snapshot.
+
+**Live positions (4 open):**
+
+| Strategy | Position | Entry |
+|---|---|---|
+| `trend_leveraged_tqqq` | **flat / stopped_out**, awaiting re-entry trigger | (last entry $77.13, 05-21) |
+| `trend_following_spy_200d` | 44 SPY | $750.82 (05-27) |
+| `sector_momentum_top3_monthly` | XLK 60 / XLE 198 / XLY 92 | various (05-27); rebalanced into 2026-06, no churn |
+
+**What changed since 05-29:**
+- **First TQQQ trailing-stop fired in the wild 2026-06-05: +$1,756.39 / +5.33%** (entry $77.13 → exit $81.24, `exit_reason: stop_fired`, "TQQQ $81.44 ≤ peak $87.24 × 0.95 = $82.87"). The "watch the first stop-fire" item is **resolved**, and this satisfies the graduation gate's "≥1 stop-fired exit" leg.
+- **Realized PnL ≈ +$1,699** across 7 closed trades (TQQQ winner dominates); 4 trades open.
+- **peak_equity drawdown kill-switch bug fixed** — it had been frozen at $100,067 since 05-21 because only the retired `run_trading.py` advanced the high-water-mark. `run_ensemble.py` now updates it each cycle; account_state.json now reads $101,008.93 (ratcheting). Intermediate highs before the fix are unrecoverable.
+- **Drift log cleaned: 0 unresolved** (10 stale benign events resolved 06-08 — in-flight order false positives + XLE fractional residual). This had been masking the "30d operational cleanliness" graduation leg.
+- **Legacy `exit_manager.py` "Tactical Trading Exit" scheduled task disabled 06-08** (was firing daily, emitting reconcile/drift Pushover noise though it never traded). `setup_task.ps1` footgun fixed 06-09 — it no longer re-registers the Exit task on re-run.
+- **Pushover title-branding fix completed 06-09** — `src/pushover._format_title` had an em-dash typo failing 4 tests; fixed. Tests now **196 passing** (was 189 at 3.1).
+
+**Still open / deferred:**
+- **Phase 3.3 (live capital)** — gated on 6mo paper + per-component minimums (30 closed trades each, ≥1 stop-fired exit ✓, ≥1 MACRO-veto period) + 30d operational cleanliness. Not close — several more months of paper testing expected (confirmed 2026-06-09).
+- **Remaining Pushover noise (deferred):** `notify_drift` re-alerts on benign in-flight orders (no dedupe); raw `json.dumps` body at `reconciler.py:252`; stale "PHASE 2 GRADUATION" label.
+- Update `run_ensemble.py` module docstring (still says "Phase 3.1 single-strategy variant").
+
+---
+
+## 2026-05-29 — PHASE 3.2 LIVE: full 3-component regime-routed ensemble
+
+**Status correction:** the sections below this one stop at Phase 3.1 (single TQQQ component). The running system is now well past that — Phase 3.2 is built and trading daily. This section is the current source of truth; older sections are history.
+
+**Three components live**, all registered in `run_ensemble.py` `ACTIVE_STRATEGIES`, routed by `src/regime_router.py` (classifies on SPY 200d MA + VIX + MACRO):
+
+| Strategy | Module | State file | Live position (2026-05-29) |
+|---|---|---|---|
+| `trend_leveraged_tqqq` | `src/strategies/leveraged_trend.py` | `data/strategy_state_trend_leveraged_tqqq.json` | 427 TQQQ, in_position, peak $84.375, not stopped out (entry $77.12 / 05-21) |
+| `trend_following_spy_200d` | `src/strategies/spy_trend.py` | `data/strategy_state_trend_following_spy_200d.json` | 44 SPY, in_position (entry $750.82 / 05-27) |
+| `sector_momentum_top3_monthly` | `src/strategies/sector_momentum_monthly.py` | `data/strategy_state_sector_momentum_top3_monthly.json` | XLK 60 / XLE 198 / XLY 92, rebalance month 2026-05 (entries 05-27) |
+
+- Regime at recent entries: `bull_calm`. Daily decision cycle confirmed firing (state files timestamped 2026-05-29 13:35 UTC).
+- **TQQQ software trailing stop** sits ~$80.16 (5% below peak $84.375). Not yet fired in the wild — watch for the first stop-fire.
+- **Legacy positions closed:** XLF closed 2026-05-28 (scheduled, flat $0). XLE legacy slot superseded by the sector-momentum component. Old `run_trading.py`/`exit_manager.py` path stays gated off by `SECTOR_ROTATION_5D_RETIRED=True`.
+- **Known stale comment:** `run_ensemble.py` module docstring still says "Phase 3.1 single-strategy variant" — the code below it is the full 3.2 ensemble.
+
+### Open items
+- **Phase 3.3 (live capital)** — gated on 6mo paper + per-component minimums (30 closed trades each, ≥1 stop-fired exit, ≥1 MACRO-veto period) + 30d operational cleanliness. Not close.
+- Update `run_ensemble.py` docstring to drop the "Phase 3.1 single-strategy" framing.
+- Re-confirm test count after the 3.2 modules (was 156 at end of 3.1).
+
+---
+
 ## 2026-05-21 — PHASE 3.1 BUILT + FIRST PAPER TRADE EXECUTED
 
 **Phase 3.1 component shipped.** `src/strategies/leveraged_trend.py` (TQQQ + 50d MA + 5% trailing stop) + `src/strategy_state.py` (per-strategy persistence) + `run_ensemble.py` (new orchestrator) + 19 tests. **156/156 tests passing.**

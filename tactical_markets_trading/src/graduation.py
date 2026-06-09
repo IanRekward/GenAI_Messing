@@ -111,9 +111,9 @@ def notify_if_met() -> bool:
         return False
 
     pushover.send(
-        "PHASE 2 GRADUATION MET",
-        f"Graduation criterion satisfied. {status['criterion_summary']}. "
-        f"Open Phase 3 design (rules-of-engagement + live capital sizing).",
+        "GRADUATION GATE MET",
+        f"Live-capital graduation gate satisfied. {status['criterion_summary']}. "
+        f"Review rules-of-engagement + position sizing before deploying real capital.",
     )
     GRADUATION_STATE_PATH.parent.mkdir(exist_ok=True)
     new_state = {

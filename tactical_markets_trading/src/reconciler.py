@@ -60,6 +60,48 @@ def _log_event(event: dict) -> None:
         f.write(json.dumps(event) + "\n")
 
 
+def _resolved_trade_ids_for(event_type: str) -> set[str]:
+    """Return trade_ids that have a resolved drift_log entry of the given type.
+    Used to suppress repeat alerts on drift events the operator has already
+    acknowledged + cleared."""
+    if not DRIFT_LOG.exists():
+        return set()
+    out: set[str] = set()
+    with open(DRIFT_LOG) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            event = json.loads(line)
+            if event.get("type") == event_type and event.get("resolved") and event.get("trade_id"):
+                out.add(event["trade_id"])
+    return out
+
+
+def _resolved_untracked_positions() -> list[tuple[str, float]]:
+    """Return (symbol, alpaca_qty) pairs from resolved untracked_alpaca_position
+    drift_log entries. A new untracked detection matching one of these (qty within
+    QTY_EPSILON) is suppressed — the operator already acknowledged it. If the
+    untracked qty changes, the new value won't match and re-alerts."""
+    if not DRIFT_LOG.exists():
+        return []
+    out: list[tuple[str, float]] = []
+    with open(DRIFT_LOG) as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            event = json.loads(line)
+            if (
+                event.get("type") == "untracked_alpaca_position"
+                and event.get("resolved")
+                and event.get("symbol")
+                and event.get("alpaca_qty") is not None
+            ):
+                out.append((event["symbol"], float(event["alpaca_qty"])))
+    return out
+
+
 def _backfill_close(client, record: dict) -> tuple[dict | None, str | None]:
     """Find the SELL in Alpaca order history matching this local open record and
     build a closed-record dict. Returns (closed_dict, error_str)."""
@@ -114,6 +156,17 @@ def reconcile(dry_run: bool = False) -> dict:
         r = records[i]
         local_qty_by_symbol[r["symbol"]] = local_qty_by_symbol.get(r["symbol"], 0.0) + r["fill_qty"]
         local_records_by_symbol.setdefault(r["symbol"], []).append(i)
+
+    # Account for known residuals left over on the broker after a partial close
+    # (e.g., fractional share remainder after a whole-share GTC stop fires). These
+    # are tracked on the closed trade record via partial_close_residual_qty so the
+    # broker side isn't reported as drift. Cleared (set to 0) once the residual
+    # is sold — see tools/close_orphan_xle_c3c7d90f.py for the pattern.
+    for r in records:
+        if r.get("status") == "closed":
+            residual = r.get("partial_close_residual_qty") or 0
+            if residual > 0:
+                local_qty_by_symbol[r["symbol"]] = local_qty_by_symbol.get(r["symbol"], 0.0) + residual
 
     positions = client.get_all_positions()
     alpaca_qty_by_symbol = {p.symbol: float(p.qty) for p in positions}
@@ -176,11 +229,40 @@ def reconcile(dry_run: bool = False) -> dict:
     if not dry_run:
         _log_event(summary)
 
-    alert_actions = [a for a in actions if a["type"] in ("drift_unresolvable", "untracked_alpaca_position")]
+    # Suppress alerts for drift events already marked resolved in drift_log.jsonl.
+    # Without this, a stuck event (e.g., partial close where stop covered floor(qty))
+    # Pushovers on every reconcile run forever.
+    resolved_trade_ids = _resolved_trade_ids_for("drift_unresolvable")
+    resolved_untracked = _resolved_untracked_positions()
+
+    def _is_resolved(a: dict) -> bool:
+        if a["type"] == "drift_unresolvable" and a.get("trade_id") in resolved_trade_ids:
+            return True
+        if a["type"] == "untracked_alpaca_position":
+            for sym, qty in resolved_untracked:
+                if a.get("symbol") == sym and abs(float(a.get("alpaca_qty", 0)) - qty) < QTY_EPSILON:
+                    return True
+        return False
+
+    alert_actions = [
+        a for a in actions
+        if a["type"] in ("drift_unresolvable", "untracked_alpaca_position") and not _is_resolved(a)
+    ]
     if alert_actions and not dry_run:
+        lines = []
+        for a in alert_actions:
+            if a["type"] == "drift_unresolvable":
+                lines.append(f"unresolvable {a['symbol']} trade {a['trade_id'][:8]}: {a['error']}")
+            elif a["type"] == "untracked_alpaca_position":
+                lines.append(
+                    f"untracked {a['symbol']} qty={a['untracked_qty']:.4f} "
+                    f"(alpaca={a['alpaca_qty']} local={a['local_qty']})"
+                )
+            else:
+                lines.append(json.dumps(a))
         pushover.send(
             f"Reconciler: {len(alert_actions)} drift event(s)",
-            json.dumps(alert_actions, indent=None)[:1024],
+            "\n".join(lines)[:1024],
         )
 
     return summary
@@ -273,6 +355,14 @@ def report() -> list[dict]:
         side = str(getattr(o, "side", ""))
         if "SELL" in side and o.symbol in local_open_symbols:
             continue  # in-flight exit, not orphan
+        # In-flight MARKET orders are transient execution, not drift: a market order
+        # seen "open" mid-reconcile fills (or rejects) within seconds. If it fills
+        # into an untracked position, orphan_position catches it next cycle. Only
+        # non-market open orders (stop/limit) we don't track are genuine orphans.
+        # This kills the false-alarm pings for entry BUYs / stop SELLs still in flight.
+        order_type = str(getattr(o, "order_type", ""))
+        if "MARKET" in order_type.upper():
+            continue
         events.append({
             "type": "orphan_open_order",
             "order_id": str(o.id),
@@ -297,16 +387,50 @@ def report() -> list[dict]:
     return events
 
 
+def _event_signature(event: dict) -> tuple:
+    """Stable identity for a drift event, used to dedupe repeat alerts. Two
+    detections of the same underlying condition (same order, same orphan qty,
+    same trade's missing stop) share a signature."""
+    t = event.get("type")
+    if t == "orphan_position":
+        return (t, event.get("symbol"), round(float(event.get("orphan_qty", 0)), 6))
+    if t == "missing_position":
+        return (t, event.get("trade_id"), event.get("symbol"))
+    if t == "orphan_open_order":
+        return (t, event.get("order_id"))
+    if t == "missing_stop_order":
+        return (t, event.get("trade_id"), event.get("expected_stop_order_id"))
+    return (t, json.dumps(event, sort_keys=True))
+
+
 def notify_drift(drift_events: list[dict]) -> None:
     """Story 2.2: persist drift events to data/drift_log.jsonl and send one
     Pushover summary. Idempotent on empty input.
 
-    Each event gets a unique event_id (UUID) + resolved=false + resolved_at=null
+    Dedupes against events already in the drift log (resolved or not): a drift
+    condition caught on consecutive cycles — or a transient in-flight order seen
+    more than once — is logged + alerted only on first sighting, never re-pinged.
+    Without this, persistent/recurring drift Pushovers every run.
+
+    Each NEW event gets a unique event_id (UUID) + resolved=false + resolved_at=null
     + resolved_reason=null fields for the human-confirmation gate (resolve_event /
     resolve_all_unresolved). Graduation counts only unresolved events.
     """
     if not drift_events:
         return
+
+    existing_signatures: set[tuple] = set()
+    if DRIFT_LOG.exists():
+        with open(DRIFT_LOG) as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    existing_signatures.add(_event_signature(json.loads(line)))
+
+    drift_events = [e for e in drift_events if _event_signature(e) not in existing_signatures]
+    if not drift_events:
+        return
+
     detected_at = datetime.now(timezone.utc).isoformat()
     DRIFT_LOG.parent.mkdir(exist_ok=True)
     with open(DRIFT_LOG, "a") as f:

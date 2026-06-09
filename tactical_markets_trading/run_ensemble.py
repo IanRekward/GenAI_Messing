@@ -37,9 +37,12 @@ import yfinance as yf
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import MarketOrderRequest
 
+import account_state
+import macro_consumer
 import preflight
 import pushover
 import reconciler
+import regime_router
 import strategy_state
 from alpaca_connector import load_env, trading_client
 from exit_manager import _market_is_open
@@ -50,10 +53,26 @@ from strategies.leveraged_trend import (
     SIGNAL_TICKER,
     LeveragedTrendStrategy,
 )
+from strategies.sector_momentum_monthly import (
+    LOOKBACK_DAYS as SECTOR_LOOKBACK_DAYS,
+    SECTOR_TICKERS,
+    SectorMomentumMonthlyStrategy,
+)
+from strategies.spy_trend import (
+    MA_WINDOW as SPY_TREND_MA_WINDOW,
+    SpyTrendStrategy,
+)
 from trade_logger import TRADES_PATH, wait_for_fill
 
 ENSEMBLE_LOG = TRADES_PATH.parent / "ensemble_log.jsonl"
-ACTIVE_STRATEGIES = [LeveragedTrendStrategy()]  # Phase 3.1: single component
+# Phase 3.2: three components registered. regime_router decides which fire each
+# cycle based on SPY 200d MA + VIX + MACRO regime.
+ACTIVE_STRATEGIES = [
+    LeveragedTrendStrategy(),
+    SpyTrendStrategy(),
+    SectorMomentumMonthlyStrategy(),
+]
+VIX_TICKER = "^VIX"
 
 
 def _fetch_market_data() -> dict:
@@ -61,23 +80,50 @@ def _fetch_market_data() -> dict:
     signal day — yfinance returns it in `Close.iloc[-1]` outside RTH and during
     early RTH (intraday updates appear later in the session).
 
-    Returns dict with:
-      spy_close_today, spy_ma_today, tqqq_close_today, spy_close_history (last MA_WINDOW+1)
+    Returns dict with all data the three active strategies (leveraged_trend,
+    spy_trend, sector_momentum) need. Single yfinance batch keeps the call
+    graph simple and shares the SPY history across strategies.
     """
-    spy_hist = yf.Ticker(SIGNAL_TICKER).history(period=f"{MA_WINDOW + 30}d", auto_adjust=True)
+    spy_period = f"{max(MA_WINDOW, SPY_TREND_MA_WINDOW) + 30}d"
+    spy_hist = yf.Ticker(SIGNAL_TICKER).history(period=spy_period, auto_adjust=True)
     tqqq_hist = yf.Ticker(LEVERAGED_TICKER).history(period="5d", auto_adjust=True)
+    vix_hist = yf.Ticker(VIX_TICKER).history(period="5d", auto_adjust=True)
     if spy_hist.empty:
         raise RuntimeError(f"yfinance returned no data for {SIGNAL_TICKER}")
     if tqqq_hist.empty:
         raise RuntimeError(f"yfinance returned no data for {LEVERAGED_TICKER}")
+    if vix_hist.empty:
+        raise RuntimeError(f"yfinance returned no data for {VIX_TICKER}")
     spy_close = float(spy_hist["Close"].iloc[-1])
-    spy_ma = float(spy_hist["Close"].rolling(MA_WINDOW).mean().iloc[-1])
+    spy_ma_50 = float(spy_hist["Close"].rolling(MA_WINDOW).mean().iloc[-1])
+    spy_ma_200 = float(spy_hist["Close"].rolling(SPY_TREND_MA_WINDOW).mean().iloc[-1])
     tqqq_close = float(tqqq_hist["Close"].iloc[-1])
+    vix_close = float(vix_hist["Close"].iloc[-1])
+
+    # Sector data for sector_momentum_top3_monthly. Period = lookback + buffer.
+    sector_period = f"{SECTOR_LOOKBACK_DAYS + 30}d"
+    sector_close_history: dict[str, list[float]] = {}
+    sector_close_today: dict[str, float] = {}
+    for sym in SECTOR_TICKERS:
+        h = yf.Ticker(sym).history(period=sector_period, auto_adjust=True)
+        if h.empty:
+            print(f"  WARNING: yfinance returned no data for sector {sym}")
+            continue
+        sector_close_history[sym] = h["Close"].tolist()
+        sector_close_today[sym] = float(h["Close"].iloc[-1])
+
+    today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
     return {
+        "today": today_str,
         "spy_close_today": spy_close,
-        "spy_ma_today": spy_ma,
+        "spy_ma_today": spy_ma_50,           # legacy alias for leveraged_trend
+        "spy_ma_200_today": spy_ma_200,
         "tqqq_close_today": tqqq_close,
+        "vix_close_today": vix_close,
         "spy_close_history": spy_hist["Close"].tolist()[-MA_WINDOW - 1:],
+        "sector_close_history": sector_close_history,
+        "sector_close_today": sector_close_today,
     }
 
 
@@ -104,6 +150,7 @@ def _execute_buy(client, decision: Decision, strategy_name: str, market_data: di
         "trade_id": str(uuid.uuid4()),
         "order_id": str(order.id),
         "strategy": strategy_name,
+        "regime_at_entry": market_data.get("regime", "unknown"),
         "symbol": decision.symbol,
         "side": "buy",
         "trigger": decision.trigger,
@@ -183,18 +230,20 @@ def main():
         pushover.send(title, reason)
         sys.exit(1)
 
-    # Step 2: reconcile (catch drift before deciding)
+    # Step 2: market-hours guard — only act during RTH.
+    # Must run BEFORE reconcile so catch-up runs (StartWhenAvailable firing hours
+    # after the scheduled slot) don't churn the broker and Pushover for nothing.
+    if not _market_is_open():
+        now_iso = datetime.now(timezone.utc).isoformat()
+        print(f"Market closed at {now_iso} — ensemble cycle skipped.")
+        return
+
+    # Step 3: reconcile (catch drift before deciding)
     try:
         reconciler.reconcile(dry_run=False)
     except Exception as e:
         print(f"reconciler failed (non-fatal): {e}")
         pushover.send("Ensemble reconciler failed", str(e))
-
-    # Step 3: market-hours guard — only act during RTH
-    if not _market_is_open():
-        now_iso = datetime.now(timezone.utc).isoformat()
-        print(f"Market closed at {now_iso} — ensemble cycle skipped.")
-        return
 
     # Step 4: market data
     try:
@@ -203,33 +252,75 @@ def main():
         print(f"market data fetch failed: {e}")
         pushover.send("Ensemble ABORT", f"market data fetch failed: {e}")
         sys.exit(1)
-    print(f"Market: SPY ${market_data['spy_close_today']:.2f} vs {MA_WINDOW}d MA ${market_data['spy_ma_today']:.2f}, "
-          f"TQQQ ${market_data['tqqq_close_today']:.2f}")
+    print(f"Market: SPY ${market_data['spy_close_today']:.2f} vs 50d MA ${market_data['spy_ma_today']:.2f} / "
+          f"200d MA ${market_data['spy_ma_200_today']:.2f}, "
+          f"TQQQ ${market_data['tqqq_close_today']:.2f}, VIX {market_data['vix_close_today']:.2f}")
 
-    # Step 5: ask each active strategy to decide
+    # Step 5: regime classification. preflight already validated MACRO; we re-fetch
+    # the data here because preflight only returns ok/reason (not the data dict).
+    _, _, macro_data = macro_consumer.validate()
+    regime, regime_reason = regime_router.classify(
+        spy_close=market_data["spy_close_today"],
+        spy_ma_200=market_data["spy_ma_200_today"],
+        vix=market_data["vix_close_today"],
+        macro_data=macro_data,
+    )
+    market_data["regime"] = regime
+    active_names = set(regime_router.active_strategies(regime))
+    print(f"Regime: {regime} — {regime_reason}")
+    print(f"Active components this cycle: {sorted(active_names) or 'none (cash)'}")
+
+    # Step 6: ask each active strategy to decide
     client = trading_client()
     account = client.get_account()
     account_value = float(account.equity)
     positions_mkt_value = _current_positions_market_value(client)
     print(f"Equity: ${account_value:,.2f}  Positions: {positions_mkt_value or 'none'}")
 
+    # Advance the drawdown kill-switch high-water-mark. preflight only reads/inits
+    # peak_equity via load_or_init; nothing in the live ensemble path advanced it on
+    # new equity highs (the retired run_trading.py was the only updater), so the peak
+    # had been frozen at the last run_trading.py execution — understating drawdown and
+    # under-arming the kill switch. Update it here every cycle.
+    acct_state, _ = account_state.load_or_init(account_value)
+    acct_state, hwm_updated = account_state.update_peak_if_higher(acct_state, account_value)
+    if hwm_updated:
+        print(f"  peak_equity advanced to ${account_value:,.2f}")
+
     for strategy in ACTIVE_STRATEGIES:
+        if strategy.name not in active_names:
+            print(f"\n--- {strategy.name} ---")
+            print(f"  skipped: not active in regime {regime}")
+            continue
         state = strategy_state.load_state(strategy.name)
         print(f"\n--- {strategy.name} ---")
         print(f"  state in: {state}")
-        decision = strategy.decide(state, market_data, account_value, positions_mkt_value)
-        print(f"  decision: {decision.action} ({decision.trigger}) — {decision.reason}")
+        actions = strategy.decide_actions(state, market_data, account_value, positions_mkt_value)
+        if not actions:
+            print(f"  no actions this fire")
+            strategy_state.save_state(strategy.name, state)
+            continue
 
-        try:
-            if decision.action == "buy":
-                _execute_buy(client, decision, strategy.name, market_data)
-            elif decision.action == "sell":
-                _execute_sell(client, decision, strategy.name, market_data)
-            # hold = no-op
-        except Exception as e:
-            print(f"  EXECUTION FAILED: {e}")
-            pushover.send(f"Ensemble execution FAILED: {strategy.name}", str(e))
-            # Don't persist state on execution failure — next fire will re-attempt
+        any_failed = False
+        for decision in actions:
+            print(f"  decision: {decision.action} ({decision.trigger}) — {decision.reason}")
+            try:
+                if decision.action == "buy":
+                    _execute_buy(client, decision, strategy.name, market_data)
+                elif decision.action == "sell":
+                    _execute_sell(client, decision, strategy.name, market_data)
+                # hold = no-op
+            except Exception as e:
+                print(f"  EXECUTION FAILED: {e}")
+                pushover.send(f"Ensemble execution FAILED: {strategy.name}", str(e))
+                any_failed = True
+                # Continue trying remaining legs — a single failed leg shouldn't
+                # block the rest of a multi-leg rebalance.
+
+        if any_failed:
+            # Don't persist state on any execution failure — next fire will
+            # re-evaluate from prior state. Safer than half-committing the rebalance.
+            print(f"  state NOT persisted (partial execution failure)")
             continue
 
         strategy_state.save_state(strategy.name, state)
@@ -247,7 +338,7 @@ def main():
     try:
         import graduation
         if graduation.notify_if_met():
-            print("PHASE 2 GRADUATION MET — Pushover sent.")
+            print("GRADUATION GATE MET — Pushover sent.")
     except Exception as e:
         print(f"graduation check failed (non-fatal): {e}")
 

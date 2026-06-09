@@ -58,7 +58,7 @@ class Strategy(ABC):
     @abstractmethod
     def decide(self, state: dict, market_data: dict, account_value: float,
                current_positions: dict[str, float]) -> Decision:
-        """Decide what to do today.
+        """Decide today's single action.
 
         Args:
             state: this strategy's persistent state (mutable; orchestrator persists after).
@@ -77,3 +77,15 @@ class Strategy(ABC):
         decide() observes a new market input (price change, signal flip, etc.).
         """
         ...
+
+    def decide_actions(self, state: dict, market_data: dict, account_value: float,
+                       current_positions: dict[str, float]) -> list[Decision]:
+        """Multi-action variant. Default wraps decide() so single-action strategies
+        need only implement decide(). Multi-leg strategies (e.g., monthly rebalance
+        across multiple sectors in one fire) override this to return a list.
+
+        Empty list means "no action this fire" — equivalent to a single hold Decision
+        but avoids generating a Decision record per no-op.
+        """
+        d = self.decide(state, market_data, account_value, current_positions)
+        return [d]

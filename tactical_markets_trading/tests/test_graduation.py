@@ -149,7 +149,7 @@ def test_notify_sends_pushover_and_writes_state_when_met(isolated_paths, monkeyp
     monkeypatch.setattr(graduation.pushover, "send", lambda title, body: sent.append((title, body)) or True)
     assert graduation.notify_if_met() is True
     assert len(sent) == 1
-    assert "PHASE 2 GRADUATION MET" in sent[0][0]
+    assert "GRADUATION GATE MET" in sent[0][0]
     assert state_path.exists()
 
 

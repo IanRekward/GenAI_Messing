@@ -242,7 +242,16 @@ def run_exits():
         pushover.send("Tactical Trading EXIT ABORT", reason)
         sys.exit(1)
 
-    # Reconcile first so local state matches Alpaca before we decide what to exit.
+    # Guard: only submit SELLs during NYSE hours. StartWhenAvailable can fire this task
+    # in the middle of the night; without this check pre-market orders are queued,
+    # wait_for_fill times out, and local state diverges from Alpaca until reconciler runs.
+    # Runs BEFORE reconcile() so catch-up runs don't Pushover drift alerts at weird hours.
+    if not _market_is_open():
+        now_et = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
+        print(f"Market closed ({now_et.strftime('%H:%M ET')}) — exit cycle skipped.")
+        return 0
+
+    # Reconcile so local state matches Alpaca before we decide what to exit.
     # Backfills closures we missed; alerts on untracked positions. Non-fatal on failure
     # (reconciler will Pushover its own crash); we still proceed with the exit cycle.
     try:
@@ -250,14 +259,6 @@ def run_exits():
     except Exception as e:
         print(f"reconciler pre-flight failed (non-fatal): {e}")
         pushover.send("Reconciler pre-flight failed", str(e))
-
-    # Guard: only submit SELLs during NYSE hours. StartWhenAvailable can fire this task
-    # in the middle of the night; without this check pre-market orders are queued,
-    # wait_for_fill times out, and local state diverges from Alpaca until reconciler runs.
-    if not _market_is_open():
-        now_et = datetime.now(timezone.utc).astimezone(ZoneInfo("America/New_York"))
-        print(f"Market closed ({now_et.strftime('%H:%M ET')}) — exit cycle skipped.")
-        return 0
 
     now = datetime.now(timezone.utc)
     records = load_trades()
