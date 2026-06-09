@@ -478,3 +478,40 @@ When a design question blocks progress, flag to Opus (e.g., Energy/Commodities b
   `--ondemand` flag in `run_dashboard.py` skips log_run/prune/alerts/digest/heartbeat.
   `tests/test_ondemand.py` covers all 5 assertions. Secrets to add in GitHub:
   `FRED_API_KEY`, `ANTHROPIC_API_KEY`. iOS Shortcut setup in ROADMAP.md Brief 25.
+
+---
+
+## Next session — start here (handoff 2026-06-09, Opus)
+
+**Top of queue: execute Brief 29 — Honest calibration card.** Design is locked and
+committed (`ee90c90`); full brief in [ROADMAP.md](ROADMAP.md#brief-29--honest-calibration-card-kill-the-false-miscalibrated-verdict).
+This is well-scoped execution — **prefer `/model sonnet`**.
+
+Context for why this exists (so it isn't re-litigated): the live "Model Calibration"
+card shows a false red "Miscalibrated" badge because it computes IC over ~30–50 obs
+of live history (`history.csv` starts 2026-04-23) in one calm regime. The model is
+fine — the 17yr backtest shows 0.15 IC @ 1wk vs SPX drawdown and 0.39–0.76 vs
+realized stress. Auto-recalibration was considered and **rejected** (would overfit to
+the calm regime and silently mutate `weights.yaml`). Brief 29 fixes the *card's
+verdict logic only* — no weight/scoring/alert changes.
+
+Also still open and unrelated: regime-weights review checkpoint **due 2026-06-20**
+(Brief 26) — that's an Opus design/review item, not part of Brief 29.
+
+### Ready-to-paste prompt for the next session
+
+> Pick up Brief 29 (Honest calibration card) from ROADMAP.md — design is locked,
+> execute it. First run `cd /c/Users/rekwa/ian_projects/_genai_tmp && git log
+> --oneline -5` and `python -m pytest tests/ -q` from the primary dir to confirm a
+> green baseline. Then implement the three pieces: (a) add an `adequacy` field to
+> `rolling_composite_ic` in `src/evaluation.py` (`insufficient` <30, `building`
+> 30–89, `ok` ≥90 obs); (b) branch `_build_signal_quality_card` in
+> `src/dashboard.py` to render a grey "Building history" badge below the `ok`
+> threshold instead of a colored Tracking/Weak/Miscalibrated verdict, and add a
+> "proven skill" line sourced from a new `output/backtest_ic_summary.json`; (c) emit
+> `output/backtest_ic_summary.json` from the evaluation/backtest serialization with
+> composite IC vs both `spx_drawdown` and `stress_index` per horizon. Add the tests
+> listed in the brief, run the full suite + the dry-run
+> (`python run_dashboard.py --no-cache --no-news --no-alerts --quiet`), then commit
+> and push per the two-repo workflow. Delete this "Next session — start here"
+> section from TODO.md when Brief 29 ships.
