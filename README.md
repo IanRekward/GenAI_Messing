@@ -78,3 +78,10 @@ market_dashboard/
 ## What this is NOT
 
 Not financial advice. Not a trading system. Not a replacement for thinking.
+
+## Related projects
+
+`tactical_markets_trading` was split out of this monorepo into its own repo on
+2026-06-09 (full history preserved): **https://github.com/IanRekward/tactical-markets-trading**.
+It runs from `ian_projects/tactical_markets_trading` and reads this dashboard's
+`market_dashboard/data/latest.json` as its MACRO signal.
