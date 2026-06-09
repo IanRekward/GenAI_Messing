@@ -1,5 +1,30 @@
 # tactical_markets_trading — TODO
 
+## 🔁 AGENT GIT WORKFLOW — DO THIS EVERY SESSION (read first)
+
+This project is the `tactical_markets_trading/` subfolder of the **`IanRekward/GenAI_Messing`** GitHub monorepo. **Git is NOT in this folder** — the clone is at `C:\Users\rekwa\ian_projects\_genai_tmp`. The live bot RUNS from *this* folder (`C:\Users\rekwa\ian_projects\tactical_markets_trading`): its `.venv`, `.env`, Task Scheduler jobs, and `data/` runtime state all live here, so this stays the working + execution copy. Always bracket a session with this loop so the remote never silently goes stale again.
+
+**① START — pull remote, then deploy code DOWN (never touches live `data/` or `.env`):**
+```powershell
+git -C C:\Users\rekwa\ian_projects\_genai_tmp pull --ff-only origin main
+robocopy C:\Users\rekwa\ian_projects\_genai_tmp\tactical_markets_trading C:\Users\rekwa\ian_projects\tactical_markets_trading /E /XD .venv .claude _bmad __pycache__ .pytest_cache .git data /XF .env
+```
+
+**② WORK** — make and test changes here in the run folder. `pytest` must stay green before publishing.
+
+**③ END — publish code + tracked artifacts UP to the clone, commit, push:**
+```powershell
+robocopy C:\Users\rekwa\ian_projects\tactical_markets_trading C:\Users\rekwa\ian_projects\_genai_tmp\tactical_markets_trading /E /XD .venv .claude _bmad __pycache__ .pytest_cache .git /XF .env strategy_state_*.json account_state.json drift_log.jsonl reconciler_log.jsonl graduation_state.json close_orphan_xle_run.log
+git -C C:\Users\rekwa\ian_projects\_genai_tmp add -A tactical_markets_trading
+git -C C:\Users\rekwa\ian_projects\_genai_tmp commit -m "tactical_markets_trading: <summary>"
+git -C C:\Users\rekwa\ian_projects\_genai_tmp push origin main
+git -C C:\Users\rekwa\ian_projects\_genai_tmp rev-list --left-right --count origin/main...HEAD   # must print: 0   0
+```
+
+**Rules.** Never commit `.env` or runtime state (`strategy_state_*`, `account_state`, `drift_log`, `reconciler_log`, `graduation_state`). `data/trades.jsonl` + `data/macro_weights_allowlist.json` ARE tracked (deliberate audit/config) — let them update. **Step ① excludes the whole `data/` dir on purpose:** the live bot owns its runtime state; overwriting it from the clone would corrupt open positions/stops. If a pull brings code changes, re-run `pytest` after deploying down. See memory `project-git-structure`.
+
+---
+
 Alpaca paper-trading layer. As of 2026-05-21: pivoting from sector-rotation execution to a multi-strategy regime-routed ensemble. Phase 2 infrastructure (preflight, reconciler, kill switches, sizing) is strategy-agnostic and gets reused.
 
 ## 2026-06-09 — STATUS: Phase 3.2 running, first stop-fired exit booked
