@@ -471,6 +471,42 @@ def _build_bucket_health_card(scoring: dict, history: "pd.DataFrame") -> str:
     )
 
 
+def _proven_skill_line() -> str:
+    """Backtest-proven composite IC, sourced from output/backtest_ic_summary.json.
+
+    Separates "is the model sound" (yes — proven over full history) from "is it
+    tracking lately" (the live IC, which needs ~a quarter of history to mean
+    anything). Best-effort: returns "" if the summary file is missing or malformed
+    so the card never crashes on a fresh checkout.
+    """
+    import json
+    summary_path = OUTPUT_DIR / "backtest_ic_summary.json"
+    if not summary_path.exists():
+        return ""
+    try:
+        data = json.loads(summary_path.read_text(encoding="utf-8"))
+    except Exception:
+        return ""
+
+    dd = data.get("composite_vs_spx_drawdown", {})
+    st = data.get("composite_vs_stress_index", {})
+    parts = []
+    if dd.get("1w") is not None:
+        parts.append(f"{dd['1w']:.2f} IC @ 1wk vs drawdown")
+    if st.get("1m") is not None:
+        parts.append(f"{st['1m']:.2f} @ 1m vs realized stress")
+    if not parts:
+        return ""
+
+    yrs = max(1, round(data.get("n_obs", 0) / 252))
+    return (
+        f'<div style="margin-top:8px;font-size:.74rem;color:#8b949e">'
+        f'<span style="color:#22cc44;font-weight:600">Proven skill:</span> '
+        f'{" · ".join(parts)} '
+        f'<span style="color:#6e7681">({yrs}yr backtest)</span></div>'
+    )
+
+
 def _build_signal_quality_card(
     history: "pd.DataFrame",
     env: dict,
@@ -489,6 +525,7 @@ def _build_signal_quality_card(
         (0.05, "Weak signal", "#ffcc00"),
         (0.00, "Miscalibrated", "#ff4444"),
     ]
+    MIN_CALIBRATION_OBS = 90
 
     try:
         spx = fetch_yfinance_series("^GSPC", env, years=2)
@@ -498,18 +535,24 @@ def _build_signal_quality_card(
 
     ic = ic_result["ic"]
     n_obs = ic_result["n_obs"]
+    adequacy = ic_result.get("adequacy", "ok")
 
-    # Verdict
-    if ic is None:
-        verdict, verdict_color = "Insufficient history", "#6e7681"
-        ic_display = "—"
-    else:
-        ic_display = f"{ic:.2f}"
+    # Verdict — only claim a colored Tracking/Weak/Miscalibrated verdict once
+    # there is enough live history to mean something (Brief 29). Below that the
+    # sample is too small / regime-narrow, so show a neutral "Building history".
+    ic_display = f"{ic:.2f}" if ic is not None else "—"
+    if adequacy == "ok":
         verdict, verdict_color = "Miscalibrated", "#ff4444"
         for threshold, label, color in _VERDICT:
-            if ic >= threshold:
+            if ic is not None and ic >= threshold:
                 verdict, verdict_color = label, color
                 break
+        verdict_legend = "IC ≥ 0.15 = Tracking · 0.05–0.15 = Weak · &lt;0.05 = Miscalibrated"
+    else:
+        verdict, verdict_color = "Building history", "#6e7681"
+        verdict_legend = (
+            f"{n_obs}/{MIN_CALIBRATION_OBS} obs — verdict pends sufficient live history"
+        )
 
     # Data freshness — most recent history row
     try:
@@ -553,9 +596,11 @@ def _build_signal_quality_card(
         f'font-weight:700;font-size:.78rem;padding:3px 10px;border-radius:4px">'
         f'{verdict.upper()}</span>'
         f'<span style="font-size:.72rem;color:#6e7681;margin-left:10px">'
-        f'IC ≥ 0.15 = Tracking · 0.05–0.15 = Weak · &lt;0.05 = Miscalibrated</span>'
+        f'{verdict_legend}</span>'
         f'</div>'
     )
+
+    proven_skill = _proven_skill_line()
 
     rerun_btn = (
         f'<a href="https://github.com/IanRekward/GenAI_Messing/actions/workflows/on-demand-dashboard.yml"'
@@ -634,6 +679,7 @@ def _build_signal_quality_card(
         f'{ic_panel}{hr_panel}'
         f'</div>'
         f'{verdict_badge}'
+        f'{proven_skill}'
         f'{alignment_html}'
         f'{report_link}'
         f'</div>'

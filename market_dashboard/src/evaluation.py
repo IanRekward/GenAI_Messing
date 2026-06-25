@@ -142,11 +142,17 @@ def rolling_composite_ic(
     spx: pd.Series,
     window_days: int = 252,
     horizon_days: int = 21,
+    min_obs_for_verdict: int = 90,
 ) -> dict:
     """Spearman IC of composite vs forward SPX drawdown over the last window_days of history.
 
-    Returns {"ic": float|None, "n_obs": int, "horizon_days": int, "window_days": int}.
-    ic is None when fewer than 30 aligned non-NaN pairs are available.
+    Returns {"ic": float|None, "n_obs": int, "adequacy": str, "horizon_days": int,
+    "window_days": int}. ic is None when fewer than 30 aligned non-NaN pairs exist.
+
+    adequacy gates whether the live card may render a colored verdict:
+    "insufficient" (<30 obs), "building" (30 to min_obs_for_verdict-1), or "ok"
+    (>= min_obs_for_verdict). Below "ok" the sample is too small / regime-narrow
+    for a Tracking/Weak/Miscalibrated claim to mean anything.
     """
     df = history.copy()
     df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -170,11 +176,36 @@ def rolling_composite_ic(
 
     n_obs = int(valid.sum())
     if n_obs < 30:
-        return {"ic": None, "n_obs": n_obs, "horizon_days": horizon_days, "window_days": window_days}
+        return {"ic": None, "n_obs": n_obs, "adequacy": "insufficient",
+                "horizon_days": horizon_days, "window_days": window_days}
 
     ic = spearman_ic(composite_valid, target_valid)
+    adequacy = "ok" if n_obs >= min_obs_for_verdict else "building"
     return {"ic": float(ic) if not np.isnan(ic) else None, "n_obs": n_obs,
+            "adequacy": adequacy,
             "horizon_days": horizon_days, "window_days": window_days}
+
+
+def ic_summary_dict(results: dict, n_obs: int, generated: str) -> dict:
+    """Machine-readable composite-IC summary for the calibration card's proven-skill line.
+
+    Pulls composite Spearman IC vs each target from a run_full_evaluation results
+    dict. Targets absent from the run (e.g. stress_index when HY OAS is too short)
+    are omitted rather than emitted as null.
+    """
+    out: dict = {"generated": generated, "n_obs": int(n_obs)}
+    horizons = ["1w", "1m", "3m", "6m"]
+    cont = results.get("continuous", {})
+    for target, out_key in (("spx_drawdown", "composite_vs_spx_drawdown"),
+                            ("stress_index", "composite_vs_stress_index")):
+        vals = {}
+        for h in horizons:
+            cell = cont.get(h, {}).get(target)
+            if cell is not None and cell.get("spearman_ic") is not None:
+                vals[h] = round(float(cell["spearman_ic"]), 3)
+        if vals:
+            out[out_key] = vals
+    return out
 
 
 def per_regime_bucket_ic(

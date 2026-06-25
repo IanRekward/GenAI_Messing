@@ -25,7 +25,7 @@ from src import fetch as _fetch
 from src.backtest import run_standard_backtests, FETCH_YEARS
 from src.evaluation import (
     run_full_evaluation, build_forward_drawdown, build_binary_events,
-    headline_table, indicator_ic_table, roc_pr_metrics,
+    headline_table, indicator_ic_table, roc_pr_metrics, ic_summary_dict,
 )
 from src.indicators import band_from_score, BAND_COLOR as _BAND_COLOR
 
@@ -602,11 +602,23 @@ def generate_report(
 ) -> None:
     sections = []
 
-    def _run_and_render(signal_df: pd.DataFrame, label: str) -> str:
+    def _run_and_render(signal_df: pd.DataFrame, label: str,
+                        dump_summary: bool = False) -> str:
         print(f"  Running evaluation for {label}...")
         results = run_full_evaluation(signal_df, spx, hy_oas, nfci, vix)
 
         composite = signal_df["composite"].dropna()
+
+        if dump_summary:
+            summary = ic_summary_dict(
+                results, len(composite),
+                datetime.now().isoformat(timespec="seconds"),
+            )
+            summary_path = os.path.join(os.path.dirname(output_path) or ".",
+                                        "backtest_ic_summary.json")
+            with open(summary_path, "w", encoding="utf-8") as f:
+                json.dump(summary, f, indent=2)
+            print(f"  Wrote {summary_path}")
         spx_aligned = spx.reindex(composite.index, method="ffill")
         target_30d = build_forward_drawdown(spx_aligned, 30)
 
@@ -642,7 +654,8 @@ def generate_report(
         return html
 
     sections.append(_section_explainer())
-    html_full = _run_and_render(df_full, "Full Model (2018 &ndash; present)")
+    html_full = _run_and_render(df_full, "Full Model (2018 &ndash; present)",
+                                dump_summary=True)
     sections.append(html_full)
 
     if df_subset is not None and len(df_subset) > 100:

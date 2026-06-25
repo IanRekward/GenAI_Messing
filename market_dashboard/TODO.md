@@ -171,14 +171,15 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   ~61s added to the first run each day; `--no-backtest` opts out. (Does NOT touch
   the "Miscalibrated" verdict — that's Brief 29 below.)
 
-- [ ] **Brief 29 — Honest calibration card (kill false "Miscalibrated" verdict)** *(Opus design done 2026-06-09 → Sonnet-ready)*
-  The Model Calibration card renders a red "Miscalibrated" badge from ~30–50 obs
-  of live history over one calm regime — small-sample noise, not a degraded model.
-  17yr backtest shows real skill (0.15 IC @ 1wk vs drawdown, 0.4–0.8 vs realized
-  stress). Fix: (a) adequacy gate — show grey "Building history" below 90 obs
-  instead of a colored verdict; (b) proven-skill line from a new
-  `output/backtest_ic_summary.json`. Display/logic only, no weight mutation.
-  Full brief in [ROADMAP.md](ROADMAP.md#brief-29--honest-calibration-card-kill-the-false-miscalibrated-verdict).
+- [x] **Brief 29 — Honest calibration card (kill false "Miscalibrated" verdict)** *(shipped 2026-06-25, Opus)*
+  The Model Calibration card rendered a red "Miscalibrated" badge from ~54 obs of
+  live history over one calm regime — small-sample noise, not a degraded model.
+  Shipped: (a) `adequacy` field on `rolling_composite_ic` (`insufficient` <30,
+  `building` 30–89, `ok` ≥90); card shows a grey "Building history" badge + `N/90 obs`
+  below `ok` instead of a colored verdict; (b) proven-skill line sourced from a new
+  `output/backtest_ic_summary.json` (0.153 IC @ 1wk vs drawdown · 0.732 @ 1m vs
+  realized stress, 9yr backtest), emitted by `backtest_report.generate_report`.
+  Display/logic only — no weight mutation. 10 new tests (`test_brief29_calibration.py`).
 
 - [x] **Brief 15 — Backtest signal-quality card + link** *(shipped)*
   Opus design pass done (2026-04-24). Scope locked: ONE compact card (rolling composite IC + recent alert hit rate + verdict) on main dashboard, plus a prominent link to the existing full `output/backtest_report.html`.
