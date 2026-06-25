@@ -672,6 +672,47 @@ def _build_signal_quality_card(
     except Exception:
         pass
 
+    explainer = (
+        f'<details style="margin-top:12px;cursor:pointer">'
+        f'<summary class="explain" style="user-select:none">'
+        f'<span style="font-size:.7rem">&#9654;</span> What is this section?</summary>'
+        f'<div style="margin-top:8px;padding-top:8px;border-top:1px solid #30363d;'
+        f'font-size:.85rem;line-height:1.5;color:#c9d1d9">'
+        f'<p style="margin:0 0 6px 0"><b>What it is.</b> A report card on the '
+        f'<i>model itself</i>. The rest of the dashboard answers "how stressed are '
+        f'markets right now?"; this box answers a different question — "has this model '
+        f'actually been any good at telling us that?" — so you know how much to trust '
+        f'the 0&ndash;100 score at the top.</p>'
+        f'<p style="margin:0 0 6px 0"><b>The big number &amp; badge (left).</b> This '
+        f'grades the model on its <i>live</i> track record: how closely its daily score '
+        f'has lined up with what markets actually did over the following few weeks. The '
+        f'number runs &minus;1 to +1 &mdash; near 0 means no relationship, higher means '
+        f'the score reliably moved <i>ahead</i> of the market. The model only went live '
+        f'in April 2026, so there isn&rsquo;t enough live history to grade it fairly yet '
+        f'&mdash; that&rsquo;s why it reads <b>&ldquo;Building history&rdquo;</b> with an '
+        f'&ldquo;N/90&rdquo; counter. It needs roughly a full quarter (~90 days) before '
+        f'it shows a real verdict. Expected, not a fault.</p>'
+        f'<p style="margin:0 0 6px 0"><b>&ldquo;Proven skill&rdquo; line.</b> Separately, '
+        f'the model was tested against ~9 years of history (including the 2008, 2020 and '
+        f'2022 selloffs). There it <i>did</i> tend to rise before trouble hit &mdash; so '
+        f'the model isn&rsquo;t unproven; the live grade above just needs time to catch '
+        f'up. The two figures: <i>&ldquo;vs drawdown&rdquo;</i> = did the score rise '
+        f'before stocks fell; <i>&ldquo;vs realized stress&rdquo;</i> = did it rise before '
+        f'stress gauges (volatility, credit spreads) spiked. Both run 0 (no foresight) to '
+        f'1 (perfect). The stress figure is higher because forecasting stress is the '
+        f'model&rsquo;s actual job, while calling exact price drops is deliberately '
+        f'harder.</p>'
+        f'<p style="margin:0 0 6px 0"><b>&ldquo;Still elevated at T+7&rdquo; (right).</b> '
+        f'Of the alerts fired recently, how many were <i>still</i> flashing a week later '
+        f'&mdash; a rough check that alerts mark real, persistent stress rather than '
+        f'one-day noise.</p>'
+        f'<p style="margin:0"><b>backtest / composite dates (bottom).</b> A plumbing '
+        f'check that the 9-year test and today&rsquo;s live score were built from the '
+        f'same up-to-date data, so the two are comparable. If they drift far apart, the '
+        f'page flags it and nudges a refresh.</p>'
+        f'</div></details>'
+    )
+
     return (
         f'<div class="card" style="padding:14px 18px">'
         f'<h2 style="margin-bottom:10px">Model Calibration</h2>'
@@ -682,6 +723,7 @@ def _build_signal_quality_card(
         f'{proven_skill}'
         f'{alignment_html}'
         f'{report_link}'
+        f'{explainer}'
         f'</div>'
     )
 
