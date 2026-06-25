@@ -147,6 +147,30 @@ Grouped into batches so the same HTML / config file is only touched once per bat
 
 ### Phase E — Design-first items (route through Opus before Sonnet executes) 🅾️
 
+- [ ] **GitHub Actions migration for the daily publish** *(Opus-scoped 2026-06-25, deferred by Ian — not started)*
+  Move the morning publish off the laptop into cloud cron so the "machine was off"
+  miss-class disappears (3 misses in June 2026: 7th/19th/21st, all weekend/holiday).
+  Gating work, in order: (1) **spike** a `workflow_dispatch` job running
+  `--no-alerts --no-publish` to confirm yfinance + CNN F&G survive GitHub's
+  datacenter IPs (the real risk — Yahoo/CNN rate-limit cloud IPs harder); (2) **state
+  persistence** — every Actions run is a fresh VM, so `data/*.json` (esp.
+  `alert_state.json` dedupe) + history must be committed back, or alerts duplicate
+  every morning; (3) secrets → repo secrets; (4) UTC cron + DST handling; (5) keep the
+  watchdog as a SEPARATE workflow so a platform outage can't down publisher+watchdog
+  together. Hybrid rollout: Actions primary, local task disabled-but-available.
+
+- [x] **Backtest auto-refresh — kill the "Nh apart" calibration-gap warning** *(shipped 2026-06-25, Opus)*
+  Root cause: the daily publish advanced the composite but NOTHING re-ran the
+  backtest, so `output/backtest_full.csv` went stale (last run 2026-04-25 → 1432h
+  gap) and the card's "Re-run on GitHub" button linked to a workflow that was never
+  created. Compounding: `python -m src.backtest` crashed on a cp1252 console
+  (UnicodeEncodeError on '→' in a progress print), so manual re-runs died on line 1.
+  Fix in `run_dashboard.py`: `_maybe_refresh_backtest()` regenerates CSVs + report
+  once/day in-process (age-gated via `BACKTEST_MAX_AGE_HOURS`, default 20h),
+  non-fatal, with a stdout UTF-8 reconfigure so the glyphs can't crash the run.
+  ~61s added to the first run each day; `--no-backtest` opts out. (Does NOT touch
+  the "Miscalibrated" verdict — that's Brief 29 below.)
+
 - [ ] **Brief 29 — Honest calibration card (kill false "Miscalibrated" verdict)** *(Opus design done 2026-06-09 → Sonnet-ready)*
   The Model Calibration card renders a red "Miscalibrated" badge from ~30–50 obs
   of live history over one calm regime — small-sample noise, not a degraded model.

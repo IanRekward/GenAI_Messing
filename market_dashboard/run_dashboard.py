@@ -11,6 +11,7 @@ Optional flags:
     --publish          Copy dashboard to GitHub Pages repo and push
     --ondemand         Skip state-mutating steps (history log, alerts, digest,
                        heartbeat); keeps dashboard write and JSON sidecar
+    --no-backtest      Skip the daily backtest/report refresh (calibration sync)
 """
 from __future__ import annotations
 
@@ -145,6 +146,47 @@ def _verify_dashboard_written(output_path: Path, quiet: bool = False) -> None:
         print(f"  Dashboard written successfully ({file_age_sec:.0f}s old)")
 
 
+def _maybe_refresh_backtest(weights: dict, env: dict, quiet: bool) -> None:
+    """Regenerate the backtest CSVs + HTML report so the calibration card stays
+    in sync with the live composite.
+
+    Without this the daily publish advances the composite every morning but never
+    re-runs the backtest, so the Model Calibration card's "Nh apart" gap grows
+    ~24h/day (it once reached 1432h). Age-gated to once per day, and non-fatal:
+    a backtest hiccup must never abort the morning publish.
+
+    Reconfigures stdout/stderr to UTF-8 first — the backtest's progress prints
+    contain non-cp1252 glyphs ('→', '×') that raise UnicodeEncodeError when
+    stdout is a pipe (the scheduled task runs under a cp1252 console), which
+    would otherwise kill the whole run.
+    """
+    bt_csv = Path("output/backtest_full.csv")
+    max_age_h = float(env.get("BACKTEST_MAX_AGE_HOURS", "20"))
+    if bt_csv.exists():
+        age_h = (datetime.now().timestamp() - bt_csv.stat().st_mtime) / 3600
+        if age_h < max_age_h:
+            return
+
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+    logger = logging.getLogger("dashboard_run")
+    try:
+        from src.backtest import run_standard_backtests
+        from src import backtest_report
+        if not quiet:
+            print("\n[*] Refreshing backtest (calibration sync)...")
+        run_standard_backtests(weights, env)
+        backtest_report.run()
+        logger.info("backtest refresh ok")
+    except Exception:
+        import traceback
+        logger.warning("backtest refresh failed (non-fatal):\n%s", traceback.format_exc())
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate the market stress dashboard")
     parser.add_argument("--no-cache", action="store_true", help="Force fresh data download")
@@ -155,6 +197,8 @@ def main():
     parser.add_argument("--heartbeat", action="store_true", help="Send daily Pushover confirmation for 31 days")
     parser.add_argument("--ondemand", action="store_true",
                         help="Skip state-mutating steps (log, alerts, digest, heartbeat)")
+    parser.add_argument("--no-backtest", action="store_true",
+                        help="Skip the daily backtest/report refresh")
     args = parser.parse_args()
 
     # Load env vars from .env
@@ -281,6 +325,10 @@ def main():
         "bucket_velocities": bkt_vel,
     }
     narrative, narrative_layman = generate_narrative(scoring, history_summary, env)
+
+    # Keep the backtest/report in sync with today's composite (calibration card)
+    if not args.no_backtest and not args.ondemand:
+        _maybe_refresh_backtest(weights, env, args.quiet)
 
     # Write dashboard
     output_path = write_dashboard(scoring, news, history,
