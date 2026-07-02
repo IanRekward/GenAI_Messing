@@ -12,6 +12,7 @@ from src.indicators import BAND_COLOR as _BAND_COLOR
 from src.config import load_yaml_safe
 
 _EXPLAINERS: dict | None = None
+_INVERT: dict | None = None
 
 
 def _load_explainers() -> dict:
@@ -19,6 +20,19 @@ def _load_explainers() -> dict:
     if _EXPLAINERS is None:
         _EXPLAINERS = load_yaml_safe("config/indicator_explainers.yaml", "indicators", {})
     return _EXPLAINERS
+
+
+def _load_invert_flags() -> dict:
+    """{indicator_key: bool} — whether LOWER raw value means MORE stress."""
+    global _INVERT
+    if _INVERT is None:
+        buckets = load_yaml_safe("config/weights.yaml", "buckets", {})
+        _INVERT = {
+            ikey: bool(cfg.get("invert", False))
+            for b in buckets.values()
+            for ikey, cfg in b.get("indicators", {}).items()
+        }
+    return _INVERT
 
 
 def _explainer_html(ikey: str) -> str:
@@ -157,6 +171,76 @@ def _build_detail_svg(series: pd.Series, threshold_cfg: dict | None) -> str:
     )
 
 
+def _fmt_thr(v: float) -> str:
+    """Compact threshold value with a proper minus sign."""
+    return f"{float(v):g}".replace("-", "−")
+
+
+def _how_to_read_html(ikey: str, label: str, threshold_cfg: dict | None) -> str:
+    """A short, chart-specific 'how to read this' block placed under the SVG.
+
+    Auto-generated so every indicator gets one and it stays correct: it names the
+    indicator's real threshold values, colors them, and states the true stress
+    direction (from the threshold `direction`, falling back to the weights
+    `invert` flag). An optional `how_to_read` field in indicator_explainers.yaml
+    overrides the generated text for a given indicator.
+    """
+    override = str(_load_explainers().get(ikey, {}).get("how_to_read", "")).strip()
+
+    has_levels = bool(threshold_cfg) and all(
+        threshold_cfg.get(k) is not None for k in ("yellow", "orange", "red")
+    )
+    if threshold_cfg and threshold_cfg.get("direction"):
+        higher_is_stress = threshold_cfg["direction"] == "high"
+    else:
+        higher_is_stress = not _load_invert_flags().get(ikey, False)
+
+    if override:
+        body = override
+    else:
+        dir_word = "higher" if higher_is_stress else "lower"
+        toward = ("climbing toward the top of the chart" if higher_is_stress
+                  else "sinking toward the bottom of the chart")
+        cross = "rises above" if higher_is_stress else "falls below"
+
+        sentences = [
+            f"The blue line is <b>{label}</b> over roughly the last decade; the dot "
+            f"marks the latest reading, and the stats below put it in context."
+        ]
+        if has_levels:
+            def _lvl(level: str) -> str:
+                return (f'<span style="color:{_THRESH_COLOR[level]}">{level} '
+                        f'({_fmt_thr(threshold_cfg[level])})</span>')
+            sentences.append(
+                f"The dashed lines are the model&rsquo;s alert levels: when the line "
+                f"{cross} the {_lvl('yellow')}, {_lvl('orange')}, or {_lvl('red')} "
+                f"level, this indicator flips to that band and pushes more stress into "
+                f"the overall score."
+            )
+            sentences.append(
+                f"For this metric <b>{dir_word} = more stress</b>, so a line {toward} "
+                f"&mdash; especially past the orange and red dashes &mdash; is the shape "
+                f"to watch."
+            )
+        else:
+            sentences.append(
+                f"This indicator has no fixed alert levels; its band comes from where "
+                f"today&rsquo;s reading ranks against its own 10-year history (the "
+                f"percentile below). For this metric <b>{dir_word} = more stress</b>, so "
+                f"a line {toward} is the direction that signals rising risk."
+            )
+        body = " ".join(sentences)
+
+    return (
+        f'<div style="margin-top:10px;background:#0d1117;border:1px solid #21262d;'
+        f'border-radius:6px;padding:10px 12px">'
+        f'<div style="font-size:.78rem;font-weight:700;color:#4d9de0;margin-bottom:4px">'
+        f'How to read this chart</div>'
+        f'<p style="font-size:.82rem;color:#c9d1d9;line-height:1.55;margin:0">{body}</p>'
+        f'</div>'
+    )
+
+
 def build_indicator_detail(
     ikey: str,
     ind_result: dict,
@@ -172,6 +256,7 @@ def build_indicator_detail(
 
     bc = _BAND_COLOR.get(band, "#8b949e")
 
+    how_read_html = ""
     if ind_result.get("manual") or series_data is None:
         chart_html = (
             '<p style="color:#6e7681;font-style:italic;font-size:.8rem;padding:6px 0">'
@@ -184,6 +269,7 @@ def build_indicator_detail(
             index=pd.to_datetime(series_data["dates"]),
         )
         chart_html = _build_detail_svg(series, threshold_cfg)
+        how_read_html = _how_to_read_html(ikey, label, threshold_cfg)
 
         # Stats table
         s_min = series.min()
@@ -221,6 +307,7 @@ def build_indicator_detail(
     return (
         f'<div id="{ikey}_detail" style="padding-top:6px">'
         f"{chart_html}"
+        f"{how_read_html}"
         f"{stats_html}"
         f"{_explainer_html(ikey)}"
         f"</div>"

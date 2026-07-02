@@ -270,6 +270,18 @@ items 2/3/7 cluster naturally as a "naming + plain-English layer" batch; items 4
 are small ordering/link fixes; item 6 is a content-authoring brief. Sonnet should
 preserve Ian's numbering when committing so the trail back to this list is clear.
 
+- [x] **"How to read this chart" block on indicator drill-downs** *(shipped 2026-07-02, Opus, Ian request)*
+  Each indicator detail (`src/indicator_detail.py`) now renders a chart-specific
+  reading guide under the SVG: decodes the blue line / dot / dashed threshold lines,
+  cites that indicator's *actual* threshold values (colored), and states the true
+  stress direction — "higher = more stress" vs "lower = more stress" — derived from
+  the threshold `direction` (falling back to the weights `invert` flag), so the 4
+  inverted indicators (yield_curve, cnn_fear_greed, copper_gold_ratio,
+  spx_200dma_distance) read correctly. Auto-generated for all 29, no per-indicator
+  authoring; optional `how_to_read` field in `indicator_explainers.yaml` overrides
+  the generated text. 7 new tests (`test_how_to_read_chart.py`). Complements the
+  existing advanced/layman/model_role explainers (what it means / why it matters).
+
 - [x] **G1 — Stale data + data quality auto-remediation** *(Brief 17 v2 in ROADMAP.md — design locked, ready for Sonnet)* *(commit 13a9beb)*
   Full brief in ROADMAP.md. **Read v2 only — v1 had three load-bearing errors
   (wrong function name, unsafe pipeline placement, dispatch in wrong layer)
