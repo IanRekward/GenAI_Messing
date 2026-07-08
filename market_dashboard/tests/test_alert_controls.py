@@ -8,6 +8,14 @@ import pytest
 from src.alerts import _debounce_passes, _in_quiet_hours, send_alerts
 
 
+@pytest.fixture(autouse=True)
+def _fresh_dashboard():
+    # Neutralize the freshness self-check so the health alert doesn't fire on a
+    # stale real HTML file and inflate sent counts. Keeps these tests hermetic.
+    with patch("src.alerts._check_dashboard_freshness", return_value=(True, "OK: test")):
+        yield
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────
 
 def _make_scoring(composite: float = 52.0, band: str = "orange",

@@ -4,8 +4,18 @@ from __future__ import annotations
 from unittest.mock import patch
 
 import pandas as pd
+import pytest
 
 from src.alerts import send_alerts
+
+
+@pytest.fixture(autouse=True)
+def _fresh_dashboard():
+    # The freshness self-check reads a real HTML file's mtime; without this the
+    # health alert fires whenever the machine has been idle >40h and clobbers
+    # the alert under test. Keep these unit tests hermetic.
+    with patch("src.alerts._check_dashboard_freshness", return_value=(True, "OK: test")):
+        yield
 
 
 def _make_history(scores: list[float], start: str = "2026-01-01") -> pd.DataFrame:
