@@ -69,7 +69,7 @@ def _log_remediation(indicator: str, outcome: str, reason: str) -> None:
         }) + "\n")
 
 
-def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
+def _publish_to_github(dashboard_path: Path, env: dict, quiet: bool = False) -> None:
     """Copy dashboard.html to _genai_tmp/docs/index.html and push to GitHub."""
     genai_tmp = Path(__file__).resolve().parent.parent / "_genai_tmp"
     docs_dir = genai_tmp / "docs"
@@ -87,22 +87,44 @@ def _publish_to_github(dashboard_path: Path, quiet: bool = False) -> None:
 
     _git("add", "docs/index.html", "docs/backtest_report.html")
 
-    # Check if there's actually a change staged
-    diff = _git("diff", "--cached", "--quiet")
-    if diff.returncode == 0:
+    if _git("diff", "--cached", "--quiet").returncode != 0:
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+        _git("commit", "-m", f"Publish dashboard {timestamp}")
+
+    # Commits stranded by an earlier rejected push must still go out, so whether
+    # to push keys off the gap to origin, not off whether today staged a diff.
+    _git("fetch", "--quiet", "origin")
+    backlog = _git("rev-list", "--count", "origin/main..main").stdout.strip() or "0"
+    if backlog == "0":
         if not quiet:
             print("  Publish: dashboard unchanged, nothing to push.")
         return
 
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
-    _git("commit", "-m", f"Publish dashboard {timestamp}")
-
     push = _git("push", "origin", "main")
+    if push.returncode == 0:
+        if not quiet:
+            print(f"  Publish: dashboard pushed to GitHub Pages ({backlog} commit(s)).")
+        return
+
+    _report_publish_failure(backlog, push.stderr.strip(), env, quiet)
+
+
+def _report_publish_failure(backlog: str, stderr: str, env: dict, quiet: bool) -> None:
+    """Surface a rejected push. Under --quiet it was printed and discarded, which
+    once hid a 14-day publication outage while every run still logged 'run ok'."""
+    from src.alerts import _send_pushover
+
+    detail = stderr or "git push failed with no stderr"
+    logging.getLogger("dashboard_run").error(
+        "publish failed: %s commit(s) unpushed — %s", backlog, detail
+    )
     if not quiet:
-        if push.returncode == 0:
-            print("  Publish: dashboard pushed to GitHub Pages.")
-        else:
-            print(f"  Publish: push failed — {push.stderr.strip()}")
+        print(f"  Publish: push failed — {detail}")
+    _send_pushover(
+        "Dashboard publish FAILED",
+        f"{backlog} commit(s) stranded locally; GitHub Pages is serving stale data.\n{detail[:400]}",
+        env,
+    )
 
 
 def _setup_run_logging() -> logging.Logger:
@@ -356,7 +378,7 @@ def main():
     if args.publish:
         if not args.quiet:
             print("\n[6/6] Publishing to GitHub Pages...")
-        _publish_to_github(output_path, args.quiet)
+        _publish_to_github(output_path, env, args.quiet)
 
     # Summary print
     if not args.quiet:

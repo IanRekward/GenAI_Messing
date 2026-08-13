@@ -271,6 +271,29 @@ save yourself the same mistake. Add to this list when something bites you too.
   fail silently on site changes. `_handler_cnn_fear_greed` falls back to FRED
   UMCSENT. Don't assume freshness — check `data/fetch_cache/` staleness if
   sentiment numbers look stale.
+- **Commits must use the GitHub noreply email.** The account has "Block command
+  line pushes that expose my email" enabled. A commit authored as
+  `rekward01@gmail.com` is rejected server-side with
+  `push declined due to email privacy restrictions` — auth is fine, the *content*
+  is refused, so `git push --dry-run` passes while the real push fails. Repo-local
+  `user.email` in `_genai_tmp/` is set to
+  `83972719+IanRekward@users.noreply.github.com`; don't override it with `--author`
+  or a global config change. This silently broke publication for 14 days
+  (2026-07-27 → 08-10): the pipeline ran fine, committed daily, and the push was
+  rejected every morning while the run still logged `run ok`.
+- **A failing publish must never be silent.** `_publish_to_github` now logs push
+  failures to `logs/dashboard_run.log` at ERROR and fires a Pushover alert
+  regardless of `--quiet`. It also pushes based on the commit gap to `origin`
+  (`git fetch` + `rev-list --count origin/main..main`), not on whether today
+  staged a diff — otherwise a backlog stranded by a prior failure is never
+  retried. `tests/test_publish.py` covers both. If you touch this function,
+  keep those two properties.
+- **The watchdog is the last line of defense, and it worked.** During the outage
+  above it fired priority-1 Pushover every day (`Pushover responded HTTP 200`)
+  for 13 days with no action taken. When diagnosing a stale dashboard, read
+  `gh run view <id> --log` for `dashboard-watchdog.yml` *first* — it timestamps
+  the last good publish exactly. Also confirm Ian's Pushover delivery actually
+  reaches his phone; a dead-man's switch nobody hears is not a switch.
 - **Parallel indicator fetch via `MAX_FETCH_WORKERS`.** `compute_composite`
   parallelizes the ~26 top-level indicator fetches across 8 workers by
   default. Set `MAX_FETCH_WORKERS=1` in `.env` or shell to force serial
