@@ -8,9 +8,20 @@ Written 2026-09-01 after re-verifying every sibling contract file against its li
 
 ## Preconditions before any code
 
-1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate.
-2. **Phase −1 (bot repo health session)** ideally happens first — kill switch blocking entries **since 2026-08-03** (see record correction below), bot watchdog LastResult=1, state stale since 8/28. Separate session in `tactical_markets_trading`. Not a hard dependency for MICRO code (briefing v1 will surface the kill switch on its first morning either way), but it's the live risk.
-3. **healthchecks.io account + check URL** — manual browser step (free tier). Ian creates one check, schedule "every weekday", grace period so the alert fires ~7:15 ET if no ping. URL goes in `.env` as `HEALTHCHECKS_URL`. Phase 1 code degrades to a no-op if the var is unset, so code can ship before the account exists.
+*(Revised 2026-09-01: gates 2 and 3 dissolved — heartbeat redesigned onto existing infrastructure, Phase −1 diagnosis done read-only. One gate remains.)*
+
+1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate, and now the **only** gate.
+2. ~~healthchecks.io account~~ **Dissolved.** Heartbeat redesigned to GitHub Actions + existing Pushover (see Phase 1b) — no new accounts. One residual step: `gh secret set PUSHOVER_TOKEN` / `PUSHOVER_USER` on `IanRekward/GenAI_Messing` (gh is authenticated with the needed scopes; the automated attempt was permission-blocked as a credential upload, so it needs one interactive approval at Phase-1 time).
+3. ~~Phase −1 bot health session~~ **Diagnosis done 2026-09-01, read-only** (see Phase −1 findings below). Residual items are a decision and a hardware check, not code — they don't block MICRO phases.
+
+## Phase −1 findings (2026-09-01, read-only — supersedes the "separate session" framing)
+
+- **Account is paper — CONFIRMED:** bot `.env` has `ALPACA_BASE_URL=https://paper-api.alpaca.markets/v2`. The "verify" flag is resolved.
+- **The bot's watchdog is NOT broken — exit 1 is its alert path working.** `watch_trading.py` is alert-only by design (bot repo's own fable_plan §4.6): on a missed cycle it sends "Trading bot MISSED" to Pushover and exits 1. LastResult=1 on 8/31 = detected + alerted same day. The 8/31 assessment's "bot watchdog is the failing component" framing was wrong (corrected inline in fable_plan/REDESIGN).
+- **8/31 missed-cycle root cause: machine slept through the 2:30 PM wake task.** Woke 4:47 PM CT (5:47 ET, post-close); the catch-up entry run correctly logged "Market closed — ensemble cycle skipped" and exited 0 without writing a heartbeat. `-WakeToRun` didn't fire — power-state issue (lid/battery/wake-timers), same shared-fate class MICRO's off-machine heartbeat covers.
+- **The 8/4–8/11 aborts were a morning DNS race** (both Alpaca and Pushover unresolvable at the 8:35 wake — the failure alert itself couldn't send). The bot already self-mitigated by moving to 2:45 PM entries with a `dns wait` preflight.
+- **Residual, genuinely Ian's:** (a) the kill-switch reset decision — bot enters nothing until then (since 8/3); (b) check Windows wake-timer/power settings so the 2:30 PM wake fires from sleep; (c) discussion item: TQQQ trail has no resting stop order (evaluated only at the daily run).
+- Division of labor now clean: bot watchdog covers "bot missed while machine healthy later"; MICRO's off-machine heartbeat covers "machine dark all day"; the briefing covers "human decision pending" (kill switch, 29 days and counting).
 
 ---
 
@@ -49,20 +60,19 @@ Also observed: post-May TQQQ trades carry `stop_order_id: null` — the trailing
 ### 1a. yfinance retry — `src/sector_rotation.py`
 Wrap the `yf.download` call: 3 attempts, 60s sleep between, raise on final failure (existing error path in `run_tactical.py` already logs it). ~10 lines, inline loop, no helper module — the function retires in Phase 2 anyway; 2b builds its own quote fetch.
 
-### 1b. Heartbeat — `run_tactical.py`
-```python
-def ping_heartbeat(ok: bool = True) -> None:
-    url = os.environ.get("HEALTHCHECKS_URL", "")
-    if not url:
-        return
-    try:
-        requests.get(url if ok else url + "/fail", timeout=10)
-    except Exception:
-        pass
-```
-Call `ping_heartbeat()` on **every completed invocation — weekend and holiday early-returns included** — and `ping_heartbeat(ok=False)` in the error path (labeled alert beats silence-then-alert). Rationale: the heartbeat monitors *machine + scheduler + script alive*, not *signal published*; the scheduled task fires daily (verified via `schtasks` — the code, not the trigger, handles weekends/holidays), so pinging every run lets healthchecks use a simple 1-day period with grace to ~7:15 ET and eliminates false alerts on weekday NYSE holidays (Labor Day 9/7 is the first one the alternative would have tripped on).
+### 1b. Heartbeat — GitHub Actions dead-man's switch *(redesigned 2026-09-01: healthchecks.io needed a new account = Ian's intervention; this version rides infrastructure that already exists and is proven)*
 
-**Smoke:** `python -c` invoking `ping_heartbeat` with a test URL; one full `python run_tactical.py` off-schedule (accept the duplicate log line — log-every-run discipline covers it).
+Building blocks, all verified: `gh` authenticated as IanRekward with `repo`+`workflow` scopes; push from scheduled tasks proven by market_dashboard's daily 7:33 publish commits (months of history); Pushover working; the tactical task fires daily with the code handling weekends/holidays.
+
+**Machine side (~12 lines in `run_tactical.py`):** on every completed invocation — weekend/holiday early-returns included — write an ISO timestamp to `_genai_tmp/tactical_markets/data/heartbeat.txt`, then `git add/commit/push` it (message `tactical heartbeat YYYY-MM-DD`, specific path staged, never `-A`). A failed push = missing heartbeat = alert, which is correct behavior. Timestamp only, no briefing content — the repo is **public**, so the daily commit exposes nothing new (`briefings.jsonl` keeps syncing manually at session commits; flag to Ian someday: it will contain paper-account equity, same class as what `theses.jsonl` already publishes).
+
+**GitHub side — `.github/workflows/tactical-heartbeat.yml` (~30 lines):** `schedule:` crons at 11:30 and 12:30 UTC daily; the job computes current ET, exits quietly unless it's past ~7:15 ET on a day with no `heartbeat.txt` commit dated today (ET), then one `curl` to Pushover using `secrets.PUSHOVER_TOKEN`/`PUSHOVER_USER`. Because the machine pings 7 days/week, the Action needs **zero** weekend/holiday logic. Known trade-off, accepted: GH Actions cron jitter (10–40 min typical) means the alert may land 7:30–8:15 ET rather than 7:15 sharp — hours ahead of the bot's afternoon entry window, so fine.
+
+**Secrets staging:** `gh secret set PUSHOVER_TOKEN` / `PUSHOVER_USER` -R `IanRekward/GenAI_Messing`, values piped from `tactical_markets/.env`. Attempted 2026-09-01; blocked by the permission classifier as a credential upload — retry in the interactive Phase-1 session (one approval) or Ian runs the two commands.
+
+**Fallback if Ian prefers fewer moving parts:** the original healthchecks.io design (5-line ping, 3-minute account, no repo commits, no cron jitter) remains valid — his call at go time; the plan defaults to the zero-intervention version per his 2026-09-01 request.
+
+**Smoke:** one full `python run_tactical.py` off-schedule (accept the duplicate log line — log-every-run discipline covers it) → confirm the heartbeat commit landed on GitHub; give the workflow a `workflow_dispatch` trigger with a `force_alert` input and dispatch it once via `gh workflow run` → test Pushover arrives on phone.
 
 **Commit:** `tactical_markets: phase 1 repairs — yfinance retry + healthchecks heartbeat`
 
@@ -152,8 +162,8 @@ Everything in REDESIGN's rejected list, plus these implementation-level ones: no
 
 | Order | What | Size | Gate |
 |---|---|---|---|
-| 0 | Ian's go + healthchecks account (+ Phase −1 bot session, separate) | manual | **open** |
-| 1 | Phase 1 repairs | ~15 lines | go |
+| 0 | Ian's go (the only remaining gate; kill-switch reset is his separate decision) | one word | **open** |
+| 1 | Phase 1 repairs: retry + GH-Actions heartbeat (incl. secrets, one approval) | ~60 lines | go |
 | 2 | Phase 2 briefing core + retire + scorer + docs | ~250 lines | go |
 | 3 | Phase 2b quotes sections | ~80 lines | phase 2 live |
 | 4 | Two-week read → sunset defaults | none | phase 2 live |
