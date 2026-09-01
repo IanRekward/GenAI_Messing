@@ -9,7 +9,7 @@ Written 2026-09-01 after re-verifying every sibling contract file against its li
 ## Preconditions before any code
 
 1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate.
-2. **Phase −1 (bot repo health session)** ideally happens first — kill switch blocking entries since ~June 5, bot watchdog LastResult=1, state stale since 8/28. Separate session in `tactical_markets_trading`. Not a hard dependency for MICRO code (briefing v1 will surface the kill switch on its first morning either way), but it's the live risk.
+2. **Phase −1 (bot repo health session)** ideally happens first — kill switch blocking entries **since 2026-08-03** (see record correction below), bot watchdog LastResult=1, state stale since 8/28. Separate session in `tactical_markets_trading`. Not a hard dependency for MICRO code (briefing v1 will surface the kill switch on its first morning either way), but it's the live risk.
 3. **healthchecks.io account + check URL** — manual browser step (free tier). Ian creates one check, schedule "every weekday", grace period so the alert fires ~7:15 ET if no ping. URL goes in `.env` as `HEALTHCHECKS_URL`. Phase 1 code degrades to a no-op if the var is unset, so code can ship before the account exists.
 
 ---
@@ -38,6 +38,10 @@ Only `peak_equity`, `peak_timestamp`, `last_updated`. Used solely for drawdown: 
 ### Bot logs (scorer + backlog)
 `trades.jsonl`, `drift_log.jsonl`, `shadow_book.jsonl`, `failed_alerts.jsonl`, `reconciler_log.jsonl` — all confirmed present in `tactical_markets_trading/data/`.
 
+### Record correction (2026-09-01, from `trades.jsonl`)
+**The kill switch tripped 2026-08-03, not ~June 5.** `entry_gate_reason`'s "last winner 2026-06-05" is the last winner's exit date; the five consecutive losses closed 7/1 (XLE −$689), 7/1 (XLY −$346), 7/16 (TQQQ −$1,251), 7/23 (TQQQ −$577), **8/3 (XLI −$122)**. Entries kept flowing until then (TQQQ 7/22 + 7/27, XLV 8/3). Detection latency was ~28 days (8/3 → 8/31), not the 87 days fable_plan.md Part V headlines — the thesis (oversight gap is real) stands, the number does not. Corrected inline in fable_plan/REDESIGN; consequences for the pending-queue design below.
+Also observed: post-May TQQQ trades carry `stop_order_id: null` — the trailing stop is **evaluated at the daily 14:45 run, not a resting order**. An intraday crash blows through the trail until the next run; that's a Phase −1 discussion item, and it changes the wording of the 2b proximity line.
+
 ---
 
 ## Phase 1 — repairs (~1 session, ships independently, old signal keeps running)
@@ -56,7 +60,7 @@ def ping_heartbeat(ok: bool = True) -> None:
     except Exception:
         pass
 ```
-Call `ping_heartbeat()` at the end of the signal and no-signal paths, `ping_heartbeat(ok=False)` in the error path (labeled alert beats silence-then-alert). Weekend/holiday early-returns do **not** ping — configure the healthchecks schedule as weekdays-only.
+Call `ping_heartbeat()` on **every completed invocation — weekend and holiday early-returns included** — and `ping_heartbeat(ok=False)` in the error path (labeled alert beats silence-then-alert). Rationale: the heartbeat monitors *machine + scheduler + script alive*, not *signal published*; the scheduled task fires daily (verified via `schtasks` — the code, not the trigger, handles weekends/holidays), so pinging every run lets healthchecks use a simple 1-day period with grace to ~7:15 ET and eliminates false alerts on weekday NYSE holidays (Labor Day 9/7 is the first one the alternative would have tripped on).
 
 **Smoke:** `python -c` invoking `ping_heartbeat` with a test URL; one full `python run_tactical.py` off-schedule (accept the duplicate log line — log-every-run discipline covers it).
 
@@ -81,7 +85,7 @@ Layout, top to bottom:
    "pending": {"kill_switch_reset": {"first_seen": "2026-06-05", "desc": "kill-switch reset"}}}
   ```
   - **Deltas** = field-by-field compare of today's snapshot vs stored: kill switch tripped/cleared (`entry_ok` flip), regime change, band change, position count change, drawdown crossing −5%/−10%, bot run missed (`bot_completed_at` unchanged across a trading day). First run ever → "first briefing — no deltas".
-  - **Pending queue** = states requiring a human decision, currently exactly one derivation: `entry_ok == false` → item `kill_switch_reset`. Age = days since `first_seen`. Seeding on first observation: parse a `YYYY-MM-DD` from `entry_gate_reason` ("last winner 2026-06-05") if present, else today — fragile parse, safe fallback, documented here so nobody mistakes it for precision. Item auto-clears when `entry_ok` flips true (and emits a "cleared" delta).
+  - **Pending queue** = states requiring a human decision, currently exactly one derivation: `entry_ok == false` → item `kill_switch_reset`. Age = days since `first_seen`. Seeding on first observation: derive the **trip date from bot `trades.jsonl`** — walk closed trades by `exit_time_actual`, find the last `pnl_dollars > 0`, trip date = exit date of the 5th consecutive loss after it (~10 lines); fallback = observation date. Do **not** seed from the "last winner" date in `entry_gate_reason` — that's the last winner, not the trip, and overstates the pending age 3× on current data (see record correction above). Item auto-clears when `entry_ok` flips true (and emits a "cleared" delta).
   - Unchanged day compresses to one calm line: `No changes. ⚠ pending 88d: kill-switch reset.`
 - **`build_briefing(now_et) -> dict`** — assembles message (section 0 first, then regime, then bot; target ≤8 lines), returns `{"message", "snapshot", "deltas", "pending", "warnings"}` where `warnings` carries each ⚠ with its trigger values (rule 4 — scorer food). Writes the new state file **only after** the caller confirms the log append succeeded — order: build → log → push → save state.
 
@@ -107,7 +111,7 @@ Proximity-warning scoring (stop hits, MA crosses) lands with 2b when those lines
 - CLAUDE.md locked-scope table: replace "Week 1 signal: sector rotation only" row with the briefing scope; note the gut per REDESIGN.
 - TODO.md status paragraph: momentum retired, briefing v1 live, two-week read starts.
 
-**Smoke:** (1) `python -c "from src.briefing import build_briefing; print(build_briefing(...)['message'])"` against the live sibling files — on current data it must show the kill-switch ⚠ with ~88d age; (2) hand-corrupt a copied `last_successful_run.json` in scratch and confirm "unknown" lines, not a crash; (3) one full run with a real push, verify on phone + one well-formed `briefings.jsonl` line; (4) `python score_briefings.py` runs clean on one day of data.
+**Smoke:** (1) `python -c "from src.briefing import build_briefing; print(build_briefing(...)['message'])"` against the live sibling files — on current data it must show the kill-switch ⚠ with age counted from **2026-08-03** (the derived trip date), not from the "last winner" date; (2) hand-corrupt a copied `last_successful_run.json` in scratch and confirm "unknown" lines, not a crash; (3) one full run with a real push, verify on phone + one well-formed `briefings.jsonl` line; (4) `python score_briefings.py` runs clean on one day of data.
 
 **Commit:** `tactical_markets: phase 2 briefing v1 — health console ships, momentum signal retires`
 
@@ -119,7 +123,7 @@ Additions to `src/briefing.py` only. Governing rule: **a failed quote drops the 
 
 - **`quotes(tickers) -> dict[str, float] | None`** — yfinance with the Phase-1 retry pattern (shorter backoff, 2×15s — the 6:30 slot can't absorb 3×60s twice); premarket via `Ticker.fast_info` where available, else prior close and say so.
 - **Section 3 — flip proximity:**
-  - TQQQ: trailing stop = `position_peak_price × (1 − TRAIL_PCT)`; `TRAIL_PCT = 0.05` hardcoded **mirroring the bot's config — provenance comment required (rule 1), and a schema-drift risk if the bot ever changes it**; ⚠ when price within 2% of stop; `stopped_out: true` → plain status line.
+  - TQQQ: trailing stop = `position_peak_price × (1 − TRAIL_PCT)`; `TRAIL_PCT = 0.05` hardcoded **mirroring the bot's config — provenance comment required (rule 1), and a schema-drift risk if the bot ever changes it**; ⚠ when price within 2% of stop; `stopped_out: true` → plain status line. Word the line as *"trail level $X (evaluated at bot's 14:45 run)"* — the stop is decision-time, not a resting order (see record correction), and the briefing must not imply otherwise.
   - SPY: distance to 200d and 50d MA (daily history download, 1 call); ⚠ within 2% of a cross.
   - Sector sleeve: `current_holdings` listed once, no proximity math (monthly cadence).
 - **Section 4 — overnight tape:** SPY/QQQ gap vs prior close, flag |gap| ≥ 1%; VIX last close + 5d change (no premarket exists). Fallback if quotes fail: day-old `vix.raw` / `vix_term_structure.raw` from MACRO's `latest.json`, labeled `(yday)`.
