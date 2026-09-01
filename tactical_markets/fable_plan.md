@@ -166,6 +166,36 @@ Keeping Pushover-only, once-daily cadence, the closed ML gate, and files-on-disk
 
 ---
 
+## Part V — Thesis review (same session, on Ian's "is the overall thesis sound? should there be more?")
+
+### Verdict: sound, with one sharpening
+
+The ecosystem's binding constraint is no longer signal generation — the bot took that over with better-researched strategies. The binding constraint is **oversight**: an autonomous bot trading (presumably paper, eventually maybe real) money, watched by a human who checks in sporadically. The proof case is already on the record: the kill switch tripped ~June 5 and was discovered August 31 — **an 87-day detection latency on the single most important state change in the system.** A tool that allocates Ian's scarcest resource (attention) to the system's scarcest input (timely human awareness) is the right thesis. The feedback loop is fast, the contracts exist, the delivery slot precedes the bot's 14:45 entry window by 8 hours.
+
+The sharpening: **the product is a health-and-pending-decisions console, not a market briefing.** Apply the "who acts on this line?" test to each planned section: a stop-proximity line is *interesting* but the bot handles it — no human action. A gap/VIX line is garnish. The lines that pass the test are: the machine is broken (bot can't act), a human decision is pending (kill-switch reset), data is drifting, a run went missing. Market context earns its place only after those. Two design consequences:
+
+1. **Delta-first.** A daily push that mostly restates yesterday trains the reader to ignore it — alert fatigue is the classic observability failure, and mode (c) is this project's documented risk. The briefing keeps a tiny snapshot of yesterday's state and leads with *what changed*: kill switch newly tripped/cleared, regime flipped, position opened/closed/stopped, drawdown threshold crossed, run missed. Unchanged state compresses to one calm line. What Ian needed on June 5 was not a summary — it was one line saying "kill switch tripped *today*."
+2. **A pending-decisions queue, with age.** The system's documented disease is decision-stall (A–D sat 11 weeks; the kill-switch reset has sat ~12). Any state requiring a human decision becomes a queue entry that reappears daily with its age: *"⚠ pending 87d: kill-switch reset (bot trades nothing until resolved)."* Escalating staleness is the anti-stall mechanism the ecosystem has been missing — it converts silence from the default into a visible cost.
+
+### Should there be more? Two additions
+
+1. **Morning intent preview — the windshield, not the rear-view.** The bot's actions are deterministic and computable read-only: MA distances, the monthly rebalance calendar, stop levels. The briefing can say *"today the bot will likely: exit XLV (fell out of top-3 at Friday's close); no other triggers within 1%."* This is simultaneously better oversight (a veto window — 6:30 push, 14:45 execution) and the legitimate heir to the dead discretionary layer: tactical awareness derived from rules that earned their place, not from a re-invented signal. An actual veto mechanism needs a bot-side contract (e.g., a hold-file the bot checks before entries) — bot project's call, backlog until then; the read-only preview needs nothing.
+2. **Promote the weekly digest.** The daily briefing serves the operate loop; the actual top-level decision — *keep running this ensemble or kill it* — is made from equity vs SPY over months. That loop currently has no delivery mechanism at all (report_card.html requires opening a file on the machine). A Sunday push with equity curve vs benchmarks, regime-day counts, and gate trips serves the more consequential decision and is compatible with alert-only mode if the daily read fails.
+
+### What must NOT be added — guard rails
+
+- **No new signals, ever, without passing rules 1–7.** The gravitational pull back toward "MICRO generates trade ideas" is the failure mode this whole record documents. The intent preview is the permitted substitute: it surfaces the *bot's* decided rules, it doesn't invent edges.
+- **No LLM-generated market commentary/news digest.** Tempting, cheap to bolt on, unfalsifiable, violates the rule-based charter, and adds a flaky dependency to the reliability layer.
+- **No second trading brain.** MICRO observes and previews; it never overrides. The moment a MICRO line says "consider overriding the bot," the independent-observer rationale collapses.
+- **No intraday expansion.** Once-daily reconciliation + the bot's own immediate alerts (fixed in Phase −1) is the division of labor; defense in depth, not duplication.
+
+### Net effect on the thesis statement
+
+Old: "the 6:30 ET human window into the systems that do have edge."
+Refined: **"the daily reconciler and pending-decisions console for the trading system, delta-first, with a preview of the machine's intent — plus a weekly verdict on whether the machine deserves to keep running."**
+
+---
+
 ## Related documents
 
 - [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md) — execution plan (keep/repair/gut/rebuild), the doc awaiting Ian's go.
