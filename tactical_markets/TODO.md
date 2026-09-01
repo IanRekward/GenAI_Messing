@@ -4,6 +4,8 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 
 ## Status
 
+**2026-08-31 redesign pass — plan committed, code execution awaiting Ian's go.** See [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md). Resolves the 2026-06-12 A–D decision with **option E: retire the momentum signal** (out-of-sample since 6/12 flipped sign — post-review top pair +0.58%/trade — so neither momentum nor reversion has a stable edge) and **rebuild MICRO as the 6:30 ET premarket briefing** over MACRO regime state + bot health/positions/stop-proximity (files-on-disk, read-only). Repairs bundled: yfinance retry, external dead-man's-switch heartbeat (8 silently-missed days June–July from watchdog shared-fate), track `theses.jsonl` in git.
+
 **Freeze ended 2026-05-20. Post-freeze enhancements shipped.**
 
 - **M1 (multi-thesis output):** `sector_rotation.py` returns `list[dict]`; greedy top-vs-bottom pairing; `run_tactical.py` emits one JSONL line per thesis pair. Bot now reads all today's signals via `today_signals()`.
@@ -13,7 +15,7 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 - **Watchdog task:** `watch_tactical.py` fires at 7:00 AM CT; Pushover-alerts "Tactical Markets MISSED" if no thesis recorded for today.
 - **Freeze retired:** replaced with production-path vs research-path policy (see bot TODO.md). No action needed until 2026-06-10 review.
 
-**Next action: 2026-06-10 review.** Let M1 multi-thesis data accumulate ~3 weeks across diverse sector pairs, then decide whether to add variant-B (21-day hold) or re-param. See bot-integration-asks-variant-b-2026-05-20.md (HELD).
+**2026-06-10 review — DONE (run 2026-06-12).** Findings: [research/2026-06-10_review_findings.md](research/2026-06-10_review_findings.md). The live signal was anti-predictive over its first ~5 weeks (51 trades, 27% win, −2.97% mean 5d pair return, worse with bigger spread). A 2-year backtest replicating the production logic confirms the **sign is wrong, not a fluke**: momentum (as built) loses across every cut (top-pair non-overlapping: 44% win, −0.50%/trade, Sharpe −0.13); reversion (buy 5d loser / short 5d winner) is the mirror and mildly positive (56% win, +0.50%/trade, Sharpe +0.13) — but the edge is small and gross of costs. This is **failure mode (b)** ("feels like noise" → fix sector rotation before adding anything). **No production code changed — locked design, awaiting Ian sign-off** on options A–D in the findings doc. Do not add VIX slope / variant-B until the core signal direction is resolved.
 
 ## Source documents
 
