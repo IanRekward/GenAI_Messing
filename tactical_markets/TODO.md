@@ -4,7 +4,7 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 
 ## Status
 
-**2026-08-31 redesign pass — plan committed, code execution awaiting Ian's go.** See [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md). Resolves the 2026-06-12 A–D decision with **option E: retire the momentum signal** (out-of-sample since 6/12 flipped sign — post-review top pair +0.58%/trade — so neither momentum nor reversion has a stable edge) and **rebuild MICRO as the 6:30 ET premarket briefing** over MACRO regime state + bot health/positions/stop-proximity (files-on-disk, read-only). Repairs bundled: yfinance retry, external dead-man's-switch heartbeat (8 silently-missed days June–July from watchdog shared-fate), track `theses.jsonl` in git.
+**2026-08-31 redesign pass — plan committed, code execution awaiting Ian's go.** See [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md). Implementation mechanics (verified sibling-file contracts, file-by-file changes, smoke tests, commit points) in [DEV_PLAN.md](DEV_PLAN.md) (2026-09-01). Resolves the 2026-06-12 A–D decision with **option E: retire the momentum signal** (out-of-sample since 6/12 flipped sign — post-review top pair +0.58%/trade — so neither momentum nor reversion has a stable edge) and **rebuild MICRO as the 6:30 ET premarket briefing** over MACRO regime state + bot health/positions/stop-proximity (files-on-disk, read-only). Repairs bundled: yfinance retry, external dead-man's-switch heartbeat (8 silently-missed days June–July from watchdog shared-fate), track `theses.jsonl` in git.
 
 **Freeze ended 2026-05-20. Post-freeze enhancements shipped.**
 
