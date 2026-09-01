@@ -1,5 +1,7 @@
 # ROADMAP Brief 1: Tactical Markets Signal Generation
 
+> **SUPERSEDED (2026-08-31).** Historical context only — do not implement from this document. The sector-rotation spec below contains the founding inversion (header says mean reversion, mechanics say buy-the-5d-winner momentum; see [fable_plan.md](fable_plan.md) Part III). Current direction: [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md).
+
 **Overnight repricing + sector rotation signals for 24–48h tactical decisions.**
 
 ## Problem

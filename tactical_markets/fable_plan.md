@@ -21,6 +21,8 @@ A deliberately minimal daily signal generator: rank 12 ETFs (9 SPDR sectors + IW
 
 Monthly top-pair: May −3.20%/trade, June −2.23%, July +0.53%, Aug +0.11%. The sign flipped **again** after the June review — a June flip to reversion (options A/B) would have lost money since. Three independent analyses now agree (live record, 2-yr production-replica backtest, bot's 33-yr backtest at Sharpe 0.19): **no stable edge in either direction at this horizon.**
 
+*[Corrected same session — see Part IV: the post-review directional claims above rest on overlapping trades (effective n≈9) and don't survive de-overlapping. The retire conclusion is unaffected and strengthened.]*
+
 Two more empirical nails:
 - **Confidence field is anti-predictive:** corr(spread, fwd 5d return) = −0.14 over 210 live trades; high-spread half −1.09%/trade vs low-spread half −0.56%.
 - **The 1.5% publish gate never fired:** 0 no-signal days in 75 run-days (~3.1 theses pushed per morning). The "binary publish/don't publish" design is de facto "always publish."
@@ -131,6 +133,36 @@ MICRO under-trusted backtests; the bot risks over-trusting them. It scanned "eve
 4. **Signals ship with scorers:** if it publishes daily, it's scoreable in one command.
 5. **Decisions decay to defaults:** every review names a default action and a deadline.
 6. **Match instrument to question:** lived exposure for UX; statistics for edge; know the power of each before trusting it.
+7. **De-overlap before you believe:** added in Part IV after the same-session audit caught this plan's own author committing the error.
+
+---
+
+## Part IV — Second thoughts (same session, on Ian's "anything you'd add/change/delete?")
+
+### Corrections to my own analysis first
+
+Audited my own scoring the way I audited the project's. Two results:
+
+1. **Entry convention doesn't matter.** Close→close vs open→open (the actionable moment after a 6:30 push) give near-identical numbers across every slice. The headline figures are robust to that choice.
+2. **De-overlapping demolishes my directional claims.** Non-overlapping top-pair, full period: n=15, +0.29%/trade close-entry but **−0.27% open-entry** — the sign flips with the convention, t≈±0.2. Post-review non-overlapping: n=9, t≈1.0–1.4, not significant. My Part I claim that "the sign flipped post-review; a June flip to reversion would have lost money" was built on overlapping trades (effective n≈9) — **the same class of error as the project's founding one: reading direction from an underpowered sample.** Even the full-record t=−2.89 on 210 trades is overlap-inflated (~40 independent windows). Honest restatement: *no cut of the live data, properly de-overlapped, ever had the power to establish any direction.* The only adequately powered estimate remains the 33-year backtest: Sharpe 0.19 ≈ nothing after costs. This strengthens the retire decision — there is nothing to flip to — while weakening the drama of every live-performance number quoted along the way, the June review's included (it flagged this itself: "effective independent sample ≈ 12–15"; the caveat kept getting dropped as numbers were carried forward).
+
+→ **Methodology rule 7: de-overlap before you believe.** Any statistic on overlapping windows reports its effective n; directional claims come only from non-overlapping cuts. This failure mode bit three times in one project (the founding live read, the review's autocorrelation artifact, and my own post-review claim) — it is sticky.
+
+### Changes to the plan
+
+1. **Reprioritize: bot health is Phase −1, ahead of everything here.** The kill switch has blocked entries since ~June 5, the bot's own watchdog is exiting 1, state is stale since 8/28, and five positions are open on ~$102.7k equity (near Alpaca's $100k paper default, so presumably paper — **verify**). The briefing is polish; that is live risk. It was buried as "adjacent" — wrong altitude.
+2. **Thin briefing v1 further.** Core = sections 1–2 only (regime + bot health): pure file reads, zero market-data dependency, shippable in ~1–2 days and immune to the yfinance flakiness that cost 4 days. Sections 3–4 (stop proximity, overnight tape) need premarket quotes — the flakiest dependency (yfinance premarket is unreliable; VIX has no premarket) — so they ship best-effort in a 2b pass: a failed quote drops the line, never the briefing.
+3. **Why observability lives in MICRO, not the bot — now a principled answer, not opportunism:** an observer inside the observed system cannot report its own death, and today's evidence is exactly that (the bot's watchdog is the failing component). MICRO is a separate process in a separate repo on a different schedule slot — a genuinely independent observer. This also re-justifies the healthchecks.io heartbeat: for a signal generator, missed days were trivia; for the observability layer over a live-money bot, silent darkness is a real risk.
+4. **Contract fragility:** the three bot JSON files carry no schema version (M5 was deferred). Defensive reads (missing key → "unknown" in the briefing line, never a crash) plus a one-line schema-drift warning when expected keys vanish. No formal versioning — one consumer, overkill.
+5. **Backlog item 4 (priority escalation) was incoherent as written** — MICRO runs once daily and cannot detect intraday acute states. Reduced to: the single 6:30 push uses Pushover high priority when it contains a ⚠ line, nothing more.
+6. **Backlog item 7 (sector dispersion line): deleted outright** rather than "recommend skip" — dead options invite re-litigation.
+7. **Kill criteria for the briefing itself (rule 5 applied to my own plan):** after the two-week read, default = alert-only mode unless Ian affirmatively opts into the daily push; after 8 weeks with zero acted-on ⚠ lines, default = park the project. The predecessor died of decision-stall; this one ships with its own sunset defaults.
+8. **The briefing's scorer, defined before it exists (rule 4 applied):** every ⚠ line logs its trigger values to `briefings.jsonl`; the scorer computes warning **precision** (⚠ followed within 3 days by the flagged event — stop hit, MA cross, gate change) and **recall** (events that occurred with no prior-day ⚠), one command, from bot logs + prices. Unlike edge detection, this feedback loop is fast — weeks, not decades.
+9. **Doc hygiene:** SUPERSEDED banners added to ROADMAP_SIGNAL_GENERATION.md and RESEARCH_SUMMARY.md so no future session re-imports the Sharpe 0.92 or the 5d-momentum spec as live truth — the founding inversion survived partly because stale docs read as current specs. REDESIGN_2026-08-31.md stays the single canonical execution doc; this file is the frozen session record (avoid dual maintenance — the disease that hit TODO.md in June).
+
+### Considered and rejected
+
+Keeping Pushover-only, once-daily cadence, the closed ML gate, and files-on-disk contracts — all re-examined, all stand. And the retire decision itself: every audit pass this session made it stronger.
 
 ---
 

@@ -1,5 +1,7 @@
 # Tactical Markets: Research Summary & Design Rationale
 
+> **SUPERSEDED (2026-08-31).** Historical context only — do not import parameters from this document. The Sharpe 0.92 cited below is for *quarterly mean reversion on the TSX 60*, not any strategy this project ran; the live 5d-momentum implementation inverted the direction this research supports at that horizon (see [fable_plan.md](fable_plan.md) Part III). Current direction: [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md).
+
 **How empirical research (2000–2026) informed the signal selection and execution strategy.**
 
 ---
