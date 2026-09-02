@@ -72,7 +72,8 @@ def _handler_crack_spread_321(key: str, cfg: dict, env: dict, manual: dict, year
         [wti.rename("wti"), rbob.rename("rbob"), ulsd.rename("ulsd")], axis=1
     ).dropna()
     crack = (2 * combined["rbob"] * 42 + combined["ulsd"] * 42) / 3 - combined["wti"]
-    return float(crack.iloc[-1]), crack
+    dev = ind.median_deviation_series(crack)
+    return float(dev.iloc[-1]), dev
 
 
 def _handler_copper_gold_ratio(key: str, cfg: dict, env: dict, manual: dict, years: int):
@@ -82,7 +83,16 @@ def _handler_copper_gold_ratio(key: str, cfg: dict, env: dict, manual: dict, yea
         [copper.rename("copper"), gold.rename("gold")], axis=1
     ).dropna()
     ratio = combined["copper"] / combined["gold"]
-    return float(ratio.iloc[-1]), ratio
+    # deviation is a tiny number on the raw ratio scale; ×1000 for legibility
+    dev = ind.median_deviation_series(ratio) * 1000
+    return float(dev.iloc[-1]), dev
+
+
+def _handler_eem_vol_dev(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    eem = fetch.fetch_yfinance_series("EEM", env, years)
+    vol = ind.realized_vol_series(eem)
+    dev = ind.median_deviation_series(vol)
+    return float(dev.iloc[-1]), dev
 
 
 def _handler_repo_dispersion(key: str, cfg: dict, env: dict, manual: dict, years: int):
@@ -130,6 +140,7 @@ COMPUTED_HANDLERS: dict = {
     "vix_term_structure":      _handler_vix_term_structure,
     "repo_dispersion":         _handler_repo_dispersion,
     "gpr_daily":               _handler_gpr_daily,
+    "eem_vol_dev":             _handler_eem_vol_dev,
 }
 
 _TRANSFORMS = {

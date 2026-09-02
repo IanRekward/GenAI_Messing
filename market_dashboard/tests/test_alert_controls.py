@@ -65,31 +65,31 @@ def _prev_state(band: str = "yellow") -> dict:
 
 class TestDebounce:
     def test_escalation_passes_when_above_buffer(self):
-        assert _debounce_passes("orange", "yellow", 56.0, 5.0) is True
+        assert _debounce_passes("orange", "yellow", 68.0, 2.0) is True
 
     def test_escalation_suppressed_when_barely_over_threshold(self):
-        assert _debounce_passes("orange", "yellow", 52.0, 5.0) is False
+        assert _debounce_passes("orange", "yellow", 65.5, 2.0) is False
 
     def test_escalation_passes_exactly_at_threshold_plus_buffer(self):
-        assert _debounce_passes("orange", "yellow", 55.0, 5.0) is True
+        assert _debounce_passes("orange", "yellow", 67.0, 2.0) is True
 
     def test_de_escalation_passes_when_below_buffer(self):
-        assert _debounce_passes("yellow", "orange", 44.0, 5.0) is True
+        assert _debounce_passes("yellow", "orange", 61.0, 2.0) is True
 
     def test_de_escalation_suppressed_when_barely_below_threshold(self):
-        assert _debounce_passes("yellow", "orange", 48.0, 5.0) is False
+        assert _debounce_passes("yellow", "orange", 64.0, 2.0) is False
 
     def test_red_escalation_passes_above_buffer(self):
-        assert _debounce_passes("red", "orange", 76.0, 5.0) is True
+        assert _debounce_passes("red", "orange", 75.0, 2.0) is True
 
     def test_red_escalation_suppressed_below_buffer(self):
-        assert _debounce_passes("red", "orange", 72.0, 5.0) is False
+        assert _debounce_passes("red", "orange", 72.5, 2.0) is False
 
     def test_zero_buffer_always_passes(self):
-        assert _debounce_passes("orange", "yellow", 50.1, 0.0) is True
+        assert _debounce_passes("orange", "yellow", 65.1, 0.0) is True
 
     def test_send_alerts_suppresses_marginal_escalation(self, tmp_path, monkeypatch):
-        """Composite at 52 (barely orange) should not fire escalation with buffer=5."""
+        """Composite at 66 (barely orange, floor 65) must not fire with buffer=5."""
         monkeypatch.setattr("src.alerts.STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr("src.alerts.ALERT_LOG", tmp_path / "log.jsonl")
         monkeypatch.setattr("src.alerts.DATA_DIR", tmp_path)
@@ -97,13 +97,13 @@ class TestDebounce:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
 
-        scoring = _make_scoring(composite=52.0, band="orange", n_orange_buckets=2)
+        scoring = _make_scoring(composite=66.0, band="orange", n_orange_buckets=2)
         env = {"ALERT_DEBOUNCE_BUFFER": "5"}
         sent = send_alerts(scoring, env)
         assert sent == 0  # suppressed by debounce
 
     def test_send_alerts_fires_confirmed_escalation(self, tmp_path, monkeypatch):
-        """Composite at 57 (clearly orange, 2 stressed buckets) should fire."""
+        """Composite at 71 (clearly orange, 2 stressed buckets) should fire."""
         monkeypatch.setattr("src.alerts.STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr("src.alerts.ALERT_LOG", tmp_path / "log.jsonl")
         monkeypatch.setattr("src.alerts.DATA_DIR", tmp_path)
@@ -112,7 +112,7 @@ class TestDebounce:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
 
-        scoring = _make_scoring(composite=57.0, band="orange", n_orange_buckets=2)
+        scoring = _make_scoring(composite=71.0, band="orange", n_orange_buckets=2)
         env = {"ALERT_DEBOUNCE_BUFFER": "5"}
 
         printed = []
@@ -135,7 +135,7 @@ class TestBreadth:
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
 
         # 1 orange bucket, composite clearly in orange (above debounce buffer)
-        scoring = _make_scoring(composite=60.0, band="orange", n_orange_buckets=1)
+        scoring = _make_scoring(composite=71.0, band="orange", n_orange_buckets=1)
         env = {"ALERT_DEBOUNCE_BUFFER": "5"}
 
         printed = []
@@ -154,7 +154,7 @@ class TestBreadth:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
 
-        scoring = _make_scoring(composite=60.0, band="orange", n_orange_buckets=2)
+        scoring = _make_scoring(composite=71.0, band="orange", n_orange_buckets=2)
         env = {"ALERT_DEBOUNCE_BUFFER": "5"}
 
         printed = []
@@ -172,7 +172,7 @@ class TestBreadth:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("orange")))
 
-        scoring = _make_scoring(composite=76.0, band="red", n_red_buckets=1)
+        scoring = _make_scoring(composite=78.0, band="red", n_red_buckets=1)
         env = {"ALERT_DEBOUNCE_BUFFER": "5"}
 
         printed = []
@@ -205,7 +205,7 @@ class TestQuietHours:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
 
-        scoring = _make_scoring(composite=60.0, band="orange", n_orange_buckets=2)
+        scoring = _make_scoring(composite=71.0, band="orange", n_orange_buckets=2)
         env = {"ALERT_DEBOUNCE_BUFFER": "5", "QUIET_HOURS_START": "0", "QUIET_HOURS_END": "23"}
 
         with patch("src.alerts.datetime") as mock_dt:
@@ -228,7 +228,7 @@ class TestQuietHours:
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("orange")))
 
-        scoring = _make_scoring(composite=76.0, band="red", n_red_buckets=1)
+        scoring = _make_scoring(composite=78.0, band="red", n_red_buckets=1)
         env = {"ALERT_DEBOUNCE_BUFFER": "5", "QUIET_HOURS_START": "0", "QUIET_HOURS_END": "23"}
 
         with patch("src.alerts.datetime") as mock_dt:
@@ -254,7 +254,7 @@ class TestQuietHours:
         (tmp_path / "state.json").write_text(json.dumps(state))
 
         # Now it's daytime, composite escalated further
-        scoring = _make_scoring(composite=60.0, band="orange", n_orange_buckets=2)
+        scoring = _make_scoring(composite=71.0, band="orange", n_orange_buckets=2)
         env = {"ALERT_DEBOUNCE_BUFFER": "5", "QUIET_HOURS_START": "22", "QUIET_HOURS_END": "7"}
 
         with patch("src.alerts.datetime") as mock_dt:

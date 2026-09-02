@@ -4,8 +4,11 @@
 # direction: high → value >= threshold triggers the level (normal case)
 # direction: low  → value <= threshold triggers the level (inverted indicators)
 #
-# Adjust these to your own risk tolerance. The defaults are calibrated to
-# roughly 2000–2025 history for U.S. market stress.
+# Adjust these to your own risk tolerance. Recalibrated thresholds carry their
+# historical firing rates as inline comments (D2, 2026-09-02 — see
+# output/threshold_report.md and `python -m src.threshold_report`). A red
+# should fire ≤5% of days, orange ≤15%, elevated-or-worse ≤30% — ceilings,
+# not goals; never-fired reds on crisis-scale levels are intentional.
 
 indicators:
 
@@ -101,9 +104,9 @@ indicators:
 
   cpi_yoy:                    # CPI year-over-year %, trailing 12 months
     direction: high
-    yellow: 3.50
-    orange: 5.00
-    red: 7.00
+    yellow: 3.5
+    orange: 6.5
+    red: 8.5
 
   # --- Funding & Liquidity ---
   sofr_spread:                # SOFR minus daily EFFR, in bps
@@ -125,11 +128,14 @@ indicators:
     orange: 100.0
     red: 120.0
 
-  crack_spread_321:           # 3-2-1 crack spread, $/bbl; wide = refining bottleneck
+  crack_spread_321:         # DEVIATION from trailing 3y median, $/bbl (D2 transform).
+                              # Fires y+ 24.8% / o+ 12.6% / r 3.7% of 2018-2026 days.
+                              # Live 2026 dislocation is genuinely red (~+38 vs norm);
+                              # the median self-heals structural shifts in <=3y.
     direction: high
-    yellow: 35.0
-    orange: 45.0
-    red: 55.0
+    yellow: 7.0
+    orange: 18.0
+    red: 34.0
 
   natgas:                     # Henry Hub front-month YoY %; high = supply stress
     direction: high
@@ -137,18 +143,20 @@ indicators:
     orange: 60.0
     red: 100.0
 
-  copper_gold_ratio:          # HG=F / GC=F; low = risk-off / growth fears
+  copper_gold_ratio:        # DEVIATION from trailing 3y median x1000 (D2 transform).
+                              # Fires y+ 27.4% / o+ 12.9% / r 4.8%. Reads green today:
+                              # the structural gold bull no longer counts as stress.
     direction: low
-    yellow: 0.0021
-    orange: 0.0018
-    red: 0.0015
+    yellow: -0.40
+    orange: -0.55
+    red: -0.66
 
   # --- Economic Momentum ---
   jobless_claims:             # 4-week avg initial claims, in thousands
     direction: high
-    yellow: 260.0
-    orange: 300.0
-    red: 375.0
+    yellow: 250.0
+    orange: 400.0
+    red: 900.0
 
   unemployment:               # Unemployment rate, in %
     direction: high
@@ -157,11 +165,11 @@ indicators:
     red: 7.0
 
   # --- Sentiment ---
-  cnn_fear_greed:             # 0=extreme fear, 100=extreme greed; lower = more stress
-    direction: low
-    yellow: 45.0
-    orange: 35.0
-    red: 25.0
+  cnn_fear_greed:             # 0=extreme fear, 100=extreme greed; lower = more stress.
+    direction: low              # Fires y+ 30.3% / o+ 14.5% / r 5.2% of real days
+    yellow: 38.0                # (16mo live cache; old 45/35/25 fired red 13% —
+    orange: 27.0                # CNN's own label boundaries, never rate-checked).
+    red: 17.0                   # Recalibrated 2026-09-02 (D2).
 
   gpr_daily:                  # GPR daily index, 7d MA. Firing rates on 2010+:
     direction: high           # yellow+ 27.4% / orange+ 10.4% / red 3.3% of days.
@@ -170,11 +178,12 @@ indicators:
     red: 200.0                # 2026-09-02, methodology rule 1.
 
   # --- Global Spillover ---
-  usd_index:                  # Broad USD index (DTWEXBGS); higher = USD strength stress
-    direction: high
-    yellow: 115.0
-    orange: 122.0
-    red: 128.0
+  usd_index:                  # Broad USD index (DTWEXBGS). Fires y+ 27.8% / o+ 14.1%
+    direction: high             # / r 4.0% (old yellow 115 caught 54% of all days).
+                              # Recalibrated 2026-09-02 (D2).
+    yellow: 121.0
+    orange: 123.0
+    red: 127.0
 
   euro_hy_oas:                # Euro HY OAS, in %
     direction: high
@@ -188,8 +197,9 @@ indicators:
     orange: 3.8
     red: 5.5
 
-  eem_vol:                    # EEM 1-month realized vol, annualized %
+  eem_vol:                  # DEVIATION of 1m realized vol from trailing 3y median,
+                              # vol points (D2). Fires y+ 29.1% / o+ 15.1% / r 4.1%.
     direction: high
-    yellow: 18.0
-    orange: 26.0
-    red: 38.0
+    yellow: 4.0
+    orange: 9.0
+    red: 21.0

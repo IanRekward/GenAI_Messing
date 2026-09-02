@@ -108,20 +108,20 @@ def test_reds_in_one_bucket_do_not_escalate():
     )
     result = annotate_results(scoring, _thr(["crack", "copper", "wti", "hy"]))
     assert result["red_count"] == 3
-    assert result["composite_band"] == "yellow"
+    assert result["composite_band"] == "green"
 
 
 def test_reds_in_two_buckets_escalate_one_level():
     """Breadth confirmation: reds in >=2 distinct buckets lift the headline
-    by exactly one level (the 08-31 case: composite 39 + broad reds -> orange,
-    not the old count-based red)."""
+    by exactly one level (the 08-31 shape: composite ~39 + broad reds -> yellow
+    under the 57/65/72 cutoffs, not the old count-based red)."""
     scoring = _multi_bucket_scoring(
         {"commodities": {"crack": _ind(99.0)},
          "equity_volatility": {"vix": _ind(99.0)}},
         composite=39.0,
     )
     result = annotate_results(scoring, _thr(["crack", "vix"]))
-    assert result["composite_band"] == "orange"
+    assert result["composite_band"] == "yellow"
 
 
 def test_breadth_escalation_caps_at_red():
@@ -134,17 +134,18 @@ def test_breadth_escalation_caps_at_red():
 
 
 def test_orange_score_with_breadth_reaches_red():
-    """COVID-shape: composite in orange territory + broad reds -> red."""
+    """COVID-shape: composite in orange territory + broad reds -> red
+    (COVID peaked at 71 — orange by score, red via breadth)."""
     scoring = _multi_bucket_scoring(
         {"a": {"i1": _ind(99.0)}, "b": {"i2": _ind(99.0)}},
-        composite=55.0,
+        composite=66.0,
     )
     result = annotate_results(scoring, _thr(["i1", "i2"]))
     assert result["composite_band"] == "red"
 
 
 def test_composite_band_high_score():
-    """composite score >= 70 → red band even with no individual red triggers."""
+    """composite score >= 72 → red band even with no individual red triggers."""
     scoring = _make_scoring({"ind": {"raw": 5.0, "score": 80, "band": "green",
                                      "label": "X", "unit": "", "manual": False, "invert": False}},
                             composite=75.0)

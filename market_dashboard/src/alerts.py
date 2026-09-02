@@ -23,7 +23,9 @@ DATA_DIR = Path("data")
 STATE_FILE = DATA_DIR / "alert_state.json"
 ALERT_LOG = DATA_DIR / "alert_log.jsonl"
 
-_BAND_MIN = {"green": 0.0, "yellow": 30.0, "orange": 50.0, "red": 70.0}
+from src.indicators import COMPOSITE_CUTOFFS as _CUTS
+_BAND_MIN = {"green": 0.0, "yellow": _CUTS["yellow"],
+             "orange": _CUTS["orange"], "red": _CUTS["red"]}
 
 
 def _iter_triggered(scoring: dict, bands: tuple[str, ...] = ("red", "orange")):
@@ -364,7 +366,9 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
     composite = scoring["composite"]
     cur_band = scoring["composite_band"]
     prev_band = prev.get("composite_band", "green")
-    debounce_buffer = float(env.get("ALERT_DEBOUNCE_BUFFER", 5.0))
+    # Default buffer scaled to the recalibrated band widths (yellow 57-65,
+    # orange 65-72 — a 5pt buffer would span most of a band).
+    debounce_buffer = float(env.get("ALERT_DEBOUNCE_BUFFER", 2.0))
 
     n_stressed_buckets = sum(
         1 for b in scoring["buckets"].values() if b["band"] in ("orange", "red")

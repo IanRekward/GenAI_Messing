@@ -139,8 +139,10 @@ def build_report(
             )
             if live_after.get("red", 0) > 100 * TARGET_RATES["red"] * 3:
                 flags.append(
-                    f"proposal still pinned live ({live_after['red']}% red) — "
-                    "needs short-window or relative transform, judgment"
+                    f"still hot in live window ({live_after['red']}% red under "
+                    "proposal) — verify the dislocation is real; if the raw is "
+                    "already a deviation measure this is a genuine episode, "
+                    "not miscalibration"
                 )
         else:
             prop_s = "keep"

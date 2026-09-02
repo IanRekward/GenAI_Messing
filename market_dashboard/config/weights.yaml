@@ -178,13 +178,13 @@ buckets:
         invert: false
         unit: "$/bbl"
       crack_spread_321:
-        label: "3-2-1 Crack Spread"
+        label: "3-2-1 Crack Spread (vs 3y median)"
         weight: 0.25
         source:
           type: computed
           handler: crack_spread_321
         invert: false
-        unit: "$/bbl"
+        unit: "$/bbl dev"
       natgas:
         label: "Henry Hub Natural Gas (YoY)"
         weight: 0.25
@@ -195,13 +195,13 @@ buckets:
         invert: false
         unit: "%"
       copper_gold_ratio:
-        label: "Copper / Gold Ratio"
+        label: "Copper / Gold Ratio (vs 3y median)"
         weight: 0.20
         source:
           type: computed
           handler: copper_gold_ratio
         invert: true
-        unit: "ratio"
+        unit: "dev ×1000"
 
   economic_momentum:
     label: Economic Momentum
@@ -275,14 +275,13 @@ buckets:
         invert: false
         unit: "%"
       eem_vol:
-        label: "EM Equity 1M Realized Vol"
+        label: "EM Equity 1M Vol (vs 3y median)"
         weight: 0.20
         source:
-          type: yfinance
-          ticker: "EEM"
-          transform: realized_vol_series
+          type: computed
+          handler: eem_vol_dev
         invert: false
-        unit: "%"
+        unit: "vol pts dev"
 
   breadth_flow:
     label: "Market Breadth & Trend"

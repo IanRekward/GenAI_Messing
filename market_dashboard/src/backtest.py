@@ -203,7 +203,9 @@ def _build_derived(raw: dict[str, pd.Series], env: dict) -> dict[str, pd.Series]
         d["sp500_1m_vol"] = ind.realized_vol_series(raw["sp500_price"])
 
     if "eem_price" in raw:
-        d["eem_vol"] = ind.realized_vol_series(raw["eem_price"])
+        d["eem_vol"] = ind.median_deviation_series(
+            ind.realized_vol_series(raw["eem_price"])
+        )
 
     if "cpi" in raw:
         d["cpi_yoy"] = ind.yoy_series(raw["cpi"])
@@ -251,7 +253,8 @@ def _build_derived(raw: dict[str, pd.Series], env: dict) -> dict[str, pd.Series]
             [raw["wti_price"].rename("wti"), raw["rbob_price"].rename("rbob"), raw["ulsd_price"].rename("ulsd")],
             axis=1,
         ).dropna()
-        d["crack_spread_321"] = (2 * cs["rbob"] * 42 + cs["ulsd"] * 42) / 3 - cs["wti"]
+        crack_level = (2 * cs["rbob"] * 42 + cs["ulsd"] * 42) / 3 - cs["wti"]
+        d["crack_spread_321"] = ind.median_deviation_series(crack_level)
 
     # Natural gas YoY
     if "natgas_price" in raw:
@@ -263,7 +266,7 @@ def _build_derived(raw: dict[str, pd.Series], env: dict) -> dict[str, pd.Series]
             [raw["copper_price"].rename("copper"), raw["gold_price"].rename("gold")],
             axis=1,
         ).dropna()
-        d["copper_gold_ratio"] = cg["copper"] / cg["gold"]
+        d["copper_gold_ratio"] = ind.median_deviation_series(cg["copper"] / cg["gold"]) * 1000
 
     # vix_price is already the VIX level; no derivation needed
     d["vix_price"] = raw.get("vix_price", pd.Series(dtype=float))

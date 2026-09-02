@@ -4,13 +4,13 @@
 
 composite:
   title: "Composite Stress Score (0–100)"
-  tip: "Weighted average of all 11 market buckets. Under 30 = calm. 30–50 = elevated but normal. 50–70 = stressed. Above 70 = rare, serious — historically precedes significant drawdowns."
+  tip: "Weighted average of all 11 market buckets. Under 57 = calm (about two-thirds of days). 57–65 = elevated. 65–72 = stressed. Above 72 = rare (~5% of days: 2020, 2022). Broad red triggers can lift the headline one level. Cutoffs recalibrated 2026-09-02."
 
 bands:
-  green: "Below 30: calm. Historical data suggests low near-term drawdown risk."
-  yellow: "30–50: elevated. Worth monitoring but not actionable on its own."
-  orange: "50–70: stressed. At least one bucket is flashing warnings. Consider reviewing your positions."
-  red: "Above 70: high stress. Historically associated with elevated drawdown risk in the following 30–90 days."
+  green: "Below 57: calm — roughly two-thirds of all days since 2018. Historical data suggests low near-term drawdown risk."
+  yellow: "57–65: elevated. Worth monitoring but not actionable on its own."
+  orange: "65–72: stressed. Historically ~1 day in 6, concentrated in real episodes. Consider reviewing your positions."
+  red: "Above 72: rare, high stress (~5% of history: the 2020 and 2022 selloffs). Historically associated with elevated drawdown risk in the following 30–90 days."
 
 momentum:
   tip: "Rate of change of the composite over the past 7 days. Rising stress that hasn't yet triggered a band change — early warning of escalation."
@@ -95,11 +95,11 @@ indicators:
   wti_crude:
     tip: "WTI crude oil price ($/barrel). Above $100 historically triggers recession risk. Extreme moves (±20% in weeks) indicate supply shocks or geopolitical crisis."
   crack_spread_321:
-    tip: "3-2-1 crack spread ($/bbl): refining margin between crude (input) and gasoline + distillate (output). Standard industry stress metric. Wide crack = refiners can't keep up — hurricanes, refinery fires, product embargoes. Captures real-economy oil stress that flat WTI misses."
+    tip: "3-2-1 crack spread refining margin, measured as DEVIATION from its own trailing 3-year median ($/bbl). Positive = margins dislocated above recent norms (hurricanes, refinery outages, embargoes); the deviation form washes out structural regime shifts that pinned the absolute level red for months (recalibrated 2026-09-02)."
   natgas:
     tip: "Henry Hub natural gas front-month, YoY % change. Independent supply-shock vector — winter cold snaps, European LNG contagion, storage anomalies. YoY framing strips out 'new normal' price drift."
   copper_gold_ratio:
-    tip: "Copper futures / gold futures (HG=F / GC=F). Classic growth-vs-fear proxy: copper rises with industrial demand, gold rises with safe-haven demand. Low ratio = market pricing recession. Lower readings = more stress."
+    tip: "Copper/gold ratio (growth-vs-fear proxy), measured as DEVIATION from its trailing 3-year median (×1000). Negative = copper weakening vs gold faster than the recent norm — the market pricing recession/risk-off. The deviation form stops a structural gold bull market from reading as permanent stress (recalibrated 2026-09-02)."
   jobless_claims:
     tip: "4-week moving average of U.S. initial jobless claims (thousands). Above 300K signals labor market deterioration. Above 375K indicates recession conditions."
   unemployment:
@@ -111,7 +111,7 @@ indicators:
   em_corp_oas:
     tip: "ICE BofA EM Corporate Bond Spread (%). Emerging market companies borrowing in dollars are acutely exposed to dollar strength and global risk-off. Above 3.8% = stressed."
   eem_vol:
-    tip: "1-month realized volatility of the EEM ETF (EM equities, annualized %). Captures cross-border contagion. EM equity vol spikes often precede U.S. credit stress by 2–4 weeks."
+    tip: "1-month realized volatility of the EEM ETF (EM equities), measured as DEVIATION from its trailing 3-year median (vol points). Spikes above the recent norm capture cross-border contagion — EM vol dislocations often precede U.S. credit stress by 2–4 weeks (deviation form since 2026-09-02)."
   cnn_fear_greed:
     tip: "CNN Fear & Greed index (0=extreme fear, 100=extreme greed). Composite of 7 market signals. Below 25 = extreme fear. Above 75 = extreme greed. Falls back to Univ. of Michigan Consumer Sentiment if CNN is unavailable."
   gpr_daily:

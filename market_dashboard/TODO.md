@@ -12,12 +12,19 @@ ship with firing rates inline), Brief 26 → event trigger, afternoon sidecar
 task (2:15 PM daily) revives the bot band gate. weights_hash is now `bcade443`
 (bot allowlist updated). 301 tests.
 
-**ONE open decision — D2 (default fires 2026-09-16):** review
-`output/threshold_report.md` and approve applying the five hot-threshold
-proposals (cnn_fear_greed, copper_gold_ratio, cpi_yoy, jobless_claims,
-usd_index). crack_spread_321 + eem_vol stay pinned even under recalibrated
-levels — the report explains the short-window/relative-transform choice needed.
-Composite band cutoffs (30/50/70) ride the same review.
+**D2 CLOSED (Ian: "do all that, use your judgement", 2026-09-02 evening):**
+five hot thresholds applied with firing rates inline; crack_spread_321,
+copper_gold_ratio, and eem_vol converted to deviation-from-trailing-3y-median
+measures (structural shifts self-heal; mirrored in the backtest); composite
+band cutoffs recalibrated 30/50/70 → 57/65/72 (centralized in
+`src/indicators.py:COMPOSITE_CUTOFFS`; debounce buffer default 2). Replay:
+calm years read 94–97% green, COVID 63% red days, 2022 bear 54% red, live
+window 90% green — **today shows the first GREEN headline in project
+history**. weights_hash → `2dbffc9c`, bot allowlist updated + validate() ok.
+
+**Standing check (kill criterion):** if by ~2026-11-01 the headline has read
+orange-or-worse >50% of days without a real stress episode, the band model is
+wrong at a deeper level — redesign, don't patch (REDESIGN kill criteria).
 
 ## Previous status (2026-04-24)
 

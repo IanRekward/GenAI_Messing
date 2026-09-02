@@ -964,7 +964,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     trend_card = f"""
 <div class="card">
   <h2>90-Day Composite Trend</h2>
-  <div style="font-size:.75rem;color:#6e7681;margin-bottom:6px">Composite stress score (0–100) over the last 90 days &nbsp;·&nbsp; Green &lt;30 &nbsp;·&nbsp; Yellow 30–50 &nbsp;·&nbsp; Orange 50–70 &nbsp;·&nbsp; Red ≥70 &nbsp;·&nbsp; Today is on the right</div>
+  <div style="font-size:.75rem;color:#6e7681;margin-bottom:6px">Composite stress score (0–100) over the last 90 days &nbsp;·&nbsp; Green &lt;57 &nbsp;·&nbsp; Yellow 57–65 &nbsp;·&nbsp; Orange 65–72 &nbsp;·&nbsp; Red ≥72 (score bands; broad red triggers can lift the headline one level) &nbsp;·&nbsp; Today is on the right</div>
   {build_trend_svg(history, events)}
 </div>"""
 
@@ -1246,7 +1246,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     </summary>
     <div style="margin-top:10px;color:#c9d1d9">
       <p style="margin-bottom:8px"><strong>The number is a market "fever reading" from 0 to 100.</strong> It shows how stressed U.S. financial markets are <em>right now</em> compared to every day in the past 10 years. A score of 60 means today looks more stressed than 60% of all days on record.</p>
-      <p style="margin-bottom:8px"><strong>The colour bands:</strong> <span style="color:#22cc44">Green (&lt;30)</span> — calm, below-average stress. <span style="color:#ffcc00">Yellow (30–50)</span> — elevated but not alarming, worth watching. <span style="color:#ff8800">Orange (50–70)</span> — significant strain in multiple areas, pay attention. <span style="color:#ff4444">Red (≥70)</span> — high stress, comparable to serious historical episodes like 2008 or 2020.</p>
+      <p style="margin-bottom:8px"><strong>The colour bands:</strong> <span style="color:#22cc44">Green (&lt;57)</span> — calm; roughly two-thirds of all days since 2018 read green. <span style="color:#ffcc00">Yellow (57–65)</span> — elevated, about a quarter of days; worth watching. <span style="color:#ff8800">Orange (65–72)</span> — significant strain, historically ~1 day in 6, concentrated in real episodes (Aug 2024 peaked here). <span style="color:#ff4444">Red (≥72)</span> — rare (~5%% of days): the 2020 and 2022 selloffs. Red indicators spanning two or more buckets lift the headline one level above the score band, so a crisis-shaped day reads red even if the score lags. Cutoffs recalibrated 2026-09-02 from the 8.7-year backtest; the founding 30/50/70 made green unreachable.</p>
       <p style="margin-bottom:8px"><strong>How it's built:</strong> 29 individual market indicators are grouped into 11 signal categories (buckets). Each indicator is scored relative to its own history, then the buckets are weighted and averaged into the composite. Buckets that have historically been better predictors of market stress carry more weight.</p>
       <p><strong>How to use it:</strong> This is an early-warning gauge, not a trading signal. A rising score means stress is building somewhere — the buckets below show exactly where. Use it to direct your attention, not to make buy/sell decisions.</p>
     </div>

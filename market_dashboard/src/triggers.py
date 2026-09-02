@@ -73,14 +73,7 @@ def annotate_results(scoring: dict, thresholds: dict) -> dict:
     # orange for 100% of live days (D1, REDESIGN_2026-09-02). No hysteresis in
     # v1 — the alert layer's debounce buffer handles boundary flicker.
     composite = scoring["composite"]
-    if composite >= 70:
-        band = "red"
-    elif composite >= 50:
-        band = "orange"
-    elif composite >= 30:
-        band = "yellow"
-    else:
-        band = "green"
+    band = band_from_score(composite)
     if len(red_buckets) >= 2:
         band = {"green": "yellow", "yellow": "orange", "orange": "red"}.get(band, band)
     scoring["composite_band"] = band
