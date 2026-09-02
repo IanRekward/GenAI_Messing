@@ -24,21 +24,6 @@ def _live_env() -> dict:
     return {**os.environ, "CACHE_HOURS": "12"}
 
 
-@pytest.fixture
-def cleanup_alert_log():
-    """Remove alert_log entries after test."""
-    yield
-    alert_log = Path("data/alert_log.jsonl")
-    if alert_log.exists():
-        lines = alert_log.read_text().strip().split("\n")
-        # Keep only non-remediation lines
-        non_rem = [l for l in lines if l and "remediation_attempt" not in l]
-        if non_rem:
-            alert_log.write_text("\n".join(non_rem) + "\n")
-        else:
-            alert_log.unlink()
-
-
 @pytest.mark.live
 def test_remediation_triggers_on_percentile_none():
     """Remediation triggers when percentile: None indicators are present."""
@@ -159,8 +144,9 @@ def test_computed_indicators_excluded_from_remediation():
         assert _indicator_source_type(weights, key) == "computed"
 
 
-def test_log_remediation_writes_jsonl(cleanup_alert_log):
+def test_log_remediation_writes_jsonl(tmp_path, monkeypatch):
     """_log_remediation() writes properly formatted JSONL entries."""
+    monkeypatch.chdir(tmp_path)
     _log_remediation("vix", "success", "stale")
     _log_remediation("hy_oas", "failed", "percentile_none")
 

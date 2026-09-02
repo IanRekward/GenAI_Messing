@@ -52,6 +52,7 @@ def _patched_main(argv: list[str]):
         patch("run_dashboard.write_dashboard", write_dash_m),
         patch("run_dashboard._verify_dashboard_written"),
         patch("run_dashboard.write_latest_sidecar", write_side_m),
+        patch("run_dashboard._maybe_refresh_backtest"),
         patch("run_dashboard.get_news_brief", return_value=[]),
         patch("run_dashboard.generate_narrative", return_value=("", "")),
         patch("run_dashboard.fetch_upcoming_events", return_value=[]),

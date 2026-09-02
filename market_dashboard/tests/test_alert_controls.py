@@ -107,6 +107,7 @@ class TestDebounce:
         monkeypatch.setattr("src.alerts.STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr("src.alerts.ALERT_LOG", tmp_path / "log.jsonl")
         monkeypatch.setattr("src.alerts.DATA_DIR", tmp_path)
+        monkeypatch.setattr("src.alerts._in_quiet_hours", lambda env: False)
 
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
@@ -128,6 +129,7 @@ class TestBreadth:
         monkeypatch.setattr("src.alerts.STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr("src.alerts.ALERT_LOG", tmp_path / "log.jsonl")
         monkeypatch.setattr("src.alerts.DATA_DIR", tmp_path)
+        monkeypatch.setattr("src.alerts._in_quiet_hours", lambda env: False)
 
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))
@@ -147,6 +149,7 @@ class TestBreadth:
         monkeypatch.setattr("src.alerts.STATE_FILE", tmp_path / "state.json")
         monkeypatch.setattr("src.alerts.ALERT_LOG", tmp_path / "log.jsonl")
         monkeypatch.setattr("src.alerts.DATA_DIR", tmp_path)
+        monkeypatch.setattr("src.alerts._in_quiet_hours", lambda env: False)
 
         import json
         (tmp_path / "state.json").write_text(json.dumps(_prev_state("yellow")))

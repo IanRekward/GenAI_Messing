@@ -49,6 +49,38 @@ def monthly_series():
     return pd.Series(values, index=idx)
 
 
+@pytest.fixture(autouse=True, scope="session")
+def production_write_tripwire():
+    """Fail the session if any test writes to real output/, data/, or logs/.
+
+    The 2026-09-02 assessment caught the suite overwriting production backtest
+    artifacts 50 minutes before the daily run. Tests write to tmp_path, period.
+    """
+    root = Path(__file__).resolve().parent.parent
+    patterns = ("output/*", "data/*.json", "data/*.jsonl", "data/*.csv", "logs/*")
+    watched = [p for pat in patterns for p in root.glob(pat) if p.is_file()]
+    before = {p: (p.stat().st_mtime_ns, p.stat().st_size) for p in watched}
+    yield
+    dirty = []
+    for p, sig in before.items():
+        if not p.is_file():
+            dirty.append(f"{p.relative_to(root)} (deleted)")
+        elif (p.stat().st_mtime_ns, p.stat().st_size) != sig:
+            dirty.append(str(p.relative_to(root)))
+    created = [
+        str(p.relative_to(root))
+        for pat in patterns
+        for p in root.glob(pat)
+        if p.is_file() and p not in before
+    ]
+    if dirty or created:
+        pytest.fail(
+            f"Test suite touched production files — modified: {dirty}, created: {created}. "
+            "Point the offending test at tmp_path.",
+            pytrace=False,
+        )
+
+
 @pytest.fixture(autouse=True)
 def block_network(request, monkeypatch):
     """Fail loudly if any test accidentally touches the network.
