@@ -77,7 +77,10 @@ On June 1–2, the daily 7:30 AM run executed but hit stale-data remediation fai
 3. **Run logging** — `logs/dashboard_run.log` (start/finish + crash traceback, even under `--quiet`). Confirmed capturing the 06-04 and 06-05 scheduled runs.
 4. **Staleness recalibration** — `series_cadence.yaml` weekly 10→15, monthly 60→75. The daily staleness alerts were a *false positive* (FRED dates monthly series to period-start, so fresh CPI/UNRATE legitimately reaches 63–71d before release), not a fetch failure.
 
-> ⚠️ **ACTION REQUIRED (Ian):** add repo secrets **`PUSHOVER_APP_TOKEN`** and **`PUSHOVER_USER_KEY`** in GitHub → Settings → Secrets and variables → Actions. The watchdog runs without them but cannot send the alert (it logs a warning and exits 0). Until then the dead-man's switch is inert.
+> ~~⚠️ **ACTION REQUIRED (Ian):** add repo secrets **`PUSHOVER_APP_TOKEN`** and **`PUSHOVER_USER_KEY`**~~
+> **[RESOLVED — verified 2026-09-02]** Both secrets were added 2026-06-09 (`gh secret list`
+> confirms) and the watchdog is live — it fired daily through the July/Aug push outage.
+> This banner was stale for ~3 months.
 
 ---
 [../tactical_markets/TODO.md](../tactical_markets/TODO.md), [../tactical_markets_trading/TODO.md](../tactical_markets_trading/TODO.md). They remain in hopper until Market Stress Dashboard is complete and all Phase G items ship.

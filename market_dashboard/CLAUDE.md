@@ -255,8 +255,10 @@ save yourself the same mistake. Add to this list when something bites you too.
 - **`invert: true` flag flips score direction.** Indicators where LOWER raw =
   MORE stress must set `invert: true` in `weights.yaml`. Current inverted
   indicators: `yield_curve` (inverted curve = stress), `cnn_fear_greed` (fear
-  = low score = stress), `spx_200dma_distance` (below MA = stress). Easy to
-  forget when adding a new indicator.
+  = low score = stress), `spx_200dma_distance` (below MA = stress), and
+  `copper_gold_ratio` (falling ratio = risk-off) *[list corrected 2026-09-02 —
+  copper_gold_ratio was missing here since Brief 19]*. Easy to forget when
+  adding a new indicator.
 - **Alert dedupe state lives in `data/alert_state.json`.** Keys include
   `composite_band`, `orange_indicators`, `red_indicators`, `rapid_rise_alerts`,
   `corr_regime_streak`, `stale_indicators`, `weekly_alert_count`. When adding a
@@ -269,8 +271,9 @@ save yourself the same mistake. Add to this list when something bites you too.
   this after any edit that changes scoring, thresholds, or HTML output.
 - **CNN Fear & Greed is scraped, not official.** `fetch_cnn_fear_greed()` can
   fail silently on site changes. `_handler_cnn_fear_greed` falls back to FRED
-  UMCSENT. Don't assume freshness — check `data/fetch_cache/` staleness if
-  sentiment numbers look stale.
+  UMCSENT. Don't assume freshness — check `data/cache/` staleness if
+  sentiment numbers look stale *[path corrected 2026-09-02 — was written as
+  `data/fetch_cache/`, which never existed]*.
 - **Commits must use the GitHub noreply email.** The account has "Block command
   line pushes that expose my email" enabled. A commit authored as
   `rekward01@gmail.com` is rejected server-side with
