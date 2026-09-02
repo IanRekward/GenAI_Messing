@@ -158,10 +158,10 @@ def _log_alert(
         "body": body,
         "t7_composite": None,
     }
+    entry["alert_types"] = alert_types or []
     if scoring is not None:
         entry["composite_score"] = scoring["composite"]
         entry["composite_band"] = scoring["composite_band"]
-        entry["alert_types"] = alert_types or []
         entry["shock_type"] = shock_type
         entry["triggered_indicators"] = [
             f"{bk}.{ik}" for bk, ik, _ in _iter_triggered(scoring)
@@ -352,7 +352,7 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
                 f"is waking for the 7:30 AM run.\n\n"
                 f"Local dashboard: file:///C:/Users/rekwa/ian_projects/market_dashboard/output/dashboard.html"
             )
-            _log_alert(title, body, scoring=scoring, alert_types=["health_stale_dashboard"])
+            _log_alert(title, body, alert_types=["health_stale_dashboard"])
             if not _send_pushover(title, body, env):
                 if not _send_twilio(f"{title}\n{body}", env):
                     print(f"\n  {title}")
@@ -446,22 +446,27 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
             )
             alert_types.append("corr_sustained")
 
-    # 5. Data staleness — first occurrence only per indicator
+    # 5. Data staleness — plumbing lane: logged for the audit trail and queued
+    # for the Monday digest, never pushed. Staleness was 24 of 52 alert-log
+    # entries in the first 132 days — operational noise drowning market signal
+    # (B3, REDESIGN_2026-09-02). The DATA QUALITY card shows it same-day.
     stale_now = set(scoring.get("stale_indicators", []))
     stale_prev = set(prev.get("stale_indicators", []))
     new_stale = stale_now - stale_prev
+    pending_digest_notes = list(prev.get("pending_digest_notes", []))
     if new_stale:
         labels = []
         for bk, bkt in scoring["buckets"].items():
             for ik in bkt["indicators"]:
                 if ik in new_stale:
                     labels.append(_indicator_label(scoring, f"{bk}.{ik}"))
-        messages.append(
+        note = (
             f"STALE DATA ({len(new_stale)}): {', '.join(labels[:5])}"
             f"{' +more' if len(labels) > 5 else ''} — "
-            f"last observation gap exceeds expected cadence. Check FRED/Yahoo."
+            f"last observation gap exceeds expected cadence."
         )
-        alert_types.append("staleness")
+        _log_alert("STALE DATA (digest lane)", note, alert_types=["staleness"])
+        pending_digest_notes.append(f"{datetime.now().date().isoformat()}: {note}")
 
     # Accumulate weekly alert count
     weekly_alert_count = prev.get("weekly_alert_count", 0)
@@ -481,6 +486,7 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
         "regime_previous": scoring.get("regime"),
         "heartbeat_start": prev.get("heartbeat_start", ""),
         "last_health_alert_time": prev.get("last_health_alert_time", 0),
+        "pending_digest_notes": pending_digest_notes[-20:],
     }
 
     if not messages:
@@ -633,6 +639,21 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
             f"({pm['scored_count']}/{pm['total_alerts']} scored)"
         )
 
+    # Plumbing lane: automation health + queued staleness notes ride the
+    # digest instead of their own pushes (B3).
+    runs_str = ""
+    if history is not None and not history.empty:
+        h2 = history.copy()
+        h2["timestamp"] = pd.to_datetime(h2["timestamp"])
+        week_runs = h2[h2["timestamp"] >= pd.Timestamp.today() - pd.Timedelta(days=7)]
+        runs_str = f"\nAutomation: {week_runs['timestamp'].dt.date.nunique()}/7 morning runs completed"
+    notes = state.get("pending_digest_notes", [])
+    notes_str = ""
+    if notes:
+        shown = "\n".join(f"  • {n}" for n in notes[-6:])
+        extra = f" (+{len(notes) - 6} earlier)" if len(notes) > 6 else ""
+        notes_str = f"\nData plumbing since last digest{extra}:\n{shown}"
+
     composite = scoring["composite"]
     band = scoring["composite_band"]
     title = f"Weekly Digest: {band.upper()} ({composite:.0f}/100)"
@@ -642,28 +663,34 @@ def send_weekly_digest(scoring: dict, env: dict, history: "pd.DataFrame | None" 
         f"{movers_str}"
         f"\nAlerts this week: {weekly_alerts}"
         f"{pm_str}"
+        f"{runs_str}"
+        f"{notes_str}"
         f"\nhttps://ianrekward.github.io/GenAI_Messing/"
     )
 
     sent = _send_pushover(title, body, env)
 
-    # Reset weekly counter and mark digest sent
+    # Reset weekly counter, clear queued plumbing notes, mark digest sent
     state["weekly_digest_date"] = this_monday
     state["weekly_alert_count"] = 0
+    state["pending_digest_notes"] = []
     _save_state(state)
     return sent
 
 
 def send_heartbeat(scoring: dict, env: dict) -> bool:
-    """Send a daily Pushover confirmation for the first 31 days of scheduled runs."""
-    state = _load_state()
-    today = date.today().isoformat()
+    """Send a daily Pushover confirmation for the first 31 days after install.
 
+    Does NOT self-seed: seeding on absence made the window restart every run
+    (the bug fixed in 1B) and a "temporary" ping ran daily for 4+ months. A
+    fresh install opts in by setting heartbeat_start in data/alert_state.json;
+    once the 31 days pass it never returns (B3). The Monday digest carries the
+    runs-per-week confirmation instead.
+    """
+    state = _load_state()
     start = state.get("heartbeat_start")
     if not start:
-        state["heartbeat_start"] = today
-        _save_state(state)
-        start = today
+        return False
 
     days_elapsed = (date.today() - date.fromisoformat(start)).days
     if days_elapsed >= 31:
