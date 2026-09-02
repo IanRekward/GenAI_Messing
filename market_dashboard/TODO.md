@@ -26,6 +26,18 @@ history**. weights_hash → `2dbffc9c`, bot allowlist updated + validate() ok.
 orange-or-worse >50% of days without a real stress episode, the band model is
 wrong at a deeper level — redesign, don't patch (REDESIGN kill criteria).
 
+**Next deep assessment (Ian, 2026-09-02):** rerun
+[DEEP_ASSESSMENT_PROMPT.md](DEEP_ASSESSMENT_PROMPT.md) after the first real
+stress episode on the new system's watch, or ~2027-03 — whichever first.
+Note to that future assessor: prior art is ASSESSMENT_2026-09-02.md +
+REDESIGN_2026-09-02.md; the 2026-09-02 rebuild landed same-evening additions
+worth re-auditing with fresh eyes (breadth-debounce bypass `423a729`,
+plausibility guards `d82dbef`) — fifteen-plus commits in one day is exactly
+the seam-bug surface the assessment method exists to catch. Known soft spots
+already on record: composite cutoffs calibrated on the backtest-model
+distribution; history.csv band column has three semantic eras (segment at
+2026-09-02); three indicators neutral in backtest.
+
 ## Previous status (2026-04-24)
 
 **Project is in production and substantially feature-complete.** Daily
