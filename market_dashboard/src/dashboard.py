@@ -488,22 +488,26 @@ def _proven_skill_line() -> str:
     except Exception:
         return ""
 
+    # Headline ICs come from the external target only. The stress_index target
+    # is built from VIX + HY OAS + NFCI — all composite inputs — so its 0.7-0.8
+    # ICs are substantially self-correlation and must not headline as skill.
     dd = data.get("composite_vs_spx_drawdown", {})
-    st = data.get("composite_vs_stress_index", {})
     parts = []
     if dd.get("1w") is not None:
-        parts.append(f"{dd['1w']:.2f} IC @ 1wk vs drawdown")
-    if st.get("1m") is not None:
-        parts.append(f"{st['1m']:.2f} @ 1m vs realized stress")
+        parts.append(f"{dd['1w']:.2f} IC @ 1wk")
+    if dd.get("1m") is not None:
+        parts.append(f"{dd['1m']:.2f} @ 1m")
     if not parts:
         return ""
 
     yrs = max(1, round(data.get("n_obs", 0) / 252))
     return (
         f'<div style="margin-top:8px;font-size:.74rem;color:#8b949e">'
-        f'<span style="color:#22cc44;font-weight:600">Proven skill:</span> '
-        f'{" · ".join(parts)} '
-        f'<span style="color:#6e7681">({yrs}yr backtest)</span></div>'
+        f'<span style="color:#22cc44;font-weight:600">Backtest skill:</span> '
+        f'{" · ".join(parts)} vs fwd SPX drawdown '
+        f'<span style="color:#6e7681">({yrs}yr backtest; short-horizon only — '
+        f'3m/6m ICs ≈ 0; backtest model excludes CNN F&amp;G and regime '
+        f'weights)</span></div>'
     )
 
 
@@ -550,8 +554,10 @@ def _build_signal_quality_card(
         verdict_legend = "IC ≥ 0.15 = Tracking · 0.05–0.15 = Weak · &lt;0.05 = Miscalibrated"
     else:
         verdict, verdict_color = "Building history", "#6e7681"
+        n_regimes = ic_result.get("n_regimes", 0)
         verdict_legend = (
-            f"{n_obs}/{MIN_CALIBRATION_OBS} obs — verdict pends sufficient live history"
+            f"{n_obs}/{MIN_CALIBRATION_OBS} obs · {n_regimes} VIX regime(s) seen — "
+            f"verdict needs ≥{MIN_CALIBRATION_OBS} obs across ≥2 regimes"
         )
 
     # Data freshness — most recent history row
@@ -690,18 +696,18 @@ def _build_signal_quality_card(
         f'the score reliably moved <i>ahead</i> of the market. The model only went live '
         f'in April 2026, so there isn&rsquo;t enough live history to grade it fairly yet '
         f'&mdash; that&rsquo;s why it reads <b>&ldquo;Building history&rdquo;</b> with an '
-        f'&ldquo;N/90&rdquo; counter. It needs roughly a full quarter (~90 days) before '
-        f'it shows a real verdict. Expected, not a fault.</p>'
-        f'<p style="margin:0 0 6px 0"><b>&ldquo;Proven skill&rdquo; line.</b> Separately, '
-        f'the model was tested against ~9 years of history (including the 2008, 2020 and '
-        f'2022 selloffs). There it <i>did</i> tend to rise before trouble hit &mdash; so '
-        f'the model isn&rsquo;t unproven; the live grade above just needs time to catch '
-        f'up. The two figures: <i>&ldquo;vs drawdown&rdquo;</i> = did the score rise '
-        f'before stocks fell; <i>&ldquo;vs realized stress&rdquo;</i> = did it rise before '
-        f'stress gauges (volatility, credit spreads) spiked. Both run 0 (no foresight) to '
-        f'1 (perfect). The stress figure is higher because forecasting stress is the '
-        f'model&rsquo;s actual job, while calling exact price drops is deliberately '
-        f'harder.</p>'
+        f'&ldquo;N/90&rdquo; counter. A real verdict needs roughly a full quarter of '
+        f'observations <i>spanning at least two volatility regimes</i> &mdash; a score '
+        f'drifting down through one long rally correlates with everything and proves '
+        f'nothing. Expected, not a fault.</p>'
+        f'<p style="margin:0 0 6px 0"><b>&ldquo;Backtest skill&rdquo; line.</b> Separately, '
+        f'the model was tested against ~9 years of history (including the 2020 and '
+        f'2022 selloffs). Its score tended to rise days-to-weeks before market drops '
+        f'&mdash; a modest, real, short-horizon edge (at 3&ndash;6 months it has none, '
+        f'and the number is graded only against actual S&amp;P drawdowns, not against '
+        f'the model&rsquo;s own ingredients). The backtest also runs a slightly '
+        f'simplified model &mdash; no fear/greed input, no regime weighting &mdash; so '
+        f'treat it as evidence, not a promise.</p>'
         f'<p style="margin:0 0 6px 0"><b>&ldquo;Still elevated at T+7&rdquo; (right).</b> '
         f'Of the alerts fired recently, how many were <i>still</i> flashing a week later '
         f'&mdash; a rough check that alerts mark real, persistent stress rather than '
@@ -1241,7 +1247,7 @@ def write_dashboard(scoring: dict, news: list, history: "pd.DataFrame",
     <div style="margin-top:10px;color:#c9d1d9">
       <p style="margin-bottom:8px"><strong>The number is a market "fever reading" from 0 to 100.</strong> It shows how stressed U.S. financial markets are <em>right now</em> compared to every day in the past 10 years. A score of 60 means today looks more stressed than 60% of all days on record.</p>
       <p style="margin-bottom:8px"><strong>The colour bands:</strong> <span style="color:#22cc44">Green (&lt;30)</span> — calm, below-average stress. <span style="color:#ffcc00">Yellow (30–50)</span> — elevated but not alarming, worth watching. <span style="color:#ff8800">Orange (50–70)</span> — significant strain in multiple areas, pay attention. <span style="color:#ff4444">Red (≥70)</span> — high stress, comparable to serious historical episodes like 2008 or 2020.</p>
-      <p style="margin-bottom:8px"><strong>How it's built:</strong> 26 individual market indicators are grouped into 11 signal categories (buckets). Each indicator is scored relative to its own history, then the buckets are weighted and averaged into the composite. Buckets that have historically been better predictors of market stress carry more weight.</p>
+      <p style="margin-bottom:8px"><strong>How it's built:</strong> 29 individual market indicators are grouped into 11 signal categories (buckets). Each indicator is scored relative to its own history, then the buckets are weighted and averaged into the composite. Buckets that have historically been better predictors of market stress carry more weight.</p>
       <p><strong>How to use it:</strong> This is an early-warning gauge, not a trading signal. A rising score means stress is building somewhere — the buckets below show exactly where. Use it to direct your attention, not to make buy/sell decisions.</p>
     </div>
   </details>

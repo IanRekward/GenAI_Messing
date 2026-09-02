@@ -154,11 +154,13 @@ def rolling_composite_ic(
     (>= min_obs_for_verdict). Below "ok" the sample is too small / regime-narrow
     for a Tracking/Weak/Miscalibrated claim to mean anything.
     """
-    df = history.copy()
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df["_date"] = df["timestamp"].dt.normalize()
-    df = df.sort_values("timestamp").drop_duplicates(subset="_date", keep="last")
-    df = df.set_index("_date")["composite"].rename("composite")
+    df_full = history.copy()
+    df_full["timestamp"] = pd.to_datetime(df_full["timestamp"])
+    df_full["_date"] = df_full["timestamp"].dt.normalize()
+    df_full = df_full.sort_values("timestamp").drop_duplicates(subset="_date", keep="last")
+    df_full = df_full.set_index("_date")
+    regimes = df_full["regime"] if "regime" in df_full.columns else None
+    df = df_full["composite"].rename("composite")
 
     spx_norm = spx.copy()
     spx_norm.index = pd.to_datetime(spx_norm.index).normalize()
@@ -174,15 +176,24 @@ def rolling_composite_ic(
     composite_valid = composite_slice[valid]
     target_valid = target_slice[valid]
 
+    # A verdict from one monotone regime is a trend artifact, not calibration —
+    # observations alone don't make a sample adequate (2026-09-02 assessment,
+    # methodology rule 4: count regimes, not observations).
+    n_regimes = 0
+    if regimes is not None:
+        reg_valid = regimes.reindex(composite_valid.index).dropna()
+        n_regimes = int(reg_valid[reg_valid.astype(str) != ""].nunique())
+
     n_obs = int(valid.sum())
     if n_obs < 30:
-        return {"ic": None, "n_obs": n_obs, "adequacy": "insufficient",
+        return {"ic": None, "n_obs": n_obs, "n_regimes": n_regimes,
+                "adequacy": "insufficient",
                 "horizon_days": horizon_days, "window_days": window_days}
 
     ic = spearman_ic(composite_valid, target_valid)
-    adequacy = "ok" if n_obs >= min_obs_for_verdict else "building"
+    adequacy = "ok" if (n_obs >= min_obs_for_verdict and n_regimes >= 2) else "building"
     return {"ic": float(ic) if not np.isnan(ic) else None, "n_obs": n_obs,
-            "adequacy": adequacy,
+            "n_regimes": n_regimes, "adequacy": adequacy,
             "horizon_days": horizon_days, "window_days": window_days}
 
 

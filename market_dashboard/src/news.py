@@ -136,21 +136,6 @@ def _filter_relevant(headlines: list[str]) -> list[str]:
     return relevant if relevant else headlines[:20]
 
 
-def _best_match_url(bullet: str, items: list[dict]) -> str:
-    """Word-overlap heuristic: find the source item with the most title words in the bullet."""
-    words = {w.lower() for w in re.findall(r'\b\w{4,}\b', bullet)}
-    if not words:
-        return ""
-    best_score, best_url = 0.0, ""
-    for item in items:
-        title_words = {w.lower() for w in re.findall(r'\b\w{4,}\b', item["title"])}
-        if not title_words:
-            continue
-        score = len(words & title_words) / len(words)
-        if score > best_score:
-            best_score, best_url = score, item["url"]
-    return best_url if best_score >= 0.25 else ""
-
 
 def _best_match_item(bullet: str, items: list[dict]) -> dict:
     """Return the best-matching item dict (or empty dict) for source attribution."""

@@ -4,7 +4,7 @@
 
 composite:
   title: "Composite Stress Score (0–100)"
-  tip: "Weighted average of all 10 market buckets. Under 30 = calm. 30–50 = elevated but normal. 50–70 = stressed. Above 70 = rare, serious — historically precedes significant drawdowns."
+  tip: "Weighted average of all 11 market buckets. Under 30 = calm. 30–50 = elevated but normal. 50–70 = stressed. Above 70 = rare, serious — historically precedes significant drawdowns."
 
 bands:
   green: "Below 30: calm. Historical data suggests low near-term drawdown risk."
@@ -16,7 +16,7 @@ momentum:
   tip: "Rate of change of the composite over the past 7 days. Rising stress that hasn't yet triggered a band change — early warning of escalation."
 
 correlation:
-  tip: "Mean absolute pairwise correlation across all 10 bucket scores (30-day window). Above 0.60 = crisis-synchronous: buckets moving together, the signature of a broad risk-off event."
+  tip: "Mean absolute pairwise correlation across all 11 bucket scores (30-day window). Above 0.60 = crisis-synchronous: buckets moving together, the signature of a broad risk-off event."
 
 regime_window:
   tip: "Composite score recomputed using only the trailing 3-year window for percentile ranking. Highlights stress that looks normal vs. 10 years of history but elevated vs. the recent regime — useful when the market has been calm for years."
@@ -25,7 +25,7 @@ regime_adjusted:
   tip: "Composite score adjusted for current velocity and shock type. A fast shock in orange territory pushes this higher; a recovery trend pulls it lower. Shows where the model thinks stress is heading, not just where it is."
 
 vix_regime:
-  tip: "Current VIX regime, classified by trailing 10-year tercile. Low = bottom third of historical VIX (calm). Mid = middle third. High = top third (elevated). Smoothed (5d MA) and hysteretic (1.0 VIX buffer) so it doesn't flap at boundaries. Brief 10C will use this to weight buckets differently per regime."
+  tip: "Current VIX regime, classified by trailing 10-year tercile. Low = bottom third of historical VIX (calm). Mid = middle third. High = top third (elevated). Smoothed (5d MA) and hysteretic (1.0 VIX buffer) so it doesn't flap at boundaries. Regime-weight multipliers (weights.yaml, currently disabled) key off this classification."
 
 shock_type:
   fast_shock: "Composite rose ≥8 pts in 7 days, or ≥4 pts with 3+ buckets accelerating simultaneously. Fast shocks (2020 COVID, 2022 rate shock) demand prompt attention; they rarely revert quickly."

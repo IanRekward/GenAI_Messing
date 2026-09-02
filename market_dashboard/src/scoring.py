@@ -17,12 +17,12 @@ from src.history import classify_vix_regime
 
 
 def load_weights(path: str) -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
 def load_thresholds(path: str) -> dict:
-    with open(path) as f:
+    with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)
 
 
@@ -352,7 +352,9 @@ def _load_prev_regime() -> str | None:
     return None
 
 
-FetchOutcome = tuple  # (str, float | None, pd.Series | None, str | None)
+
+
+FetchOutcome = tuple
 
 
 def _fetch_indicators_parallel(
@@ -548,6 +550,7 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
         "composite_band": _band_from_score(composite),
         "composite_short": round(composite_short, 1),
         "composite_short_band": _band_from_score(composite_short),
+        "history_years": int(env.get("HISTORY_YEARS", 10)),
         "history_years_short": short_years,
         "red_count": 0,
         "orange_count": 0,

@@ -16,10 +16,15 @@ def _make_spx(n: int, start: str = "2023-01-01") -> pd.Series:
     return pd.Series(prices, index=pd.date_range(start, periods=n, freq="B"))
 
 
-def _make_history(n: int, start: str = "2023-01-01") -> pd.DataFrame:
+def _make_history(n: int, start: str = "2023-01-01", n_regimes: int = 2) -> pd.DataFrame:
     rng = np.random.default_rng(3)
     dates = pd.date_range(start, periods=n, freq="B")
-    return pd.DataFrame({"timestamp": dates, "composite": rng.uniform(35, 55, n)})
+    regimes = ["low", "mid", "high"][:max(1, n_regimes)]
+    return pd.DataFrame({
+        "timestamp": dates,
+        "composite": rng.uniform(35, 55, n),
+        "regime": [regimes[i % len(regimes)] for i in range(n)],
+    })
 
 
 # ── adequacy gate ──────────────────────────────────────────────────────────
@@ -37,6 +42,18 @@ def test_adequacy_ok_past_threshold():
     result = rolling_composite_ic(_make_history(n), _make_spx(n), horizon_days=21)
     assert result["n_obs"] >= 90
     assert result["adequacy"] == "ok"
+
+
+def test_adequacy_single_regime_stays_building():
+    """≥90 obs from ONE regime is a trend sample, not a calibration sample —
+    the 2026 live window produced IC +0.42 from pure rally trend."""
+    n = 130
+    result = rolling_composite_ic(
+        _make_history(n, n_regimes=1), _make_spx(n), horizon_days=21
+    )
+    assert result["n_obs"] >= 90
+    assert result["n_regimes"] == 1
+    assert result["adequacy"] == "building"
 
 
 def test_adequacy_insufficient_below_30():
@@ -114,9 +131,12 @@ def test_card_proven_skill_line_present_when_summary_exists(monkeypatch, tmp_pat
     ic_result = {"ic": -0.02, "n_obs": 54, "adequacy": "building",
                  "horizon_days": 21, "window_days": 252}
     html = _render_card(monkeypatch, tmp_path, ic_result, summary=summary)
-    assert "Proven skill:" in html
-    assert "0.15 IC @ 1wk vs drawdown" in html
-    assert "0.70 @ 1m vs realized stress" in html
+    assert "Backtest skill:" in html
+    assert "0.15 IC @ 1wk" in html
+    assert "vs fwd SPX drawdown" in html
+    # stress_index is an in-family target (built from composite inputs) —
+    # it must not headline as skill.
+    assert "realized stress" not in html
 
 
 def test_card_proven_skill_line_omitted_when_summary_absent(monkeypatch, tmp_path):

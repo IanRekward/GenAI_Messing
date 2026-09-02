@@ -61,6 +61,8 @@ def log_run(scoring: dict) -> None:
         "regime": scoring.get("regime"),
         "composite_naive": scoring.get("composite_naive"),
         "composite_regime_weighted": scoring.get("composite_regime_weighted"),
+        "composite_short": scoring.get("composite_short"),
+        "composite_short_band": scoring.get("composite_short_band"),
     }
     for bkey, bucket in scoring["buckets"].items():
         row[f"bucket_{bkey}"] = bucket["score"]
