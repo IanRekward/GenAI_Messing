@@ -10,6 +10,13 @@
 # should fire ≤5% of days, orange ≤15%, elevated-or-worse ≤30% — ceilings,
 # not goals; never-fired reds on crisis-scale levels are intentional.
 
+#
+# plausible: [min, max] — sanity guard at the fetch boundary, NOT a stress
+# level. Set ~10x beyond real extremes (negative WTI Apr-2020 and COVID claims
+# included); a successful fetch outside this range means source corruption
+# (wrong units, broken parse) and takes the error path: neutral score,
+# errors[] entry (bot gates to 0.5x), remediation retry. Added 2026-09-02.
+
 indicators:
 
   # --- Equity Volatility ---
@@ -18,18 +25,21 @@ indicators:
     yellow: 20.0
     orange: 28.0
     red: 35.0
+    plausible: [5, 200]
 
   sp500_1m_vol:
     direction: high
     yellow: 16.0
     orange: 24.0
     red: 32.0
+    plausible: [0, 200]
 
   vix_term_structure:
     direction: high
     yellow: 0.95
     orange: 1.00
     red: 1.05
+    plausible: [0.4, 3]
 
   # --- Credit Spreads ---
   hy_oas:                     # ICE BofA HY OAS, in %
@@ -37,12 +47,14 @@ indicators:
     yellow: 4.0
     orange: 5.5
     red: 7.5
+    plausible: [1, 30]
 
   ig_oas:                     # ICE BofA BBB OAS, in %
     direction: high
     yellow: 1.80
     orange: 2.40
     red: 3.20
+    plausible: [0.3, 10]
 
   # --- Rates & Yield Curve ---
   yield_curve:                # 10Y-2Y spread, in %; negative = inverted
@@ -50,24 +62,28 @@ indicators:
     yellow: 0.10
     orange: -0.25
     red: -0.75
+    plausible: [-4, 4]
 
   ten_year:                   # 10Y yield, in %
     direction: high
     yellow: 4.25
     orange: 4.75
     red: 5.25
+    plausible: [0, 20]
 
   move_index:                 # ICE BofA MOVE index; bp of implied Treasury vol
     direction: high
     yellow: 100.0
     orange: 135.0
     red: 175.0
+    plausible: [20, 400]
 
   treasury_auction_stress:    # Composite z-score (10Y+30Y b/c, indirect%, dealer%); higher = weaker demand
     direction: high
     yellow: 1.0
     orange: 1.5
     red: 2.0
+    plausible: [-10, 10]
 
   # --- Breadth & Trend ---
   sector_breadth:             # % of S&P sectors below 200d MA; 0%=all above=calm, 100%=crash
@@ -75,12 +91,14 @@ indicators:
     yellow: 40.0
     orange: 60.0
     red: 80.0
+    plausible: [0, 100]
 
   spx_200dma_distance:        # SPX % distance from 200d MA; negative = below MA = stress
     direction: low
     yellow: -3.0
     orange: -8.0
     red: -15.0
+    plausible: [-60, 60]
 
   # --- Financial Conditions ---
   nfci:                       # Chicago Fed NFCI; 0 = historical average; positive = tighter
@@ -88,12 +106,14 @@ indicators:
     yellow: 0.10
     orange: 0.40
     red: 0.80
+    plausible: [-3, 5]
 
   stlfsi:                     # St. Louis Fed FSI; 0 = average; positive = stress
     direction: high
     yellow: 0.50
     orange: 1.00
     red: 2.00
+    plausible: [-2, 15]
 
   # --- Inflation ---
   breakeven_5y:               # 5Y breakeven inflation, in %
@@ -101,12 +121,14 @@ indicators:
     yellow: 2.50
     orange: 3.00
     red: 3.50
+    plausible: [-2, 8]
 
   cpi_yoy:                    # CPI year-over-year %, trailing 12 months
     direction: high
     yellow: 3.5
     orange: 6.5
     red: 8.5
+    plausible: [-5, 25]
 
   # --- Funding & Liquidity ---
   sofr_spread:                # SOFR minus daily EFFR, in bps
@@ -114,12 +136,14 @@ indicators:
     yellow: 5.0
     orange: 15.0
     red: 40.0
+    plausible: [-50, 500]
 
   repo_dispersion:            # SOFR p99 − median, bps. Firing rates 2018-2026:
     direction: high           # yellow+ 13.0% / orange+ 1.8% / red 0.7% of days
     yellow: 15.0              # (red = Sep-2019 [375bps] / Mar-2020 [174] class
     orange: 25.0              # only). Calibrated 2026-09-02, methodology rule 1.
     red: 50.0
+    plausible: [-20, 1000]
 
   # --- Commodities & Energy ---
   wti_crude:                  # WTI crude, in $/bbl
@@ -127,6 +151,7 @@ indicators:
     yellow: 85.0
     orange: 100.0
     red: 120.0
+    plausible: [-50, 300]
 
   crack_spread_321:         # DEVIATION from trailing 3y median, $/bbl (D2 transform).
                               # Fires y+ 24.8% / o+ 12.6% / r 3.7% of 2018-2026 days.
@@ -136,12 +161,14 @@ indicators:
     yellow: 7.0
     orange: 18.0
     red: 34.0
+    plausible: [-100, 150]
 
   natgas:                     # Henry Hub front-month YoY %; high = supply stress
     direction: high
     yellow: 30.0
     orange: 60.0
     red: 100.0
+    plausible: [-90, 500]
 
   copper_gold_ratio:        # DEVIATION from trailing 3y median x1000 (D2 transform).
                               # Fires y+ 27.4% / o+ 12.9% / r 4.8%. Reads green today:
@@ -150,6 +177,7 @@ indicators:
     yellow: -0.40
     orange: -0.55
     red: -0.66
+    plausible: [-3, 3]
 
   # --- Economic Momentum ---
   jobless_claims:             # 4-week avg initial claims, in thousands
@@ -157,12 +185,14 @@ indicators:
     yellow: 250.0
     orange: 400.0
     red: 900.0
+    plausible: [100, 8000]
 
   unemployment:               # Unemployment rate, in %
     direction: high
     yellow: 4.5
     orange: 5.5
     red: 7.0
+    plausible: [1, 30]
 
   # --- Sentiment ---
   cnn_fear_greed:             # 0=extreme fear, 100=extreme greed; lower = more stress.
@@ -170,12 +200,14 @@ indicators:
     yellow: 38.0                # (16mo live cache; old 45/35/25 fired red 13% —
     orange: 27.0                # CNN's own label boundaries, never rate-checked).
     red: 17.0                   # Recalibrated 2026-09-02 (D2).
+    plausible: [0, 100]
 
   gpr_daily:                  # GPR daily index, 7d MA. Firing rates on 2010+:
     direction: high           # yellow+ 27.4% / orange+ 10.4% / red 3.3% of days.
     yellow: 120.0             # Ukraine-invasion Mar-2022 peaked ~500; the 2026
     orange: 150.0             # Iran/Hormuz episode runs ~140-200. Calibrated
     red: 200.0                # 2026-09-02, methodology rule 1.
+    plausible: [5, 3000]
 
   # --- Global Spillover ---
   usd_index:                  # Broad USD index (DTWEXBGS). Fires y+ 27.8% / o+ 14.1%
@@ -184,18 +216,21 @@ indicators:
     yellow: 121.0
     orange: 123.0
     red: 127.0
+    plausible: [60, 200]
 
   euro_hy_oas:                # Euro HY OAS, in %
     direction: high
     yellow: 4.5
     orange: 6.0
     red: 8.5
+    plausible: [1, 30]
 
   em_corp_oas:                # EM corporate OAS, in %
     direction: high
     yellow: 2.8
     orange: 3.8
     red: 5.5
+    plausible: [0.5, 20]
 
   eem_vol:                  # DEVIATION of 1m realized vol from trailing 3y median,
                               # vol points (D2). Fires y+ 29.1% / o+ 15.1% / r 4.1%.
@@ -203,3 +238,4 @@ indicators:
     yellow: 4.0
     orange: 9.0
     red: 21.0
+    plausible: [-60, 150]

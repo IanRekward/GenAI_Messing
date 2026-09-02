@@ -260,7 +260,7 @@ def main():
     # Score everything
     if not args.quiet:
         print("\n[1/5] Computing indicator scores...")
-    scoring = compute_composite(weights, env, manual)
+    scoring = compute_composite(weights, env, manual, thresholds=thresholds)
 
     # Apply thresholds
     if not args.quiet:
@@ -285,7 +285,7 @@ def main():
         reasons = {k: ("stale" if k in stale_keys else "percentile_none")
                    for k in remediation_keys}
         env_r = {**env, "_remediation_keys": remediation_keys}
-        scoring = compute_composite(weights, env_r, manual)
+        scoring = compute_composite(weights, env_r, manual, thresholds=thresholds)
         scoring = annotate_results(scoring, thresholds)
 
         # Determine outcome per key

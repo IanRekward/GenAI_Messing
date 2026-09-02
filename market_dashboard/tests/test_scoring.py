@@ -159,3 +159,62 @@ def test_composite_short_stored_in_indicator(monkeypatch):
     ind = result["buckets"]["test_bucket"]["indicators"]["y"]
     assert "percentile_short" in ind
     assert "score_short" in ind
+
+
+class TestPlausibleGuard:
+    """Fetch-boundary sanity ranges (2026-09-02): garbage-that-parses must not
+    reach the composite the trading bot reads."""
+
+    def _one_indicator_weights(self):
+        return {"buckets": {"b": {"label": "B", "weight": 1.0, "indicators": {
+            "vix": {"label": "VIX", "weight": 1.0,
+                    "source": {"type": "yfinance", "ticker": "^VIX"}},
+        }}}}
+
+    def _run(self, raw, thresholds):
+        from unittest.mock import patch
+        import pandas as pd
+        from src.scoring import compute_composite
+        series = pd.Series([20.0] * 30, index=pd.date_range("2026-01-01", periods=30))
+        fetched = {"vix": ("ok", raw, series, None),
+                   "__vix_regime__": ("ok", 20.0, series, None)}
+        with patch("src.scoring._fetch_indicators_parallel", return_value=fetched):
+            return compute_composite(self._one_indicator_weights(), {}, {},
+                                     thresholds=thresholds)
+
+    def test_implausible_value_takes_error_path(self):
+        thr = {"indicators": {"vix": {"plausible": [5, 200]}}}
+        scoring = self._run(3000.0, thr)
+        assert any("implausible" in e for e in scoring["errors"])
+        ind = scoring["buckets"]["b"]["indicators"]["vix"]
+        assert ind["percentile"] is None
+        assert ind["score"] == 50.0
+
+    def test_plausible_value_passes(self):
+        thr = {"indicators": {"vix": {"plausible": [5, 200]}}}
+        scoring = self._run(20.0, thr)
+        assert scoring["errors"] == []
+        assert scoring["buckets"]["b"]["indicators"]["vix"]["percentile"] is not None
+
+    def test_no_thresholds_means_no_guard(self):
+        scoring = self._run(3000.0, None)
+        assert scoring["errors"] == []
+
+    def test_all_live_indicators_have_ranges_and_validator_accepts(self):
+        import yaml
+        from src.config import validate_config, ConfigError
+        from src.scoring import load_weights, load_thresholds, COMPUTED_HANDLERS
+        weights = load_weights("config/weights.yaml")
+        thresholds = load_thresholds("config/thresholds.yaml")
+        validate_config(weights, thresholds, frozenset(COMPUTED_HANDLERS.keys()))
+        for k, v in thresholds["indicators"].items():
+            assert "plausible" in v, f"{k} missing plausible range"
+
+    def test_validator_rejects_malformed_range(self):
+        import pytest as _pytest
+        from src.config import validate_config, ConfigError
+        from src.scoring import load_weights, COMPUTED_HANDLERS
+        weights = load_weights("config/weights.yaml")
+        bad = {"indicators": {"vix": {"plausible": [200, 5]}}}
+        with _pytest.raises(ConfigError, match="malformed plausible"):
+            validate_config(weights, bad, frozenset(COMPUTED_HANDLERS.keys()))

@@ -271,10 +271,19 @@ def _validate_threshold_keys(weights: dict, thresholds: dict) -> None:
         for bcfg in weights["buckets"].values()
         for ikey in bcfg.get("indicators", {})
     }
-    for tkey in thresholds.get("indicators", {}):
+    for tkey, tcfg in thresholds.get("indicators", {}).items():
         if tkey not in all_indicator_keys:
             raise ConfigError(
                 f"Threshold entry '{tkey}' in config/thresholds.yaml does not "
                 f"match any indicator in config/weights.yaml. "
                 f"Possible typo — check the key name."
             )
+        plaus = tcfg.get("plausible")
+        if plaus is not None:
+            if (not isinstance(plaus, list) or len(plaus) != 2
+                    or not all(isinstance(v, (int, float)) for v in plaus)
+                    or plaus[0] >= plaus[1]):
+                raise ConfigError(
+                    f"'{tkey}' has malformed plausible range {plaus!r} — "
+                    f"expected [min, max] with min < max."
+                )

@@ -429,10 +429,18 @@ def _fetch_indicators_parallel(
     return out
 
 
-def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
+def compute_composite(weights: dict, env: dict, manual: dict,
+                      thresholds: dict | None = None) -> dict:
     """
     Fetch all data, score every indicator, aggregate into buckets and composite.
     Returns the full scoring dict (bands are placeholder 'green' until triggers.py runs).
+
+    When `thresholds` is provided, each indicator's `plausible: [min, max]`
+    range guards the fetch boundary: a SUCCESSFUL fetch returning
+    garbage-that-parses (wrong units, corrupted feed) is the one failure class
+    errors[] never saw — it sailed straight into the composite the bot reads.
+    Violations take the error path: neutral score, errors[] entry (bot gates to
+    0.5x), percentile None (DATA QUALITY card + remediation retry).
     """
     cadence_cfg = fetch.load_cadence_config()
     short_years = int(env.get("HISTORY_YEARS_SHORT", 3))
@@ -469,6 +477,13 @@ def compute_composite(weights: dict, env: dict, manual: dict) -> dict:
             iweight = float(icfg["weight"])
             invert = bool(icfg.get("invert", False))
             status, raw, series, msg = fetched[ikey]
+
+            if status != "error" and thresholds is not None:
+                plaus = thresholds.get("indicators", {}).get(ikey, {}).get("plausible")
+                if plaus and raw is not None and not (plaus[0] <= raw <= plaus[1]):
+                    status = "error"
+                    msg = (f"implausible value {raw:g} outside sanity range "
+                           f"[{plaus[0]:g}, {plaus[1]:g}] — source corruption suspected")
 
             if status == "error":
                 errors.append(f"{ikey}: {msg}")
