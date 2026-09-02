@@ -90,6 +90,12 @@ file name must not move.
   orphan `oil_vol`.
 - R14 (~investigation + ≤10): instrument `_remediation` block; root-cause zero
   records; fix or remove the dead logging.
+- R16 (~+12): `logger.info("step: %s", name)` between main() stages; pass
+  `timeout=60` to the Anthropic client in narrative.py/news.py (httpx default
+  can hang far past the useful window — the 08-31 hang lived in this segment).
+- R17 (~+6): gate `log_run`/`prune_history`/`score_past_alerts` behind the same
+  condition as alerts for non-`--ondemand` dry-runs, or add `--dry-run` alias
+  for `--ondemand --no-news`; update the CLAUDE.md dry-run gotcha to match.
 - **Smoke:** `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
   → zero Anthropic calls (assert via missing narrative-cache update), and
   afterwards `yf_XGSPC*.json` for years=10 still present alongside years=2 key.
@@ -123,8 +129,13 @@ file name must not move.
 
 ### Commit 2B — `src/threshold_report.py` (B1 artifact, ~250 new lines + tests)
 - Inputs: `output/backtest_full.csv` `__raw` columns + `config/thresholds.yaml`;
-  **exclude cnn_fear_greed** (backtest placeholder raw=0.0 — the booby trap from
-  ASSESSMENT §2.2) and the two manual indicators.
+  for **cnn_fear_greed use `data/cache/cnn_fear_greed.json`** (16 months of
+  real daily values — the backtest's raw=0.0 placeholder is the booby trap from
+  ASSESSMENT §2.2, but the accumulating cache is genuine); exclude only the two
+  manual indicators. Report both tails: always-hot (copper_gold 21%, jobless
+  15%, cpi 11.5%, cnn 13%) **and never-fired** (ten_year/nfci/
+  treasury_auction_stress red = 0% of 2,263 days). Include proposed composite
+  score-cutoff recalibration (30/50/70 → base-rate targets) for B2.
 - Output: per indicator — current thresholds, historical band firing rates
   (full sample + per-year + live window), and proposed thresholds hitting target
   base rates (red ≤5%, orange ≤15% of days; percentile-derived from the raw

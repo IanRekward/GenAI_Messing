@@ -37,11 +37,18 @@ Window 2026-04-23 → 2026-09-01 (132 calendar days), from `data/history.csv`,
   worked for weekdays.
 - **2026-08-31: the run started at 07:30:02, logged history at 07:34:37, sent a RED
   alert at 07:34:46, then died** before writing the dashboard — no traceback in
-  `dashboard_run.log`, so a hard process kill (sleep/shutdown/OOM), not an exception.
-  No publish that day. The in-pipeline health alert correctly fired the next morning
-  ("not updated in 48.0 hours"). One-off; the 09-01 and 09-02 runs completed normally.
-  Note the failure asymmetry: the RED market alert fired, then the dashboard behind it
-  never materialized.
+  `dashboard_run.log`, so a hard process kill, not an exception.
+  *[Corrected 2026-09-02 09:00, superseding this session's own earlier
+  "sleep/shutdown/OOM" guess: the Windows kernel-power log shows the machine
+  entered sleep at exactly **07:50:02 — run start + 20:00 to the second**. The
+  run HUNG after 07:34:46 (in the narrative or backtest-refresh segment, where
+  there are zero log breadcrumbs), the PT20M ExecutionTimeLimit killed the task
+  as designed, and sleep followed the instant nothing held the machine awake.
+  Brief 28's limit worked; the hang itself — most plausibly an unbounded network
+  call — is the defect (→ R16).]* No publish that day. The in-pipeline health
+  alert correctly fired the next morning ("not updated in 48.0 hours"). The
+  09-01 and 09-02 runs completed normally. Note the failure asymmetry: the RED
+  market alert fired, then the dashboard behind it never materialized.
 - **The July push outage (07-27 → 08-10) is push-level only**: publish *commits* exist
   daily right through it (git commits locally even when push is rejected), so git log
   cannot show the outage. Corroboration: the fix commit ("Fix silent publish failure
@@ -388,6 +395,40 @@ freeze dropped it. One Pushover message containing both diagnosed failure modes
 assessment was being written. The run itself completed healthy (`run ok` 07:31:35,
 composite 39.3, orange) and skipped the backtest refresh because of this
 session's 06:45 restore — both as expected (§1.7).
+
+### 4.7 Post-closeout second-thoughts pass (same morning, ~09:00)
+
+Ian asked what a second look would add. Ran four more read-only checks; all four
+produced material:
+
+1. **08-31 root cause solved** (correction inline in §1.2): a mid-run hang
+   killed by the PT20M limit at 07:50:02 exactly — not random sleep. New repair
+   R16 (step breadcrumbs + explicit LLM-call timeout).
+2. **The documented dry-run is not side-effect-free**: `log_run` and
+   `score_past_alerts` are gated only by `--ondemand`, so every
+   `--no-cache --no-news --no-alerts` run appends a duplicate intraday row to
+   history.csv (26 days carry >1 row) and rewrites alert_log.jsonl. New repair
+   R17. (This session's performance numbers already deduped to first-of-day.)
+3. **D1 evidence computed, not just asserted** — full replay of proposed band
+   option A vs current, 2018–2026 (table in REDESIGN B2). Headline: live window
+   100% → 16.8% orange-or-worse; calm 2021 68% → 19%; COVID/2022/SVB stay ≥90%
+   orange-or-worse with COVID *red* on 74% of days (sharper than current 47%).
+   Today would read yellow. One flaw found in my own proposal: option A never
+   produces green (composite's structural floor ≈ 35 vs green cutoff 30) — so
+   B2 must also recalibrate the composite score cutoffs (30/50/70 were never
+   derived either), or yellow is the de facto calm state.
+4. **CNN F&G is calibratable after all**: the accumulating cache holds 16 months
+   of real daily values (2025-04-23 →). Its red threshold (≤25) fired 13% of
+   days — same too-hot pattern as the commodity thresholds. Added to B1's scope
+   (the backtest placeholder made it look uncoverable; it isn't).
+5. Also surfaced: after any Sunday machine-off miss, the Monday 6:30 ET
+   premarket briefing will read a ~47h-old sidecar — beyond its 36h tolerance —
+   and flag MACRO STALE. The Brief 25 `--ondemand` infrastructure already makes
+   a scheduled weekend/afternoon sidecar republish a ~10-minute Task Scheduler
+   job, which reprices decision D4's "republish" option to near-free.
+6. Still unverifiable from this machine: whether Pushover actually reaches
+   Ian's phone. Today's 07:31 alert is a natural test — one word from Ian
+   ("got it") closes the loop CLAUDE.md itself flags as unverified.
 
 ---
 
