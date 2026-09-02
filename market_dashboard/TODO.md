@@ -1,6 +1,25 @@
 # Market Dashboard — To-Do / Project Plan
 
-## Current status (2026-04-24)
+## Current status (2026-09-02) — calibration rebuild SHIPPED
+
+The deep-assessment rebuild ([REDESIGN_2026-09-02.md](REDESIGN_2026-09-02.md))
+executed with Ian's go: test isolation + tripwire, alert state-machine repairs,
+data-integrity fixes (`--dry-run` flag is now the documented dry-run),
+calibration-card honesty, breadth-confirmed headline band (first live YELLOW in
+project history), two-lane alert routing (staleness → Monday digest; heartbeat
+retired), manual indicators automated (repo_dispersion, gpr_daily — thresholds
+ship with firing rates inline), Brief 26 → event trigger, afternoon sidecar
+task (2:15 PM daily) revives the bot band gate. weights_hash is now `bcade443`
+(bot allowlist updated). 301 tests.
+
+**ONE open decision — D2 (default fires 2026-09-16):** review
+`output/threshold_report.md` and approve applying the five hot-threshold
+proposals (cnn_fear_greed, copper_gold_ratio, cpi_yoy, jobless_claims,
+usd_index). crack_spread_321 + eem_vol stay pinned even under recalibrated
+levels — the report explains the short-window/relative-transform choice needed.
+Composite band cutoffs (30/50/70) ride the same review.
+
+## Previous status (2026-04-24)
 
 **Project is in production and substantially feature-complete.** Daily
 automation runs at 7:30 AM. 181/181 tests passing. 11 buckets, 26 indicators,
@@ -229,7 +248,11 @@ Grouped into batches so the same HTML / config file is only touched once per bat
   cover serial-parity, per-indicator-failure isolation, and StaleCacheFallback.
   Full spec in [ROADMAP.md](ROADMAP.md#brief-27--parallel-indicator-fetch-via-threadpoolexecutor).
 
-- [ ] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(re-review due 2026-06-20 — Brief 26 in ROADMAP.md)*
+- [x] 🅾️ **Regime-weights review checkpoint + W1 protocol** *(CLOSED 2026-09-02 —
+  the calendar review sat overdue since 06-20 because its precondition never
+  occurred. Replaced by an event trigger: 5 consecutive high-VIX days fire a
+  one-shot Pushover prompting `recalibrate --regime`. See REDESIGN B4.)*
+  ~~*(re-review due 2026-06-20 — Brief 26 in ROADMAP.md)*~~
   **Gate run 2026-05-20 — DEFERRED.** Criterion (a) failed: every production day since
   2026-04-25 has been `mid` regime; zero high-regime episodes → cannot verify sensible
   divergence. Criteria (b) passed (rates_curve +0.180, inflation +0.150 in high) and

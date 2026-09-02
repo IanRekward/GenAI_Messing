@@ -61,10 +61,41 @@ Register-ScheduledTask `
 
 Write-Host "Main run task registered."
 
+# --- Afternoon sidecar refresh (D4, REDESIGN_2026-09-02) ---
+# The trading bot reads data/latest.json at 2:45 PM CT; the 7:30 AM sidecar is
+# 7.25h stale by then (> the bot's 4h window), which permanently neutralized
+# band gating to a flat 0.5x. This refresh at 2:15 PM revives the gate and,
+# on machine-on weekends, keeps the Monday 6:30 ET premarket briefing inside
+# its 36h staleness tolerance. --ondemand --no-news: no history row, no
+# alerts, no paid API calls; --no-cache for genuinely fresh afternoon data.
+# No WakeToRun — a sidecar refresh doesn't justify waking the machine;
+# StartWhenAvailable catches up if it's asleep at 2:15.
+$sidecarAction   = New-ScheduledTaskAction `
+    -Execute          $python `
+    -Argument         "run_dashboard.py --ondemand --no-news --no-cache --quiet" `
+    -WorkingDirectory $workDir
+
+$sidecarTrigger  = New-ScheduledTaskTrigger -Daily -At "02:15PM"
+$sidecarSettings = New-ScheduledTaskSettingsSet `
+    -StartWhenAvailable `
+    -DontStopIfGoingOnBatteries `
+    -AllowStartIfOnBatteries `
+    -ExecutionTimeLimit (New-TimeSpan -Minutes 20)
+
+Register-ScheduledTask `
+    -TaskName "Market Dashboard Afternoon Sidecar" `
+    -Action   $sidecarAction `
+    -Trigger  $sidecarTrigger `
+    -Settings $sidecarSettings `
+    -RunLevel Limited `
+    -Force | Out-Null
+
+Write-Host "Afternoon sidecar task registered."
+
 # --- Verify ---
 Write-Host ""
 Write-Host "--- Verification ---"
-foreach ($name in @("Market Dashboard Wake", "Market Stress Dashboard")) {
+foreach ($name in @("Market Dashboard Wake", "Market Stress Dashboard", "Market Dashboard Afternoon Sidecar")) {
     $t = Get-ScheduledTask -TaskName $name
     Write-Host "${name}:"
     $t.Triggers | Select-Object StartBoundary | Format-List

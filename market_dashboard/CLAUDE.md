@@ -390,6 +390,12 @@ These were debated and decided. Treat them as constraints, not starting points.
   `WakeToRun: true`. Requires RTCWAKE=1 (Enable) in powercfg.
 - **Dashboard task:** "Market Stress Dashboard" — 7:30 AM daily,
   `python run_dashboard.py --publish --heartbeat --quiet`
+- **Afternoon sidecar task (added 2026-09-02, D4):** "Market Dashboard
+  Afternoon Sidecar" — 2:15 PM daily, `--ondemand --no-news --no-cache
+  --quiet`. Refreshes `data/latest.json` 30 min before the trading bot's
+  2:45 PM read so band gating works again (the 7:30 sidecar exceeded the
+  bot's 4h staleness window). No WakeToRun; StartWhenAvailable catches up.
+  No history row, no alerts, no paid API calls.
 - If automation breaks, diagnose in order: **`logs/dashboard_run.log` first**
   (Brief 28 — every run logs start/finish + full crash traceback there, even
   under `--quiet`), then `powercfg /waketimers` (admin),
