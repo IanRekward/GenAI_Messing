@@ -126,3 +126,19 @@ def test_regime_review_fires_once_at_five_high_days(tmp_path, monkeypatch):
         sent2 = send_alerts(scoring, {})
     assert sent2 == 0
     push2.assert_not_called()
+
+
+def test_breadth_escalated_band_bypasses_score_debounce(tmp_path, monkeypatch):
+    """COVID-shape gap found 2026-09-02: headline red via breadth at score 66
+    must push even though 66 < red floor + buffer."""
+    _redirect(monkeypatch, tmp_path)
+    _seed_state(tmp_path)  # prev band yellow
+    scoring = _scoring(band="red", composite=66.0)
+    scoring["buckets"]["equity_volatility"] = {
+        "band": "red",
+        "indicators": {"vix": {"label": "VIX", "band": "red", "raw": 45.0}},
+    }
+    with patch("src.alerts._send_pushover", return_value=True) as push:
+        sent = send_alerts(scoring, {})
+    assert sent == 1
+    assert "COMPOSITE ESCALATED" in push.call_args[0][1] or "SINGLE-BUCKET" in push.call_args[0][1]

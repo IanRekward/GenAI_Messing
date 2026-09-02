@@ -374,9 +374,18 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
         1 for b in scoring["buckets"].values() if b["band"] in ("orange", "red")
     )
 
-    # 1a. Composite band escalation (with debounce + breadth confirmation)
+    # 1a. Composite band escalation (with debounce + breadth confirmation).
+    # A band lifted by the breadth rule sits ABOVE its score floor by
+    # construction, so the score-based debounce must not gate it — otherwise
+    # a COVID-shaped day (score 66, broad reds → red headline) would show red
+    # on the page and never push. Found 2026-09-02 by re-running the
+    # assessment lens over the same day's band redesign.
+    from src.indicators import band_from_score as _score_band
+    breadth_escalated = (
+        _BAND_ORDER.get(cur_band, 0) > _BAND_ORDER.get(_score_band(composite), 0)
+    )
     if _BAND_ORDER.get(cur_band, 0) > _BAND_ORDER.get(prev_band, 0):
-        if _debounce_passes(cur_band, prev_band, composite, debounce_buffer):
+        if breadth_escalated or _debounce_passes(cur_band, prev_band, composite, debounce_buffer):
             if n_stressed_buckets >= 2 or cur_band == "red":
                 messages.append(
                     f"COMPOSITE ESCALATED: {prev_band.upper()} → {cur_band.upper()}\n"
