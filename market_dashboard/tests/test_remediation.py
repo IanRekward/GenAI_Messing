@@ -166,13 +166,22 @@ def test_log_remediation_writes_jsonl(tmp_path, monkeypatch):
 
 
 @pytest.mark.live
-def test_history_csv_single_row_per_run():
-    """Regression check: history.csv has exactly one row appended per dashboard run."""
-    history_csv = Path("data/history.csv")
-    if history_csv.exists():
-        initial_lines = len(history_csv.read_text().strip().split("\n"))
+def test_history_csv_single_row_per_run(tmp_path, monkeypatch):
+    """Regression check: exactly one row appended per log_run cycle.
+
+    Live fetches, but logs to a tmp COPY of history.csv — this test wrote a
+    real production row on 2026-09-02 before the tripwire caught it.
+    """
+    import shutil
+    real = Path("data/history.csv")
+    tmp_csv = tmp_path / "history.csv"
+    if real.exists():
+        shutil.copy2(real, tmp_csv)
+        initial_lines = len(tmp_csv.read_text().strip().split("\n"))
     else:
         initial_lines = 0
+    monkeypatch.setattr("src.history.HISTORY_FILE", tmp_csv)
+    monkeypatch.setattr("src.history.DATA_DIR", tmp_path)
 
     weights = load_weights("config/weights.yaml")
     thresholds = load_thresholds("config/thresholds.yaml")
@@ -184,8 +193,8 @@ def test_history_csv_single_row_per_run():
     scoring = annotate_results(scoring, thresholds)
     log_run(scoring)
 
-    final_lines = len(history_csv.read_text().strip().split("\n"))
-    assert final_lines == initial_lines + 1, "Should append exactly one row"
+    final_lines = len(tmp_csv.read_text().strip().split("\n"))
+    assert final_lines == max(initial_lines, 1) + 1, "Should append exactly one row"
 
 
 def test_indicator_source_type_helper():
