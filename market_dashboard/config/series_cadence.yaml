@@ -1,5 +1,4 @@
 # Maximum calendar days since last observation before a staleness warning fires.
-# iran_trigger and repo_stress remain fully manual — no automated source.
 
 thresholds:
   daily: 5       # FRED/yfinance daily series: covers 3-day holiday weekends + T+1 publish lag (ICE OAS posts Mon AM with Fri's value)
@@ -35,3 +34,5 @@ indicators:
   crack_spread_321: daily
   natgas: daily
   copper_gold_ratio: daily
+  repo_dispersion: weekly   # FRED SOFR99 publishes T+1 but gaps over holidays
+  gpr_daily: daily_lagged   # personal-site xls; publication can lag a few days

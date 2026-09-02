@@ -85,6 +85,29 @@ def _handler_copper_gold_ratio(key: str, cfg: dict, env: dict, manual: dict, yea
     return float(ratio.iloc[-1]), ratio
 
 
+def _handler_repo_dispersion(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    """SOFR 99th percentile minus SOFR median, in bps — intraday repo-rate
+    dispersion. Spikes when funding seizes (375bps on 2019-09-17, 174 Mar-2020)
+    while the level spread stays orderly. Replaces the manual repo_stress flag
+    that sat at 0 from install to retirement (D3, REDESIGN_2026-09-02)."""
+    s99 = fetch.fetch_fred_series("SOFR99", env, years)
+    sofr = fetch.fetch_fred_series("SOFR", env, years)
+    combined = pd.concat([s99.rename("p99"), sofr.rename("med")], axis=1).dropna()
+    spread = (combined["p99"] - combined["med"]) * 100
+    return float(spread.iloc[-1]), spread
+
+
+def _handler_gpr_daily(key: str, cfg: dict, env: dict, manual: dict, years: int):
+    """7-day MA of the Caldara-Iacoviello daily Geopolitical Risk index.
+    Replaces the manual iran_trigger flag that sat at 0 through the 2026
+    Iran/Hormuz episodes its alerts kept narrating (D3)."""
+    raw = fetch.fetch_gpr_daily(env)
+    ma7 = raw.rolling(7).mean().dropna()
+    cutoff = pd.Timestamp.now() - pd.DateOffset(years=years)
+    ma7 = ma7[ma7.index >= cutoff]
+    return float(ma7.iloc[-1]), ma7
+
+
 def _handler_vix_term_structure(key: str, cfg: dict, env: dict, manual: dict, years: int):
     vix = fetch.fetch_yfinance_series("^VIX", env, years)
     vix3m = fetch.fetch_yfinance_series("^VIX3M", env, years)
@@ -105,6 +128,8 @@ COMPUTED_HANDLERS: dict = {
     "crack_spread_321":        _handler_crack_spread_321,
     "copper_gold_ratio":       _handler_copper_gold_ratio,
     "vix_term_structure":      _handler_vix_term_structure,
+    "repo_dispersion":         _handler_repo_dispersion,
+    "gpr_daily":               _handler_gpr_daily,
 }
 
 _TRANSFORMS = {

@@ -47,10 +47,7 @@ def _retry_get(url: str, params: dict, timeout: int) -> "requests.Response":
                 time.sleep(_RETRY_DELAYS[attempt])
     raise last_exc  # type: ignore[misc]
 
-MANUAL_DEFAULTS: dict = {
-    "repo_stress": 0,   # 0=calm 1=elevated 2=crisis 3=extreme
-    "iran_trigger": 0,  # 0=calm 1=elevated 2=crisis
-}
+MANUAL_DEFAULTS: dict = {}
 
 
 def load_manual_overrides() -> dict:
@@ -276,6 +273,37 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
 _TD_SEARCH_URL = "https://www.treasurydirect.gov/TA_WS/securities/search"
 # Minimum auctions needed for a meaningful z-score baseline
 _AUCTION_MIN_COUNT = 5
+
+
+GPR_URL = "https://www.matteoiacoviello.com/gpr_files/data_gpr_daily_recent.xls"
+
+
+def fetch_gpr_daily(env: dict) -> pd.Series:
+    """Daily Geopolitical Risk index (Caldara-Iacoviello GPRD), 1985→present.
+
+    Scraped-source caveats as for CNN F&G: personal-site hosting, xls format,
+    publication lags a day or two. Cache + StaleCacheFallback cover outages;
+    series_cadence flags a dead feed via the daily_lagged threshold.
+    """
+    import io
+    eff_hours = float(env.get("CACHE_HOURS", 12))
+    cpath = _cache_path("gpr_daily")
+    if _cache_valid(cpath, eff_hours):
+        return _read_cache(cpath)
+    try:
+        resp = _retry_get(GPR_URL, params={}, timeout=60)
+        df = pd.read_excel(io.BytesIO(resp.content))
+        series = pd.Series(
+            df["GPRD"].values, index=pd.to_datetime(df["date"])
+        ).dropna()
+        if len(series) < 1000:
+            raise RuntimeError(f"GPR file parsed to only {len(series)} rows")
+    except Exception as exc:
+        if cpath.exists():
+            raise StaleCacheFallback(_read_cache(cpath), "gpr_daily", str(exc))
+        raise
+    _write_cache(cpath, series)
+    return series
 
 
 def fetch_treasury_auction_results(

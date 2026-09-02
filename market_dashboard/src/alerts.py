@@ -446,6 +446,19 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
             )
             alert_types.append("corr_sustained")
 
+    # 4b. Regime-weights review trigger (B4) — event-driven, replacing the
+    # Brief 26 calendar review that sat overdue for months because its
+    # precondition (a high-VIX episode) never occurred. One-shot latch.
+    high_streak = prev.get("high_regime_streak", 0) + 1 if scoring.get("regime") == "high" else 0
+    if high_streak >= 5 and not prev.get("regime_review_fired"):
+        messages.append(
+            "REGIME-WEIGHTS REVIEW TRIGGERED: 5 consecutive high-VIX-regime days — "
+            "the evidence Brief 26 was waiting for. Run `python -m src.recalibrate "
+            "--regime`, then review enabling regime_weights in weights.yaml "
+            "(pair any change with the bot allowlist)."
+        )
+        alert_types.append("regime_review_due")
+
     # 5. Data staleness — plumbing lane: logged for the audit trail and queued
     # for the Monday digest, never pushed. Staleness was 24 of 52 alert-log
     # entries in the first 132 days — operational noise drowning market signal
@@ -487,6 +500,10 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
         "heartbeat_start": prev.get("heartbeat_start", ""),
         "last_health_alert_time": prev.get("last_health_alert_time", 0),
         "pending_digest_notes": pending_digest_notes[-20:],
+        "high_regime_streak": high_streak,
+        "regime_review_fired": bool(
+            prev.get("regime_review_fired") or "regime_review_due" in alert_types
+        ),
     }
 
     if not messages:

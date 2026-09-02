@@ -112,11 +112,11 @@ indicators:
     orange: 15.0
     red: 40.0
 
-  repo_stress:                # Manual: 0=calm, 1=elevated, 2=crisis, 3=extreme
-    direction: high
-    yellow: 1
-    orange: 2
-    red: 3
+  repo_dispersion:            # SOFR p99 − median, bps. Firing rates 2018-2026:
+    direction: high           # yellow+ 13.0% / orange+ 1.8% / red 0.7% of days
+    yellow: 15.0              # (red = Sep-2019 [375bps] / Mar-2020 [174] class
+    orange: 25.0              # only). Calibrated 2026-09-02, methodology rule 1.
+    red: 50.0
 
   # --- Commodities & Energy ---
   wti_crude:                  # WTI crude, in $/bbl
@@ -163,11 +163,11 @@ indicators:
     orange: 35.0
     red: 25.0
 
-  iran_trigger:               # Manual: 0=calm, 1=elevated, 2=crisis
-    direction: high
-    yellow: 1
-    orange: 2
-    red: 3
+  gpr_daily:                  # GPR daily index, 7d MA. Firing rates on 2010+:
+    direction: high           # yellow+ 27.4% / orange+ 10.4% / red 3.3% of days.
+    yellow: 120.0             # Ukraine-invasion Mar-2022 peaked ~500; the 2026
+    orange: 150.0             # Iran/Hormuz episode runs ~140-200. Calibrated
+    red: 200.0                # 2026-09-02, methodology rule 1.
 
   # --- Global Spillover ---
   usd_index:                  # Broad USD index (DTWEXBGS); higher = USD strength stress

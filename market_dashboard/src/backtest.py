@@ -51,9 +51,11 @@ _AVAIL: dict[str, str] = {
     "treasury_auction_stress": "2008-01-01",  # TreasuryDirect API reliable from ~2008
 }
 
-# Manual indicators: always neutral (0/50/0) in historical backtest — no historical series.
-# cnn_fear_greed: no pre-2022 data available via API; scored neutral.
-_MANUAL = {"repo_stress", "iran_trigger", "cnn_fear_greed"}
+# Indicators scored neutral (0/50/0) in the historical backtest — no series wired.
+# cnn_fear_greed: no long history via API. repo_dispersion / gpr_daily: replaced
+# the manual flags 2026-09-02; backtest wiring is a future enhancement (both have
+# real history — SOFR99 from 2018, GPR from 1985).
+_MANUAL = {"repo_dispersion", "gpr_daily", "cnn_fear_greed"}
 
 _BT_SECTOR_ETFS = [
     "XLY", "XLC", "XLK", "XLE", "XLV",

@@ -51,7 +51,7 @@ KNOWN_INDICATOR_KEYS: frozenset[str] = frozenset({
     "treasury_auction_stress",
     "sector_breadth", "spx_200dma_distance",
     # manual-only indicators (no fetch handler needed)
-    "repo_stress", "iran_trigger",
+    "repo_dispersion", "gpr_daily",
 })
 
 _WEIGHT_TOLERANCE = 1e-4

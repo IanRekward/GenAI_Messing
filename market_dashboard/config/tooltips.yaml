@@ -90,8 +90,8 @@ indicators:
     tip: "Consumer Price Index, year-over-year change (%). Above 3.5% triggers yellow; above 5% is orange. 2022 peak was 9.1% — the highest since 1981."
   sofr_spread:
     tip: "Spread between SOFR (actual overnight bank rate) and the Fed's EFFR target (basis points). Near zero = normal. Above 10–15 bps = funding stress. Above 40 bps = crisis. Last exceeded 40 bps in Sept 2019."
-  repo_stress:
-    tip: "Manual assessment of repo market conditions (0=calm, 1=elevated, 2=crisis, 3=extreme). Repo stress can freeze short-term funding overnight, as happened in Sept 2019."
+  repo_dispersion:
+    tip: "SOFR 99th percentile minus SOFR median, in bps — how far the worst repo trades sit above the middle of the market. Calm markets run under 15bps; Sept 2019 repo crisis hit 375bps, March 2020 hit 174. Automated replacement (2026-09-02) for the manual repo flag."
   wti_crude:
     tip: "WTI crude oil price ($/barrel). Above $100 historically triggers recession risk. Extreme moves (±20% in weeks) indicate supply shocks or geopolitical crisis."
   crack_spread_321:
@@ -114,5 +114,5 @@ indicators:
     tip: "1-month realized volatility of the EEM ETF (EM equities, annualized %). Captures cross-border contagion. EM equity vol spikes often precede U.S. credit stress by 2–4 weeks."
   cnn_fear_greed:
     tip: "CNN Fear & Greed index (0=extreme fear, 100=extreme greed). Composite of 7 market signals. Below 25 = extreme fear. Above 75 = extreme greed. Falls back to Univ. of Michigan Consumer Sentiment if CNN is unavailable."
-  iran_trigger:
-    tip: "Manual geopolitical risk score (0=calm, 1=elevated, 2=crisis). Captures tail risks from Iran/Gulf tensions, which can cause sudden oil supply disruptions."
+  gpr_daily:
+    tip: "Caldara-Iacoviello daily Geopolitical Risk index (7-day average) — counts geopolitical-tension coverage across major newspapers since 1985. Baseline ~100; Ukraine invasion peaked ~500. Above 150 = sustained escalation, above 200 = crisis-level. Automated replacement (2026-09-02) for the manual Iran flag."

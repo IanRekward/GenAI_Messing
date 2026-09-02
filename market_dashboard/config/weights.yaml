@@ -156,14 +156,14 @@ buckets:
           handler: sofr_spread
         invert: false
         unit: bps
-      repo_stress:
-        label: Repo Market Stress
+      repo_dispersion:
+        label: Repo Rate Dispersion (SOFR p99−median)
         weight: 0.50
         source:
-          type: manual
+          type: computed
+          handler: repo_dispersion
         invert: false
-        unit: "0–3"
-        manual: true
+        unit: bps
 
   commodities:
     label: "Commodities & Energy"
@@ -237,14 +237,14 @@ buckets:
           handler: cnn_fear_greed
         invert: true        # lower score (more fear) = more stress
         unit: "0–100"
-      iran_trigger:
-        label: Geopolitical Risk
+      gpr_daily:
+        label: Geopolitical Risk (GPR 7d MA)
         weight: 0.35
         source:
-          type: manual
+          type: computed
+          handler: gpr_daily
         invert: false
-        unit: "0–2"
-        manual: true
+        unit: index
 
   global_spillover:
     label: "Global Spillover & Cross-Border Risk"
@@ -307,9 +307,10 @@ buckets:
 
 # ── Regime-aware bucket weighting (Brief 10C) ─────────────────────────��────
 # Multipliers are applied to bucket weights at score time, then renormalised.
-# Set enabled: true after reviewing side-by-side composite vs composite_naive
-# for at least 4-6 weeks (target review date: 2026-05-30).
-# Re-run `python -m src.recalibrate --regime` to regenerate from fresh backtest.
+# Review is EVENT-TRIGGERED, not calendar-dated: the first 5 consecutive "high"
+# regime days fire a one-time Pushover prompting `python -m src.recalibrate
+# --regime` (B4, REDESIGN_2026-09-02 — the 2026-05-30 calendar review sat
+# overdue for months because its precondition never occurred).
 regime_weights:
   enabled: false
   classifier:

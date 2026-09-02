@@ -108,3 +108,21 @@ def test_heartbeat_expired_start_stays_silent(tmp_path, monkeypatch):
     with patch("src.alerts._send_pushover", return_value=True) as push:
         assert send_heartbeat(scoring, {}) is False
     push.assert_not_called()
+
+
+def test_regime_review_fires_once_at_five_high_days(tmp_path, monkeypatch):
+    _redirect(monkeypatch, tmp_path)
+    _seed_state(tmp_path, high_regime_streak=4)
+    scoring = {**_scoring(), "regime": "high"}
+    with patch("src.alerts._send_pushover", return_value=True) as push:
+        sent = send_alerts(scoring, {})
+    assert sent == 1
+    assert "REGIME-WEIGHTS REVIEW TRIGGERED" in push.call_args[0][1]
+    state = json.loads((tmp_path / "state.json").read_text())
+    assert state["regime_review_fired"] is True
+    assert state["high_regime_streak"] == 5
+    # day 6: latched, no re-fire
+    with patch("src.alerts._send_pushover", return_value=True) as push2:
+        sent2 = send_alerts(scoring, {})
+    assert sent2 == 0
+    push2.assert_not_called()

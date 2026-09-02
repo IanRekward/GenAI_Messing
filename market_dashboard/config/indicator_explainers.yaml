@@ -375,27 +375,25 @@ indicators:
       money-market plumbing stress; spikes early in genuine funding
       crises.
 
-  repo_stress:
+  repo_dispersion:
     advanced: >
-      Manual override indicator: 0 (calm), 1 (elevated), 2 (crisis), 3
-      (extreme). Set in `data/manual_overrides.json` based on the user's
-      read of repo-market color (Fed standing-repo facility usage,
-      money-market-fund cash piles, dealer repo balance-sheet headlines).
-      No automated time series — exists because the cleanest repo signals
-      (Fed Daily Treasury statements, dealer commentary) are not API-
-      accessible and meaningful repo stress moves faster than any free
-      proxy series.
+      SOFR 99th-percentile rate minus the volume-weighted median, in bps
+      (FRED SOFR99 − SOFR). Measures the tail of the overnight Treasury
+      repo distribution: when balance sheets are constrained, the worst
+      trades reprice far above the middle before the level spread moves.
+      Printed 375bps on 2019-09-17 and 174bps in March 2020; calm markets
+      run under 15. Replaced the manual repo_stress flag 2026-09-02 —
+      that flag sat at 0 for its entire life.
     layman: >
-      A manual override the user can flip to flag "the overnight lending
-      market between banks looks stressed right now" based on news,
-      conversation, or judgment. The dashboard can't see this directly
-      because the relevant data is buried in private bank communications
-      and Fed reports — so when there's a real story (like the September
-      2019 repo crunch), the user can dial it in by hand. Most days it
-      sits at 0.
+      Banks lend each other cash overnight against Treasury collateral.
+      This measures how much MORE the most desperate borrowers paid than
+      the typical one. When everyone can borrow easily the gap is tiny;
+      when cash gets scarce (September 2019, March 2020), the gap
+      explodes days before most headlines catch up.
     model_role: >
-      Funding & Liquidity bucket, manual. Should be 0 except during
-      active funding-market stress episodes; complements the SOFR spread.
+      Funding & Liquidity bucket, 50% weight. The spike detector beside
+      sofr_spread's level signal; thresholds carry their historical
+      firing rates inline in thresholds.yaml.
 
   # ── Commodities & Energy ────────────────────────────────────────────────
 
@@ -585,25 +583,28 @@ indicators:
       sentiment-flavored signal in the model — most others are
       institutional / professional.
 
-  iran_trigger:
+  gpr_daily:
     advanced: >
-      Manual override: 0 (calm), 1 (elevated tension), 2 (active crisis),
-      3 (war or shipping disruption). Captures the user's read on
-      Middle-East geopolitical risk that affects oil supply and global
-      risk premia. No automated time series — by design, geopolitical
-      flashpoints don't have clean numerical proxies and are better
-      handled by a human dialing in a level based on news consumption
-      and judgment. Set in `data/manual_overrides.json`.
+      Caldara-Iacoviello daily Geopolitical Risk index, 7-day MA —
+      newspaper-coverage share of geopolitical tension terms across ten
+      major outlets, normalized to ~100 baseline, history to 1985.
+      Ukraine invasion peaked ~500; the 2026 Iran/Hormuz episode runs
+      140-200. Scraped from the authors' site (xls) with cache fallback
+      and staleness detection, same trust level as CNN F&G. Replaced
+      the manual iran_trigger flag 2026-09-02 — that flag sat at 0
+      through every episode its own alert narratives described.
     layman: >
-      A manual override the user can flip to flag "tensions in the
-      Middle East are elevated right now" based on the news. The
-      dashboard can't directly measure geopolitical risk — there's no
-      free, daily, machine-readable feed for that — so the user dials
-      it in. Most of the time it's at zero. It went up during episodes
-      like the 2024 Iran-Israel exchanges.
+      An academic index that counts how much the world's major
+      newspapers are writing about wars, terrorism, and geopolitical
+      tension — updated daily, history back to 1985. Around 100 is
+      normal background noise; 150+ means a sustained escalation is
+      dominating the news; 200+ is crisis-level (the Ukraine invasion
+      hit about 500). Replaces a hand-set dial that in practice
+      nobody ever set.
     model_role: >
-      Sentiment bucket, manual. Geopolitical-risk dial; complements the
-      market-derived sentiment signal.
+      Sentiment bucket, 35% weight. The geopolitical complement to the
+      market-derived fear/greed signal; thresholds carry their
+      historical firing rates inline in thresholds.yaml.
 
   # ── Global Spillover ────────────────────────────────────────────────────
 

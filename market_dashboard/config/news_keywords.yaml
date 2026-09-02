@@ -103,7 +103,7 @@ indicators:
     - eem
     - em equity
     - developing market stocks
-  repo_stress:
+  repo_dispersion:
     - repo market
     - repo rate
     - overnight repo
@@ -142,7 +142,7 @@ indicators:
     - auction tail
     - dealer takedown
     - primary dealer
-  iran_trigger:
+  gpr_daily:
     - iran
     - geopolitical
     - middle east
