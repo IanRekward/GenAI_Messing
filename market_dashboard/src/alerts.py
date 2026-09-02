@@ -5,6 +5,8 @@ State is persisted in data/alert_state.json to suppress duplicate alerts.
 from __future__ import annotations
 
 import json
+import logging
+import os
 import smtplib
 from datetime import date, datetime
 from email.mime.text import MIMEText
@@ -128,8 +130,13 @@ def _in_quiet_hours(env: dict) -> bool:
 
 def _load_state() -> dict:
     if STATE_FILE.exists():
-        with open(STATE_FILE) as f:
-            return json.load(f)
+        try:
+            with open(STATE_FILE) as f:
+                return json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            logging.getLogger("dashboard_run").warning(
+                "alert_state.json unreadable (%s) — starting from default state", exc
+            )
     return {"composite_band": "green", "red_indicators": [], "orange_indicators": []}
 
 
@@ -204,12 +211,14 @@ def score_past_alerts(history: "pd.DataFrame") -> None:
             entries.append(entry)
 
     if updated:
-        with open(ALERT_LOG, "w", encoding="utf-8") as f:
+        tmp = ALERT_LOG.with_suffix(".jsonl.tmp")
+        with open(tmp, "w", encoding="utf-8") as f:
             for entry in entries:
                 if "_raw" in entry:
                     f.write(entry["_raw"] + "\n")
                 else:
                     f.write(json.dumps(entry) + "\n")
+        os.replace(tmp, ALERT_LOG)
 
 
 def get_postmortem_stats(days: int = 60) -> dict:
@@ -319,11 +328,72 @@ def _indicator_label(scoring: dict, ref: str) -> str:
     return scoring["buckets"].get(bkey, {}).get("indicators", {}).get(ikey, {}).get("label", ikey)
 
 
+def _check_dashboard_freshness(env: dict) -> tuple[bool, str]:
+    """
+    Check if the published dashboard HTML is fresh (updated within 40 hours).
+    Returns (is_fresh, message).
+    """
+    import time
+    from pathlib import Path
+    
+    # Check published docs file (what users see)
+    genai_tmp = Path(__file__).resolve().parent.parent.parent / "_genai_tmp"
+    published_html = genai_tmp / "docs" / "index.html"
+    
+    # Fallback to local output if docs not yet published
+    if not published_html.exists():
+        local_html = Path(__file__).resolve().parent.parent / "output" / "dashboard.html"
+        if local_html.exists():
+            published_html = local_html
+    
+    if not published_html.exists():
+        return False, "CRITICAL: Dashboard HTML file not found"
+    
+    age_hours = (time.time() - published_html.stat().st_mtime) / 3600
+    threshold_hours = float(env.get("DASHBOARD_FRESHNESS_HOURS", 40))
+    
+    if age_hours > threshold_hours:
+        return False, f"CRITICAL: Dashboard not updated in {age_hours:.1f} hours (threshold: {threshold_hours}h)"
+    
+    return True, f"OK: Dashboard fresh ({age_hours:.1f}h old)"
+
+
 def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -> int:
     """Build alert messages, dispatch, and persist state. Returns count sent."""
     prev = _load_state()
     messages: list[str] = []
     alert_types: list[str] = []
+
+    # ── HEALTH CHECK: Dashboard freshness (fires immediately if stale) ────
+    is_fresh, freshness_msg = _check_dashboard_freshness(env)
+    if not is_fresh:
+        last_health_alert = prev.get("last_health_alert_time", 0)
+        import time
+        hours_since_last_alert = (time.time() - last_health_alert) / 3600
+        
+        # Fire health alert if: (1) never fired before, or (2) >6 hours since last alert
+        if hours_since_last_alert >= 6:
+            title = "🚨 DASHBOARD HEALTH ALERT"
+            body = (
+                f"{freshness_msg}\n\n"
+                f"The scheduled task may have failed on one or more days. "
+                f"Check Windows Task Scheduler for errors, and verify the machine "
+                f"is waking for the 7:30 AM run.\n\n"
+                f"Local dashboard: file:///C:/Users/rekwa/ian_projects/market_dashboard/output/dashboard.html"
+            )
+            _log_alert(title, body, scoring=scoring, alert_types=["health_stale_dashboard"])
+            if _send_pushover(title, body, env):
+                prev["last_health_alert_time"] = time.time()
+            elif _send_twilio(f"{title}\n{body}", env):
+                prev["last_health_alert_time"] = time.time()
+            elif _send_email_fallback(title, body, env):
+                prev["last_health_alert_time"] = time.time()
+            else:
+                print(f"\n  {title}")
+                print(f"  {body}")
+                prev["last_health_alert_time"] = time.time()
+            _save_state(prev)
+            return 1  # Report this health check instead of normal alerts
 
     composite = scoring["composite"]
     cur_band = scoring["composite_band"]
@@ -443,6 +513,8 @@ def send_alerts(scoring: dict, env: dict, history: pd.DataFrame | None = None) -
         "weekly_digest_date": prev.get("weekly_digest_date", ""),
         "suppressed_alerts": prev.get("suppressed_alerts", []),
         "regime_previous": scoring.get("regime"),
+        "heartbeat_start": prev.get("heartbeat_start", ""),
+        "last_health_alert_time": prev.get("last_health_alert_time", 0),
     }
 
     if not messages:
