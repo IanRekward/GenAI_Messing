@@ -163,9 +163,12 @@ file name must not move.
   hysteresis (needs prev band — read from alert_state, already loaded nearby).
   `composite_short_band` unchanged.
 - `src/alerts.py` unchanged in logic — inherits saner bands.
-- Tests (~+80): table-driven band matrix incl. the 08-31 case (composite 39.2 +
-  5 fresh reds in 4 buckets → red under new rule too — genuine breadth) and the
-  pinned-two-commodity case (→ yellow, not orange).
+- Tests (~+80): table-driven band matrix incl. the 08-31 case and the
+  pinned-two-commodity case (→ yellow, not orange). *[Corrected 2026-09-02
+  during execution: 08-31 (composite 39.2, reds in 4 buckets) reads ORANGE
+  under option A — yellow score band +1 breadth level — not red as this line
+  first claimed; escalation is capped at one level by design. Red requires
+  composite ≥50 with breadth, the COVID/2022 shape.]*
 - **Sidecar semantics note:** `composite_band` distribution changes for both
   consumers. Bot: red→0.0 rule becomes *reachable* again only if D4 chooses
   republish/widen; regardless, red days become rarer and more meaningful.

@@ -36,8 +36,9 @@ def annotate_results(scoring: dict, thresholds: dict) -> dict:
     """
     ind_thresholds = thresholds.get("indicators", {})
     red = orange = yellow = 0
+    red_buckets: set[str] = set()
 
-    for bucket in scoring["buckets"].values():
+    for bkey, bucket in scoring["buckets"].items():
         bucket_worst = "green"
 
         for ikey, ind in bucket["indicators"].items():
@@ -51,6 +52,7 @@ def annotate_results(scoring: dict, thresholds: dict) -> dict:
 
             if band == "red":
                 red += 1
+                red_buckets.add(bkey)
             elif band == "orange":
                 orange += 1
             elif band == "yellow":
@@ -65,14 +67,22 @@ def annotate_results(scoring: dict, thresholds: dict) -> dict:
     scoring["orange_count"] = orange
     scoring["yellow_count"] = yellow
 
+    # Headline = the composite's score band, escalated at most one level when
+    # red indicators span >= 2 distinct buckets (breadth confirmation). The old
+    # any-single-red rule let one miscalibrated threshold pin the headline at
+    # orange for 100% of live days (D1, REDESIGN_2026-09-02). No hysteresis in
+    # v1 — the alert layer's debounce buffer handles boundary flicker.
     composite = scoring["composite"]
-    if red >= 3 or composite >= 70:
-        scoring["composite_band"] = "red"
-    elif red >= 1 or orange >= 3 or composite >= 50:
-        scoring["composite_band"] = "orange"
-    elif orange >= 1 or yellow >= 3 or composite >= 30:
-        scoring["composite_band"] = "yellow"
+    if composite >= 70:
+        band = "red"
+    elif composite >= 50:
+        band = "orange"
+    elif composite >= 30:
+        band = "yellow"
     else:
-        scoring["composite_band"] = "green"
+        band = "green"
+    if len(red_buckets) >= 2:
+        band = {"green": "yellow", "yellow": "orange", "orange": "red"}.get(band, band)
+    scoring["composite_band"] = band
 
     return scoring

@@ -74,18 +74,72 @@ def test_none_raw_returns_green():
     assert result["buckets"]["test_bucket"]["indicators"]["vix"]["band"] == "green"
 
 
-def test_composite_band_three_reds():
-    """3+ red indicators → composite band = red regardless of composite score."""
-    inds = {
-        f"ind_{i}": {"raw": 99.0, "score": 80, "band": "green",
-                     "label": f"Ind {i}", "unit": "", "manual": False, "invert": False}
-        for i in range(3)
+def _ind(raw: float) -> dict:
+    return {"raw": raw, "score": 80, "band": "green",
+            "label": "X", "unit": "", "manual": False, "invert": False}
+
+
+def _thr(keys) -> dict:
+    return {"indicators": {k: {"direction": "high",
+                               "yellow": 10, "orange": 20, "red": 50} for k in keys}}
+
+
+def _multi_bucket_scoring(bucket_inds: dict, composite: float) -> dict:
+    return {
+        "composite": composite,
+        "composite_band": "green",
+        "red_count": 0, "orange_count": 0, "yellow_count": 0,
+        "buckets": {
+            bk: {"label": bk, "weight": 0.5, "score": composite, "band": "green",
+                 "indicators": inds}
+            for bk, inds in bucket_inds.items()
+        },
+        "errors": [],
     }
-    thr = {"indicators": {f"ind_{i}": {"direction": "high",
-                                        "yellow": 10, "orange": 20, "red": 50}
-                          for i in range(3)}}
-    scoring = _make_scoring(inds, composite=35.0)
-    result = annotate_results(scoring, thr)
+
+
+def test_reds_in_one_bucket_do_not_escalate():
+    """The 2026 pinned-commodity case: any number of reds confined to ONE
+    bucket leaves the headline at the composite's own score band (D1)."""
+    scoring = _multi_bucket_scoring(
+        {"commodities": {"crack": _ind(99.0), "copper": _ind(99.0), "wti": _ind(99.0)},
+         "credit": {"hy": _ind(5.0)}},
+        composite=39.0,
+    )
+    result = annotate_results(scoring, _thr(["crack", "copper", "wti", "hy"]))
+    assert result["red_count"] == 3
+    assert result["composite_band"] == "yellow"
+
+
+def test_reds_in_two_buckets_escalate_one_level():
+    """Breadth confirmation: reds in >=2 distinct buckets lift the headline
+    by exactly one level (the 08-31 case: composite 39 + broad reds -> orange,
+    not the old count-based red)."""
+    scoring = _multi_bucket_scoring(
+        {"commodities": {"crack": _ind(99.0)},
+         "equity_volatility": {"vix": _ind(99.0)}},
+        composite=39.0,
+    )
+    result = annotate_results(scoring, _thr(["crack", "vix"]))
+    assert result["composite_band"] == "orange"
+
+
+def test_breadth_escalation_caps_at_red():
+    scoring = _multi_bucket_scoring(
+        {"a": {"i1": _ind(99.0)}, "b": {"i2": _ind(99.0)}},
+        composite=72.0,
+    )
+    result = annotate_results(scoring, _thr(["i1", "i2"]))
+    assert result["composite_band"] == "red"
+
+
+def test_orange_score_with_breadth_reaches_red():
+    """COVID-shape: composite in orange territory + broad reds -> red."""
+    scoring = _multi_bucket_scoring(
+        {"a": {"i1": _ind(99.0)}, "b": {"i2": _ind(99.0)}},
+        composite=55.0,
+    )
+    result = annotate_results(scoring, _thr(["i1", "i2"]))
     assert result["composite_band"] == "red"
 
 
