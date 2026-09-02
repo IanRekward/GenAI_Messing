@@ -297,6 +297,21 @@ save yourself the same mistake. Add to this list when something bites you too.
   `gh run view <id> --log` for `dashboard-watchdog.yml` *first* — it timestamps
   the last good publish exactly. Also confirm Ian's Pushover delivery actually
   reaches his phone; a dead-man's switch nobody hears is not a switch.
+- **The test suite is a trap in two ways (until DEV_PLAN commit 1A ships).**
+  (1) It FAILS between 22:00 and 07:00 — three `test_alert_controls.py` tests hit
+  the real `_in_quiet_hours` and their orange escalation gets suppressed. Don't
+  "fix" the code at 6 AM; check the clock first. (2) It CLOBBERS production
+  `output/backtest_*.{csv,json}` — `test_ondemand.py` patches everything except
+  `_maybe_refresh_backtest`, so the real backtest runs with mock-empty weights
+  and writes NaN garbage; the fresh mtime then makes the next 07:30 run skip its
+  refresh and render the garbage. If you ran pytest, force-regenerate
+  (`_maybe_refresh_backtest` with `BACKTEST_MAX_AGE_HOURS=0`) before the next
+  morning run. Both bit the 2026-09-02 assessment session within minutes.
+- **`weights_hash` in latest.json is the MD5 of `config/weights.yaml`'s raw
+  BYTES (first 8 hex).** The trading bot allowlists that hash — editing even a
+  comment in weights.yaml invalidates the bot's MACRO feed until
+  `tactical_markets_trading/data/macro_weights_allowlist.json` gets the new
+  hash. Pair every weights.yaml commit with the allowlist update, same day.
 - **Parallel indicator fetch via `MAX_FETCH_WORKERS`.** `compute_composite`
   parallelizes the ~26 top-level indicator fetches across 8 workers by
   default. Set `MAX_FETCH_WORKERS=1` in `.env` or shell to force serial

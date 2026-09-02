@@ -375,6 +375,20 @@ The instrument existed; the measurement was never taken.
    the ONE canonical execution doc; this file is the frozen session record; no
    dual maintenance (execution doc wins conflicts).
 
+### 4.6 Registered prediction — outcome (added 07:35, same morning)
+
+Predicted at ~07:10 from the frozen-state bug (§1.8), before the fact: the 09-02
+07:30 run would fire a stale "COMPOSITE IMPROVED: RED → ORANGE" alert. **Verified
+at 07:31:22** — Ian's phone received exactly that ("stress is easing"), reporting
+a band transition that actually happened on 09-01 but was masked by the health
+alert, bundled with "NEW RED TRIGGERS (1): Copper / Gold Ratio" — an indicator
+that has been red ~80% of the live window and is only "new" because the state
+freeze dropped it. One Pushover message containing both diagnosed failure modes
+(state-freeze staleness + uncalibrated-threshold cry-wolf), delivered while this
+assessment was being written. The run itself completed healthy (`run ok` 07:31:35,
+composite 39.3, orange) and skipped the backtest refresh because of this
+session's 06:45 restore — both as expected (§1.7).
+
 ---
 
 ## Appendix — commands to reproduce the key numbers
