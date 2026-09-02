@@ -99,7 +99,12 @@ def fetch_fred_series(series_id: str, env: dict, years: int = 10,
                       cache_subdir: str = "", cache_hours: float | None = None) -> pd.Series:
     """Return a pandas Series of FRED observations indexed by date."""
     eff_hours = cache_hours if cache_hours is not None else float(env.get("CACHE_HOURS", 12))
-    cpath = _cache_path(f"fred_{series_id}", cache_subdir)
+    # Non-default windows in the SHARED cache dir get their own entry — a short
+    # fetch must never overwrite the 10-year series others compute percentiles
+    # against. A dedicated cache_subdir owns its namespace (backtest keeps its
+    # existing 26-year files warm).
+    suffix = "" if (years == 10 or cache_subdir) else f"_{years}y"
+    cpath = _cache_path(f"fred_{series_id}{suffix}", cache_subdir)
     if _cache_valid(cpath, eff_hours):
         return _read_cache(cpath)
 
@@ -228,7 +233,8 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
     """Return a pandas Series of daily close prices from Yahoo Finance."""
     eff_hours = cache_hours if cache_hours is not None else float(env.get("CACHE_HOURS", 12))
     safe = ticker.replace("^", "X").replace("=", "_")
-    cpath = _cache_path(f"yf_{safe}", cache_subdir)
+    suffix = "" if (years == 10 or cache_subdir) else f"_{years}y"
+    cpath = _cache_path(f"yf_{safe}{suffix}", cache_subdir)
     if _cache_valid(cpath, eff_hours):
         return _read_cache(cpath)
 
@@ -253,7 +259,15 @@ def fetch_yfinance_series(ticker: str, env: dict, years: int = 10,
             raise StaleCacheFallback(_read_cache(cpath), ticker, exc_msg)
         raise last_exc or RuntimeError(f"Yahoo Finance returned no data for {ticker}")
 
-    series = raw_df["Close"].squeeze().dropna()
+    # yf.download returns MultiIndex (field, ticker) columns — take the ticker level
+    # down to a Series by squeezing COLUMNS ONLY. A bare .squeeze() on a single-ROW
+    # frame collapses to a scalar float, and scalar.dropna() raises AttributeError
+    # (seen live for ^VIX3M 2026-08: "'numpy.float64' object has no attribute
+    # 'dropna'"), which poisoned latest.json errors[] and halted the trading bot.
+    close = raw_df["Close"]
+    if isinstance(close, pd.DataFrame):
+        close = close.squeeze("columns")
+    series = close.dropna()
     series.index = pd.to_datetime(series.index)
     _write_cache(cpath, series)
     return series

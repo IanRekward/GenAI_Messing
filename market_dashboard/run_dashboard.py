@@ -85,7 +85,10 @@ def _publish_to_github(dashboard_path: Path, env: dict, quiet: bool = False) -> 
         return subprocess.run(["git"] + list(args), cwd=genai_tmp,
                               capture_output=True, text=True)
 
-    _git("add", "docs/index.html", "docs/backtest_report.html")
+    add = _git("add", "docs/index.html", "docs/backtest_report.html")
+    if add.returncode != 0:
+        _report_publish_failure("0", f"git add failed: {add.stderr.strip()}", env, quiet)
+        return
 
     if _git("diff", "--cached", "--quiet").returncode != 0:
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -221,7 +224,15 @@ def main():
                         help="Skip state-mutating steps (log, alerts, digest, heartbeat)")
     parser.add_argument("--no-backtest", action="store_true",
                         help="Skip the daily backtest/report refresh")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Full pipeline, zero side effects beyond output/ + latest.json: "
+                             "implies --ondemand --no-news --no-alerts (no history row, no "
+                             "alert-log write, no paid API calls)")
     args = parser.parse_args()
+    if args.dry_run:
+        args.ondemand = True
+        args.no_news = True
+        args.no_alerts = True
 
     # Load env vars from .env
     load_dotenv()
@@ -317,6 +328,7 @@ def main():
     if not args.no_alerts and not args.ondemand:
         if not args.quiet:
             print("\n[5/5] Checking alerts...")
+        logging.getLogger("dashboard_run").info("step: alerts")
         sent = send_alerts(scoring, env, history)
         if not args.quiet and sent == 0:
             print("  No new alerts to send.")
@@ -325,6 +337,8 @@ def main():
         print(f"\n[5/5] Alerts skipped ({reason})")
 
     # Upcoming macro events for calendar card
+    _step = logging.getLogger("dashboard_run").info
+    _step("step: calendar")
     calendar_events: list = []
     try:
         calendar_events = fetch_upcoming_events(env)
@@ -332,6 +346,7 @@ def main():
         pass
 
     # Daily narrative paragraph (Claude Haiku synthesis)
+    _step("step: momentum/shock")
     mom = compute_composite_momentum(history)
     bkt_vel = compute_bucket_momentum(history)
     shock_type = classify_shock_type(history, scoring)
@@ -346,13 +361,19 @@ def main():
         "regime": mom.get("regime", "insufficient"),
         "bucket_velocities": bkt_vel,
     }
-    narrative, narrative_layman = generate_narrative(scoring, history_summary, env)
+    if args.no_news:
+        narrative, narrative_layman = "", ""
+    else:
+        _step("step: narrative")
+        narrative, narrative_layman = generate_narrative(scoring, history_summary, env)
 
     # Keep the backtest/report in sync with today's composite (calibration card)
     if not args.no_backtest and not args.ondemand:
+        _step("step: backtest refresh")
         _maybe_refresh_backtest(weights, env, args.quiet)
 
     # Write dashboard
+    _step("step: write dashboard")
     output_path = write_dashboard(scoring, news, history,
                                   calendar_events=calendar_events,
                                   narrative=narrative,
@@ -364,6 +385,7 @@ def main():
     _verify_dashboard_written(output_path, args.quiet)
 
     # JSON sidecar for downstream consumers (e.g. tactical_markets_trading)
+    _step("step: sidecar")
     write_latest_sidecar(scoring, shock_type=shock_type)
 
     # Weekly digest (sends automatically on Mondays)

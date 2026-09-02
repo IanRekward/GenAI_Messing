@@ -216,7 +216,12 @@ file:line evidence retained in the audit transcript) found, beyond the above:
   (`--no-cache` defeats the narrative cache).
 - Brief 17's remediation logging has produced **zero** records in production
   despite 24 staleness alerts (all remediation-eligible `move_index`) — the audit
-  trail for the feature is empty.
+  trail for the feature is empty. *[RESOLVED during execution, same day: the
+  records were almost certainly written and then **erased by the test suite** —
+  test_remediation.py's cleanup fixture stripped every `remediation_attempt`
+  line from the real alert log, and the suite ran near-daily per the CLAUDE.md
+  pre-work rule. Commit 1A deleted that fixture; the next real staleness event
+  is the natural verification that records now persist.]*
 
 **Structural divergences that undermine the published numbers:**
 - The backtest treats `cnn_fear_greed` as manual-neutral and applies no regime

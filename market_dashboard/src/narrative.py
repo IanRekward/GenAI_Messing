@@ -135,7 +135,7 @@ def generate_narrative(scoring: dict, history_summary: dict, env: dict) -> tuple
 
     try:
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
         ctx = _build_context(scoring, history_summary)
         msg = client.messages.create(
             model=_MODEL,

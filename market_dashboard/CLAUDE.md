@@ -266,9 +266,14 @@ save yourself the same mistake. Add to this list when something bites you too.
   the dedupe key resets. The `rapid_rise_alerts` pattern (reset on band change)
   is the canonical template — copy it.
 - **Dry-run invocation for manual verification:**
-  `python run_dashboard.py --no-cache --no-news --no-alerts --quiet`
-  runs the full pipeline without burning paid APIs or sending Pushover. Use
-  this after any edit that changes scoring, thresholds, or HTML output.
+  `python run_dashboard.py --dry-run --no-cache --quiet`
+  runs the full pipeline without paid API calls, Pushover, history rows, or
+  alert-log writes (it implies `--ondemand --no-news --no-alerts`). Use this
+  after any edit that changes scoring, thresholds, or HTML output.
+  *[2026-09-02: the previously documented `--no-cache --no-news --no-alerts`
+  form was NOT side-effect-free — it appended a duplicate history row, rewrote
+  the alert log, and made a paid Haiku narrative call every run. 26 days of
+  history carry duplicate rows from it.]*
 - **CNN Fear & Greed is scraped, not official.** `fetch_cnn_fear_greed()` can
   fail silently on site changes. `_handler_cnn_fear_greed` falls back to FRED
   UMCSENT. Don't assume freshness — check `data/cache/` staleness if

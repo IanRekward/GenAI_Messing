@@ -94,11 +94,11 @@ def _dedup_headlines(items: list[dict], threshold: float = 0.7) -> list[dict]:
 def _log_feed_failure(name: str, reason: str) -> None:
     try:
         from src.alerts import _log_alert
-        _log_alert({
-            "type": "news_feed_failure",
-            "feed": name,
-            "reason": reason[:200],
-        })
+        _log_alert(
+            "NEWS FEED FAILURE",
+            f"{name}: {reason[:200]}",
+            alert_types=["news_feed_failure"],
+        )
     except Exception:
         pass
 
@@ -197,6 +197,8 @@ def get_trigger_news_context(triggered_keys: set[str], env: dict) -> str:
     Fetch headlines, filter for triggered-indicator keywords, ask Haiku for context.
     Returns a short summary string, or "" if skipped/unavailable.
     """
+    if env.get("ENABLE_NEWS_TRIAGE", "true").lower() == "false":
+        return ""
     api_key = env.get("ANTHROPIC_API_KEY", "")
     if not api_key or api_key.startswith("your_") or not triggered_keys:
         return ""
@@ -218,7 +220,7 @@ def get_trigger_news_context(triggered_keys: set[str], env: dict) -> str:
         )
 
         import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=250,
@@ -261,7 +263,7 @@ def get_news_brief(env: dict) -> list[dict]:
     try:
         import anthropic
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = anthropic.Anthropic(api_key=api_key, timeout=60.0)
         resp = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=400,

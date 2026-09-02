@@ -20,7 +20,6 @@ indicators:
   cpi_yoy: monthly
   sofr_spread: daily
   wti_crude: daily
-  oil_vol: daily
   jobless_claims: weekly
   unemployment: monthly
   usd_index: weekly  # DTWEXBGS (H.10) is published weekly by the Fed, not daily
@@ -32,3 +31,7 @@ indicators:
   treasury_auction_stress: monthly  # 10Y/30Y auctions are monthly; weekly threshold (10d) misfired between auctions
   sector_breadth: daily
   spx_200dma_distance: daily
+  vix_term_structure: daily
+  crack_spread_321: daily
+  natgas: daily
+  copper_gold_ratio: daily

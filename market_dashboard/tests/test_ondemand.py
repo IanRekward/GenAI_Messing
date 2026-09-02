@@ -121,3 +121,15 @@ def test_normal_run_calls_log_run():
     with _patched_main(argv) as m:
         _run(argv)
     m["log_run"].assert_called_once()
+
+
+def test_dry_run_implies_ondemand_no_news_no_alerts():
+    argv = ["run_dashboard.py", "--dry-run", "--quiet"]
+    with _patched_main(argv) as m:
+        _run(argv)
+    m["log_run"].assert_not_called()
+    m["send_alerts"].assert_not_called()
+    m["score_past_alerts"].assert_not_called()
+    m["send_weekly_digest"].assert_not_called()
+    m["write_dashboard"].assert_called_once()
+    m["write_latest_sidecar"].assert_called_once()
