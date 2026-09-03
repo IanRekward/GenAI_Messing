@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,12 +28,17 @@ def generate(universe_path: Path, thresholds_path: Path) -> list[dict]:
     hold_days = thresholds["hold_days"]
 
     lookback = f"{int(ma_window * 1.6) + 10}d"
-    raw = yf.download(tickers, period=lookback, auto_adjust=True, progress=False)
-
-    closes: pd.DataFrame = raw["Close"].dropna(how="all")
-
-    if len(closes) < ma_window + 1:
-        raise RuntimeError(f"Only {len(closes)} rows of data — need {ma_window + 1}")
+    for attempt in range(3):
+        try:
+            raw = yf.download(tickers, period=lookback, auto_adjust=True, progress=False)
+            closes: pd.DataFrame = raw["Close"].dropna(how="all")
+            if len(closes) < ma_window + 1:
+                raise RuntimeError(f"Only {len(closes)} rows of data — need {ma_window + 1}")
+            break
+        except Exception:
+            if attempt == 2:
+                raise
+            time.sleep(60)
 
     latest = closes.iloc[-1]
     prev_mom = closes.iloc[-(mom_window + 1)]

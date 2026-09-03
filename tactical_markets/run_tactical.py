@@ -1,4 +1,5 @@
 import json
+import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -87,5 +88,26 @@ def main() -> None:
             f.write(json.dumps(r) + "\n")
 
 
+def write_heartbeat() -> None:
+    repo = BASE.parent / "_genai_tmp"
+    hb = repo / "tactical_markets" / "data" / "heartbeat.txt"
+    hb.parent.mkdir(parents=True, exist_ok=True)
+    now = datetime.now(timezone.utc)
+    hb.write_text(now.isoformat() + "\n")
+
+    def git(*args: str) -> int:
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True).returncode
+
+    git("add", "tactical_markets/data/heartbeat.txt")
+    git("commit", "-m", f"tactical heartbeat {now.astimezone(ZoneInfo('America/New_York')).date()}")
+    if git("push", "origin", "main") != 0:
+        git("pull", "--rebase", "--autostash")
+        if git("push", "origin", "main") != 0:
+            print("Heartbeat push FAILED — GH Action will alert.")
+            return
+    print("Heartbeat pushed.")
+
+
 if __name__ == "__main__":
     main()
+    write_heartbeat()

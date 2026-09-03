@@ -1,0 +1,50 @@
+name: tactical-heartbeat
+
+on:
+  schedule:
+    - cron: "30 11 * * *"
+    - cron: "30 12 * * *"
+    - cron: "30 13 * * *"
+  workflow_dispatch:
+    inputs:
+      force_alert:
+        description: "Send a test alert regardless of heartbeat state"
+        default: "false"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check heartbeat
+        env:
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          FORCE_ALERT: ${{ github.event.inputs.force_alert || 'false' }}
+        run: |
+          now_et=$((10#$(TZ=America/New_York date +%H%M)))
+          today_et=$(TZ=America/New_York date +%F)
+          if [ "$FORCE_ALERT" != "true" ] && [ "$now_et" -lt 715 ]; then
+            echo "Before 7:15 ET — quiet exit."
+            exit 0
+          fi
+          hb_utc=""
+          hb_date=""
+          if [ -f tactical_markets/data/heartbeat.txt ]; then
+            hb_utc=$(cat tactical_markets/data/heartbeat.txt)
+            hb_date=$(TZ=America/New_York date -d "$hb_utc" +%F 2>/dev/null || echo "")
+          fi
+          if [ "$FORCE_ALERT" = "true" ]; then
+            title="Tactical heartbeat TEST"
+          elif [ "$hb_date" != "$today_et" ]; then
+            title="Tactical heartbeat MISSING"
+          else
+            echo "Heartbeat OK for $today_et ET."
+            exit 0
+          fi
+          curl -s -f \
+            --form-string "token=$PUSHOVER_TOKEN" \
+            --form-string "user=$PUSHOVER_USER" \
+            --form-string "title=$title" \
+            --form-string "message=No heartbeat for $today_et ET (last: ${hb_utc:-none}). Machine may be dark." \
+            https://api.pushover.net/1/messages.json

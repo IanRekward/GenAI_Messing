@@ -10,7 +10,7 @@ Written 2026-09-01 after re-verifying every sibling contract file against its li
 
 *(Revised 2026-09-01: gates 2 and 3 dissolved — heartbeat redesigned onto existing infrastructure, Phase −1 diagnosis done read-only. One gate remains.)*
 
-1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate, and now the **only** gate. Settle in the same conversation (moved up from "someday" 9/2 — this plan's own thesis is that deferred decisions rot): **`briefings.jsonl` will publish paper-account equity, holdings, and pending-decision state to the public repo.** One-word decision: fine as-is (it's paper, same class as what `theses.jsonl` already publishes), or redact the equity field before logging.
+1. **Ian's go on REDESIGN_2026-08-31.md** — ~~not yet recorded anywhere~~ **GIVEN 2026-09-02** ("begin coding from the dev plan"). The go-conversation decision on `briefings.jsonl` public exposure was settled the same day: **log & track as-is** (paper account, same class as what `theses.jsonl` already publishes).
 2. ~~healthchecks.io account~~ **Dissolved.** Heartbeat redesigned to GitHub Actions + existing Pushover (see Phase 1b) — no new accounts. One residual step: `gh secret set PUSHOVER_TOKEN` / `PUSHOVER_USER` on `IanRekward/GenAI_Messing` (gh is authenticated with the needed scopes; the automated attempt was permission-blocked as a credential upload, so it needs one interactive approval at Phase-1 time).
 3. ~~Phase −1 bot health session~~ **Diagnosis done 2026-09-01, read-only** (see Phase −1 findings below). Residual items are a decision and a hardware check, not code — they don't block MICRO phases.
 
@@ -170,7 +170,7 @@ Everything in REDESIGN's rejected list, plus these implementation-level ones: no
 
 | Order | What | Size | Gate |
 |---|---|---|---|
-| 0 | Ian's go (the only remaining gate; kill switch reset 9/1 per live files — that decision is off the table) | one word | **open** |
+| 0 | Ian's go (the only remaining gate; kill switch reset 9/1 per live files — that decision is off the table) | one word | **given 9/2** |
 | 1 | Phase 1 repairs: retry + GH-Actions heartbeat (incl. secrets, one approval) | ~60 lines | go |
 | 2 | Phase 2: **re-verify contracts first**, then briefing core + retire + scorer + docs | ~250 lines | go |
 | 3 | Phase 2b quotes sections | ~80 lines | phase 2 live |
