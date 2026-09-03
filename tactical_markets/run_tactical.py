@@ -1,50 +1,30 @@
 import json
 import subprocess
-from datetime import date, datetime, timezone
+import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
+# briefing text carries ⚠/· — the scheduled-task console is cp1252 and an
+# unprintable char must never kill the run before the push
+sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+from src.briefing import NYSE_HOLIDAYS, build_briefing, save_state
 from src.pushover import send as pushover_send
-from src.sector_rotation import generate
 
 BASE = Path(__file__).parent
 load_dotenv(BASE / ".env")
 
-UNIVERSE = BASE / "config" / "universe.yaml"
-THRESHOLDS = BASE / "config" / "thresholds.yaml"
-THESES_LOG = BASE / "data" / "theses.jsonl"
-
-# NYSE holidays. Update yearly — if today is in 2028+ this won't catch holidays
-# and you'll get a stale-data duplicate thesis pushed to phone.
-NYSE_HOLIDAYS = {
-    date(2026, 1, 1),
-    date(2026, 1, 19),
-    date(2026, 2, 16),
-    date(2026, 4, 3),
-    date(2026, 5, 25),
-    date(2026, 6, 19),
-    date(2026, 7, 3),
-    date(2026, 9, 7),
-    date(2026, 11, 26),
-    date(2026, 12, 25),
-    date(2027, 1, 1),
-    date(2027, 1, 18),
-    date(2027, 2, 15),
-    date(2027, 3, 26),
-    date(2027, 5, 31),
-    date(2027, 7, 5),
-    date(2027, 9, 6),
-    date(2027, 11, 25),
-    date(2027, 12, 24),
-}
+BRIEFINGS_LOG = BASE / "data" / "briefings.jsonl"
 
 
 def main() -> None:
-    THESES_LOG.parent.mkdir(parents=True, exist_ok=True)
+    BRIEFINGS_LOG.parent.mkdir(parents=True, exist_ok=True)
     now = datetime.now(timezone.utc)
-    today_et = now.astimezone(ZoneInfo("America/New_York")).date()
+    now_et = now.astimezone(ZoneInfo("America/New_York"))
+    today_et = now_et.date()
 
     if today_et.weekday() >= 5:
         print(f"Weekend ({today_et}) — no run.")
@@ -55,37 +35,38 @@ def main() -> None:
         return
 
     try:
-        results = generate(UNIVERSE, THRESHOLDS)
+        result = build_briefing(now_et)
     except Exception as exc:
         print(f"ERROR: {exc}")
-        with open(THESES_LOG, "a") as f:
+        with open(BRIEFINGS_LOG, "a") as f:
             f.write(json.dumps({
-                "signal": False,
+                "signal_type": "premarket_briefing",
                 "error": str(exc),
                 "as_of": now.isoformat(),
                 "pushover_sent": False,
             }) + "\n")
         return
 
-    if not results:
-        print("No sector rotation signal today.")
-        with open(THESES_LOG, "a") as f:
-            f.write(json.dumps({
-                "signal": False,
-                "as_of": now.isoformat(),
-                "pushover_sent": False,
-            }) + "\n")
-        return
-
-    message = "\n\n".join(r["thesis"] for r in results)
-    print(message)
-    sent = pushover_send("Tactical Premarket", message)
+    print(result["message"])
+    sent = pushover_send("Premarket Briefing", result["message"])
     print(f"Pushover: {'sent' if sent else 'FAILED (check .env)'}")
 
-    with open(THESES_LOG, "a") as f:
-        for r in results:
-            r["pushover_sent"] = sent
-            f.write(json.dumps(r) + "\n")
+    with open(BRIEFINGS_LOG, "a") as f:
+        f.write(json.dumps({
+            "signal_type": "premarket_briefing",
+            "as_of": now.isoformat(),
+            "message": result["message"],
+            "snapshot": result["snapshot"],
+            "deltas": result["deltas"],
+            "pending": result["pending"],
+            "warnings": result["warnings"],
+            "pushover_sent": sent,
+        }) + "\n")
+
+    # state saved only after a successful push — a failed push must
+    # re-surface today's deltas tomorrow instead of marking them seen
+    if sent:
+        save_state(today_et, result["snapshot"], result["pending"])
 
 
 def write_heartbeat() -> None:

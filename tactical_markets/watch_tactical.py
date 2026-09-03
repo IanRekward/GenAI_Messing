@@ -10,7 +10,7 @@ from src.pushover import send as pushover_send
 BASE = Path(__file__).parent
 load_dotenv(BASE / ".env")
 
-THESES_LOG = BASE / "data" / "theses.jsonl"
+BRIEFINGS_LOG = BASE / "data" / "briefings.jsonl"
 
 NYSE_HOLIDAYS = {
     date(2026, 1, 1), date(2026, 1, 19), date(2026, 2, 16), date(2026, 4, 3),
@@ -28,9 +28,11 @@ def main() -> None:
     if today_et.weekday() >= 5 or today_et in NYSE_HOLIDAYS:
         return
 
-    ran_today = False
-    if THESES_LOG.exists():
-        with open(THESES_LOG) as f:
+    # a logged-but-unsent briefing is still a miss on the phone — require
+    # pushover_sent, not mere presence, or a Pushover outage goes silent
+    delivered_today = False
+    if BRIEFINGS_LOG.exists():
+        with open(BRIEFINGS_LOG) as f:
             for line in f:
                 try:
                     entry = json.loads(line)
@@ -39,19 +41,19 @@ def main() -> None:
                         .astimezone(ZoneInfo("America/New_York"))
                         .date()
                     )
-                    if entry_date == today_et:
-                        ran_today = True
+                    if entry_date == today_et and entry.get("pushover_sent") is True:
+                        delivered_today = True
                         break
                 except (json.JSONDecodeError, KeyError, ValueError):
                     pass
 
-    if ran_today:
-        print(f"Thesis confirmed for {today_et}.")
+    if delivered_today:
+        print(f"Briefing delivered for {today_et}.")
     else:
-        print(f"No thesis for {today_et} — alerting.")
+        print(f"No delivered briefing for {today_et} — alerting.")
         pushover_send(
             "Tactical Markets MISSED",
-            f"No thesis recorded for {today_et}. Scheduler may have failed.",
+            f"No briefing delivered for {today_et}. Scheduler or Pushover may have failed.",
         )
 
 

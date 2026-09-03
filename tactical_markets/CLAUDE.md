@@ -7,9 +7,9 @@ Read this before touching any file. These rules override defaults.
 
 ## What this project is
 
-Companion to the strategic [market_dashboard](../market_dashboard/) early-warning system. Generates short-horizon (24–48h) tactical theses for Ian's discretionary review. Runs at 6:30 AM ET premarket, delivers via Pushover.
+Companion to the strategic [market_dashboard](../market_dashboard/) early-warning system. Since 2026-09-02 (REDESIGN option E): delivers the **6:30 AM ET premarket briefing** — a health-and-pending-decisions console over MACRO regime state and the trading bot, delta-first, via Pushover. The momentum signal is retired (`research/sector_rotation.py`).
 
-**Design constraint, locked:** This is a **rule-based heuristic, not a model.** Parameters come from published research and are treated as a starting hypothesis. The "calibration step" is Ian reading theses on his phone for two weeks; the code stays frozen during that window. ML / learned-confidence layers are deferred until the trading layer exists and produces labels (≥30 trades).
+**Design constraint, locked:** This is a **rule-based heuristic, not a model.** The "calibration step" is Ian reading briefings on his phone for two weeks; the code stays frozen during that window (schema-drift repairs exempt — see DEV_PLAN Phase 3). ML / learned-confidence layers are deferred until the trading layer produces labels (≥30 trades — bot `trades.jsonl` is the label source).
 
 ---
 
@@ -76,10 +76,10 @@ Project-specific:
 
 | Topic | Decision |
 |---|---|
-| Week 1 signal | Sector rotation only. VIX slope, gaps, credit-spread context all deferred. |
-| Week 1 output | Pushover only. No HTML, no dashboard tiles. |
-| Confidence scoring | Binary publish / don't publish on a hard threshold. No formula. |
+| Product (since 2026-09-02) | Premarket briefing per REDESIGN option E. Sector-rotation signal **gutted** — no directional signals of any kind without passing methodology rules 1–7 (fable_plan Part III). |
+| Output | Pushover only. No HTML, no dashboard tiles. |
+| Confidence scoring | Retired with the signal. Briefing always pushes; ⚠ lines are scored by `score_briefings.py` precision/recall, not a formula. |
 | Backtest framework | Deferred. Treat published Sharpe 0.92 as starting hypothesis, not a thing we re-derive. |
 | Tests directory | Deferred until surface area justifies it. Inline smoke runs suffice in week 1. |
-| Two-week freeze rule | After week 1 ships, code is frozen for 14 days while Ian reads theses. No additions during freeze. |
+| Two-week freeze rule | Frozen 14 days from the first scheduled 6:30 briefing while Ian reads. Schema-drift repairs to existing lines exempt (DEV_PLAN Phase 3); no new features. Then sunset defaults apply. |
 | Cross-project imports | Forbidden. Files-on-disk contracts only. |

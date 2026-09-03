@@ -4,6 +4,8 @@ Companion to the strategic [market_dashboard](../market_dashboard/) early-warnin
 
 ## Status
 
+**2026-09-02 — briefing v1 LIVE, momentum signal retired.** Ian's go given same day ("begin coding from the dev plan"). Phases 1–2 of [DEV_PLAN.md](DEV_PLAN.md) shipped: yfinance retry, GH Actions heartbeat (secrets pending — Ian runs two `gh secret set` commands), `src/briefing.py` health console (sections 0–2), `briefings.jsonl` log, watchdog repointed with `pushover_sent` rule, `score_briefings.py` scorer, `sector_rotation.py` → `research/`. First briefing pushed 9/2; the **two-week read starts with the first scheduled 6:30 ET briefing (2026-09-03)** — code frozen during the read except schema-drift repairs (exemption defined in DEV_PLAN Phase 3). `theses.jsonl` frozen as history. Phase 2b (flip proximity + overnight tape) gated on phase 2 live.
+
 **2026-08-31 redesign pass — plan committed, code execution awaiting Ian's go.** See [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md). Implementation mechanics (verified sibling-file contracts, file-by-file changes, smoke tests, commit points) in [DEV_PLAN.md](DEV_PLAN.md) (2026-09-01). Resolves the 2026-06-12 A–D decision with **option E: retire the momentum signal** (out-of-sample since 6/12 flipped sign — post-review top pair +0.58%/trade — so neither momentum nor reversion has a stable edge) and **rebuild MICRO as the 6:30 ET premarket briefing** over MACRO regime state + bot health/positions/stop-proximity (files-on-disk, read-only). Repairs bundled: yfinance retry, external dead-man's-switch heartbeat (8 silently-missed days June–July from watchdog shared-fate), track `theses.jsonl` in git.
 
 **Freeze ended 2026-05-20. Post-freeze enhancements shipped.**
