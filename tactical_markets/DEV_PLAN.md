@@ -2,7 +2,7 @@
 
 **Status: implementation mechanics for [REDESIGN_2026-08-31.md](REDESIGN_2026-08-31.md). Scope and rationale live there and in [fable_plan.md](fable_plan.md); this doc adds only the how — file-by-file changes, verified contract shapes, smoke tests, commit points. If this doc and REDESIGN conflict, REDESIGN wins. Code execution still awaits Ian's explicit go.**
 
-Written 2026-09-01 after re-verifying every sibling contract file against its live contents. **Revised 2026-09-02 after a review pass found the pins had already drifted** — the 9/1–9/2 sibling sessions changed both MACRO and the bot (see the drift note under Verified contracts). Pins below are snapshots, not promises; re-verifying them is the first action of Phase 2.
+Written 2026-09-01 after re-verifying every sibling contract file against its live contents. **Revised 2026-09-02 after a review pass found the pins had already drifted** — the 9/1–9/2 sibling sessions changed both MACRO and the bot (see the drift note under Verified contracts). Pins below are snapshots, not promises; re-verifying them is the first action of Phase 2. **Second 9/2 fold-in from a fresh review:** freeze exemption for schema-drift repairs (Phase 3), equity-exposure decision moved into the go conversation (Preconditions), trail-pct read-from-disk check (2b), heartbeat rebase-retry (1b).
 
 ---
 
@@ -10,7 +10,7 @@ Written 2026-09-01 after re-verifying every sibling contract file against its li
 
 *(Revised 2026-09-01: gates 2 and 3 dissolved — heartbeat redesigned onto existing infrastructure, Phase −1 diagnosis done read-only. One gate remains.)*
 
-1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate, and now the **only** gate.
+1. **Ian's go on REDESIGN_2026-08-31.md** — not yet recorded anywhere. Hard gate, and now the **only** gate. Settle in the same conversation (moved up from "someday" 9/2 — this plan's own thesis is that deferred decisions rot): **`briefings.jsonl` will publish paper-account equity, holdings, and pending-decision state to the public repo.** One-word decision: fine as-is (it's paper, same class as what `theses.jsonl` already publishes), or redact the equity field before logging.
 2. ~~healthchecks.io account~~ **Dissolved.** Heartbeat redesigned to GitHub Actions + existing Pushover (see Phase 1b) — no new accounts. One residual step: `gh secret set PUSHOVER_TOKEN` / `PUSHOVER_USER` on `IanRekward/GenAI_Messing` (gh is authenticated with the needed scopes; the automated attempt was permission-blocked as a credential upload, so it needs one interactive approval at Phase-1 time).
 3. ~~Phase −1 bot health session~~ **Diagnosis done 2026-09-01, read-only** (see Phase −1 findings below). Residual items are a decision and a hardware check, not code — they don't block MICRO phases.
 
@@ -68,7 +68,7 @@ Wrap the `yf.download` call: 3 attempts, 60s sleep between, raise on final failu
 
 Building blocks, all verified: `gh` authenticated as IanRekward with `repo`+`workflow` scopes; push from scheduled tasks proven by market_dashboard's daily 7:33 publish commits (months of history); Pushover working; the tactical task fires daily with the code handling weekends/holidays.
 
-**Machine side (~12 lines in `run_tactical.py`):** on every completed invocation — weekend/holiday early-returns included — write an ISO timestamp to `_genai_tmp/tactical_markets/data/heartbeat.txt`, then `git add/commit/push` it (message `tactical heartbeat YYYY-MM-DD`, specific path staged, never `-A`). A failed push = missing heartbeat = alert, which is correct behavior. Timestamp only, no briefing content — the repo is **public**, so the daily commit exposes nothing new (`briefings.jsonl` keeps syncing manually at session commits; flag to Ian someday: it will contain paper-account equity, same class as what `theses.jsonl` already publishes).
+**Machine side (~12 lines in `run_tactical.py`):** on every completed invocation — weekend/holiday early-returns included — write an ISO timestamp to `_genai_tmp/tactical_markets/data/heartbeat.txt`, then `git add/commit/push` it (message `tactical heartbeat YYYY-MM-DD`, specific path staged, never `-A`). On push rejection, one retry: `git pull --rebase --autostash`, push again *(added 9/2 — a session that leaves `_genai_tmp` diverged from origin would otherwise turn every subsequent 5:30 CT push into a false alarm until someone notices; `--autostash` covers the dirty-worktree case too)*. A push that still fails after the retry = missing heartbeat = alert, which is then correct behavior. Timestamp only, no briefing content — the repo is **public**, so the daily commit exposes nothing new (`briefings.jsonl` keeps syncing manually at session commits; flag to Ian someday: it will contain paper-account equity, same class as what `theses.jsonl` already publishes).
 
 **GitHub side — `.github/workflows/tactical-heartbeat.yml` (~30 lines):** `schedule:` crons at 11:30, 12:30, and 13:30 UTC daily (in EST the 11:30 firing lands 6:30 ET and exits quietly, and GH drops scheduled runs entirely under load — the third cron keeps two effective checks year-round); the job computes current ET, exits quietly unless it's past ~7:15 ET, then checks the heartbeat by **reading `heartbeat.txt`'s content at HEAD** — alert if its ISO timestamp isn't today (ET). File content, not commit-date parsing: committer timezones can't lie. Alert = one `curl` to Pushover using `secrets.PUSHOVER_TOKEN`/`PUSHOVER_USER`. Because the machine pings 7 days/week, the Action needs **zero** weekend/holiday logic. Known trade-offs, accepted: GH Actions cron jitter (10–40 min typical) means the alert may land 7:30–8:15 ET rather than 7:15 sharp — hours ahead of the bot's afternoon entry window; a missing heartbeat may alert twice as later crons re-check — a dead machine deserves two pings.
 
@@ -76,7 +76,7 @@ Building blocks, all verified: `gh` authenticated as IanRekward with `repo`+`wor
 
 **Fallback if Ian prefers fewer moving parts:** the original healthchecks.io design (5-line ping, 3-minute account, no repo commits, no cron jitter) remains valid — his call at go time; the plan defaults to the zero-intervention version per his 2026-09-01 request.
 
-**Smoke:** one full `python run_tactical.py` off-schedule (accept the duplicate log line — log-every-run discipline covers it) → confirm the heartbeat commit landed on GitHub; give the workflow a `workflow_dispatch` trigger with a `force_alert` input and dispatch it once via `gh workflow run` → test Pushover arrives on phone.
+**Smoke:** one full `python run_tactical.py` off-schedule (accept the duplicate log line — log-every-run discipline covers it) → confirm the heartbeat commit landed on GitHub; repeat once with `_genai_tmp` deliberately one commit behind origin plus an unstaged scratch edit → confirm the rebase-retry path pushes clean; give the workflow a `workflow_dispatch` trigger with a `force_alert` input and dispatch it once via `gh workflow run` → test Pushover arrives on phone.
 
 **Commit:** `tactical_markets: phase 1 repairs — yfinance retry + GH Actions heartbeat`
 
@@ -137,7 +137,7 @@ Additions to `src/briefing.py` only. Governing rule: **a failed quote drops the 
 
 - **`quotes(tickers) -> dict[str, float] | None`** — yfinance with the Phase-1 retry pattern (shorter backoff, 2×15s — the 6:30 slot can't absorb 3×60s twice); premarket via `Ticker.fast_info` where available, else prior close and say so.
 - **Section 3 — flip proximity:**
-  - TQQQ: trailing stop = `position_peak_price × (1 − TRAIL_PCT)`; `TRAIL_PCT = 0.05` hardcoded **mirroring the bot's config — provenance comment required (rule 1), and a schema-drift risk if the bot ever changes it**; ⚠ when price within 2% of stop; `stopped_out: true` → plain status line. Word the line as *"trail level $X (evaluated at bot's 14:45 run)"* — the stop is decision-time, not a resting order (see record correction), and the briefing must not imply otherwise.
+  - TQQQ: trailing stop = `position_peak_price × (1 − TRAIL_PCT)`. **First action of this phase (9/2): check whether the bot exposes its trail pct anywhere on disk** — config file, state file, `last_successful_run.json` — and read it if so; files-on-disk reads are the sanctioned integration path and a read eliminates the drift risk entirely. Only if it's genuinely not on disk: `TRAIL_PCT = 0.05` hardcoded mirroring the bot's config — provenance comment required (rule 1), and a schema-drift risk if the bot ever changes it. ⚠ when price within 2% of stop; `stopped_out: true` → plain status line. Word the line as *"trail level $X (evaluated at bot's 14:45 run)"* — the stop is decision-time, not a resting order (see record correction), and the briefing must not imply otherwise.
   - SPY: distance to 200d and 50d MA (daily history download, 1 call); ⚠ within 2% of a cross.
   - Sector sleeve: `current_holdings` listed once, no proximity math (monthly cadence).
 - **Section 4 — overnight tape:** SPY/QQQ gap vs prior close, flag |gap| ≥ 1%; VIX last close + 5d change (no premarket exists). Fallback if quotes fail: day-old `vix.raw` / `vix_term_structure.raw` from MACRO's `latest.json`, labeled `(yday)`.
@@ -151,7 +151,11 @@ Additions to `src/briefing.py` only. Governing rule: **a failed quote drops the 
 
 ## Phase 3 — the two-week read (no code)
 
-Clock starts the first live 6:30 briefing morning. Ends +14 calendar days. Then the sunset defaults from REDESIGN apply mechanically:
+Clock starts the first live 6:30 briefing morning. Ends +14 calendar days.
+
+**Freeze exemption, defined up front (9/2):** the freeze binds features, not observability repairs. The contract pins drifted within one day of being written — assume the bot drifts again mid-read. If sibling schema drift breaks a section, restoring an existing line to accuracy is a **repair**: it ships immediately, gets its own commit, and is noted in that day's `briefings.jsonl` entry. New lines, sections, or thresholds stay frozen. Without this rule, a mid-read drift leaves the briefing printing "unknown" for two weeks and the read's verdict measures the drift, not the concept.
+
+Then the sunset defaults from REDESIGN apply mechanically:
 - default = **alert-only mode** unless Ian affirmatively opts into the daily push;
 - 8 weeks with zero acted-on ⚠ lines → default = park the project;
 - backlog picks (weekly digest is the promoted candidate) only after the read.
