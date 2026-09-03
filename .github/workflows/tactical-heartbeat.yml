@@ -18,8 +18,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: Check heartbeat
         env:
-          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_TOKEN }}
-          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER }}
+          PUSHOVER_TOKEN: ${{ secrets.PUSHOVER_APP_TOKEN }}
+          PUSHOVER_USER: ${{ secrets.PUSHOVER_USER_KEY }}
           FORCE_ALERT: ${{ github.event.inputs.force_alert || 'false' }}
         run: |
           now_et=$((10#$(TZ=America/New_York date +%H%M)))
