@@ -101,7 +101,11 @@ def write_heartbeat() -> None:
     git("add", "tactical_markets/data/heartbeat.txt")
     git("commit", "-m", f"tactical heartbeat {now.astimezone(ZoneInfo('America/New_York')).date()}")
     if git("push", "origin", "main") != 0:
-        git("pull", "--rebase", "--autostash")
+        # -X theirs: replayed local commits win conflicts — the newest
+        # heartbeat timestamp is always the right one. Abort on failure so
+        # a bad morning never leaves the repo mid-rebase for the next run.
+        if git("pull", "--rebase", "--autostash", "-X", "theirs") != 0:
+            git("rebase", "--abort")
         if git("push", "origin", "main") != 0:
             print("Heartbeat push FAILED — GH Action will alert.")
             return
